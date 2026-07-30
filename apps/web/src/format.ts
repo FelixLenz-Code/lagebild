@@ -1,4 +1,4 @@
-import type { Severity } from '@lagebild/shared';
+import type { Severity, AirCategory } from '@lagebild/shared';
 
 export function relativeTime(iso: string | null): string {
   if (!iso) return '';
@@ -70,3 +70,29 @@ export const TRAFFIC_DE: Record<string, string> = {
   roadworks: 'Baustelle',
   warning: 'Warnung',
 };
+
+export const AIR_DE: Record<AirCategory, string> = {
+  good: 'Gut',
+  fair: 'Ausreichend',
+  moderate: 'Mäßig',
+  poor: 'Schlecht',
+  'very-poor': 'Sehr schlecht',
+  'extremely-poor': 'Extrem schlecht',
+};
+
+export const AIR_COLOR: Record<AirCategory, string> = {
+  good: '#2c7448',
+  fair: '#6f9e2e',
+  moderate: '#c9a70c',
+  poor: '#c96f0f',
+  'very-poor': '#a92318',
+  'extremely-poor': '#6c2790',
+};
+
+/** Zeitbeschriftung eines Radar-Frames (Unix-Sekunden). */
+export function radarTimeLabel(timeSec: number, forecast: boolean): string {
+  const mins = Math.round((timeSec * 1000 - Date.now()) / 60000);
+  if (mins === 0) return 'jetzt';
+  if (forecast || mins > 0) return `in ${Math.max(mins, 1)} Min · Prognose`;
+  return `vor ${-mins} Min`;
+}

@@ -7,9 +7,14 @@ import maplibregl, {
   type FilterSpecification,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity } from '@lagebild/shared';
+import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity, RadarData } from '@lagebild/shared';
 import type { Bbox } from './api.js';
-import { SEVERITY_DE } from './format.js';
+import { SEVERITY_DE, radarTimeLabel } from './format.js';
+
+/** Kachel-URL eines RainViewer-Radar-Frames (Farbschema 4, geglättet). */
+function radarTileUrl(host: string, path: string): string {
+  return `${host}${path}/256/{z}/{x}/{y}/4/1_1.png`;
+}
 
 const SEVERITY_COLOR: Record<Severity, string> = {
   minor: '#b58a10',
@@ -80,10 +85,11 @@ interface Props {
   warnings: WarningFeature[];
   traffic: TrafficIncident[];
   pegel: WaterLevel[];
+  radar: RadarData | null;
   onViewport: (b: Bbox) => void;
 }
 
-export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props) {
+export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const userMarker = useRef<Marker | null>(null);
@@ -96,6 +102,9 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
   const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
   const [showTraffic, setShowTraffic] = useState(true);
   const [showPegel, setShowPegel] = useState(true);
+  const [showRadar, setShowRadar] = useState(false);
+  const [radarIdx, setRadarIdx] = useState(0);
+  const [radarPlaying, setRadarPlaying] = useState(false);
 
   // Nachschlagetabelle id → Warnung (für Klick-Popup)
   useEffect(() => {
@@ -203,6 +212,49 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
     if (map.getLayer('warnings-line')) map.setFilter('warnings-line', filter);
   }, [activeSev, ready]);
 
+  // Neue Radar-Daten → auf den aktuellsten Vergangenheits-Frame springen
+  useEffect(() => {
+    if (!radar || radar.frames.length === 0) return;
+    const lastPast = radar.frames.map((f) => f.forecast).lastIndexOf(false);
+    setRadarIdx(lastPast >= 0 ? lastPast : radar.frames.length - 1);
+  }, [radar]);
+
+  // Radar-Layer an-/abschalten (unter den Warnflächen)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const frames = radar?.frames ?? [];
+    if (showRadar && radar && frames.length > 0) {
+      if (!map.getSource('radar')) {
+        const url = radarTileUrl(radar.host, frames[Math.min(radarIdx, frames.length - 1)]!.path);
+        map.addSource('radar', { type: 'raster', tiles: [url], tileSize: 256 });
+        const beforeId = map.getLayer('warnings-fill') ? 'warnings-fill' : undefined;
+        map.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': 0.7 } }, beforeId);
+      }
+    } else {
+      if (map.getLayer('radar')) map.removeLayer('radar');
+      if (map.getSource('radar')) map.removeSource('radar');
+      if (radarPlaying) setRadarPlaying(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRadar, radar, ready]);
+
+  // Frame wechseln
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !showRadar || !radar) return;
+    const src = map.getSource('radar') as maplibregl.RasterTileSource | undefined;
+    const frame = radar.frames[Math.min(radarIdx, radar.frames.length - 1)];
+    if (src && frame) src.setTiles([radarTileUrl(radar.host, frame.path)]);
+  }, [radarIdx, showRadar, radar, ready]);
+
+  // Abspielen
+  useEffect(() => {
+    if (!radarPlaying || !radar || radar.frames.length === 0) return;
+    const t = setInterval(() => setRadarIdx((i) => (i + 1) % radar.frames.length), 500);
+    return () => clearInterval(t);
+  }, [radarPlaying, radar]);
+
   // Daten-Marker (Verkehr, Pegel) neu aufbauen
   useEffect(() => {
     const map = mapRef.current;
@@ -234,39 +286,51 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
     }
   }, [traffic, pegel, showTraffic, showPegel, ready]);
 
-  return (
-    <div className="mapwrap">
-      <div ref={containerRef} className="lagemap" />
-      <div className="maptools">
-        <button
-          type="button"
-          className="chip"
-          aria-pressed={showTraffic}
-          onClick={() => setShowTraffic((v) => !v)}
-        >
-          <span className="k" style={{ background: 'var(--sev3)' }} />
-          Verkehr
-        </button>
-        <button
-          type="button"
-          className="chip"
-          aria-pressed={showPegel}
-          onClick={() => setShowPegel((v) => !v)}
-        >
-          <span className="k" style={{ background: 'var(--accent)' }} />
-          Pegel
-        </button>
-      </div>
+  const frames = radar?.frames ?? [];
+  const curFrame = frames[Math.min(radarIdx, frames.length - 1)];
 
-      <div className="legend" role="group" aria-label="Warnstufen filtern">
-        <div className="legend-title">Warnstufen</div>
-        <div className="legend-items">
+  return (
+    <>
+      <div className="mapwrap">
+        <div ref={containerRef} className="lagemap" />
+        <div className="maptools">
+          <button type="button" className="chip" aria-pressed={showRadar} onClick={() => setShowRadar((v) => !v)}>
+            <span className="k" style={{ background: '#3f83d4' }} />
+            Regenradar
+          </button>
+          <button type="button" className="chip" aria-pressed={showTraffic} onClick={() => setShowTraffic((v) => !v)}>
+            <span className="k" style={{ background: 'var(--sev3)' }} />
+            Verkehr
+          </button>
+          <button type="button" className="chip" aria-pressed={showPegel} onClick={() => setShowPegel((v) => !v)}>
+            <span className="k" style={{ background: 'var(--accent)' }} />
+            Pegel
+          </button>
+        </div>
+
+        <button
+          type="button"
+          className="loc-btn"
+          aria-label="Zurück zum Standort"
+          title="Zurück zum Standort"
+          onClick={() => mapRef.current?.flyTo({ center: [coords.lon, coords.lat], zoom: 11, speed: 1.6 })}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="7" />
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+            <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
+        <div className="legend" role="group" aria-label="Warnstufen filtern">
+          <span className="legend-title">Warnstufen</span>
           {ALL_SEVERITIES.map((s) => (
             <button
               key={s}
               type="button"
               className="legend-item"
               aria-pressed={activeSev.has(s)}
+              title={SEVERITY_DE[s]}
               onClick={() =>
                 setActiveSev((prev) => {
                   const next = new Set(prev);
@@ -282,6 +346,35 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
           ))}
         </div>
       </div>
-    </div>
+
+      {showRadar && frames.length > 0 && (
+        <div className="radarbar" role="group" aria-label="Regenradar-Zeitleiste">
+          <button
+            type="button"
+            className="play"
+            aria-label={radarPlaying ? 'Pause' : 'Abspielen'}
+            onClick={() => setRadarPlaying((p) => !p)}
+          >
+            {radarPlaying ? (
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+            )}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={frames.length - 1}
+            value={Math.min(radarIdx, frames.length - 1)}
+            onChange={(e) => {
+              setRadarPlaying(false);
+              setRadarIdx(Number(e.target.value));
+            }}
+            aria-label="Zeitpunkt"
+          />
+          <div className="rtime">{curFrame ? radarTimeLabel(curFrame.time, curFrame.forecast) : ''}</div>
+        </div>
+      )}
+    </>
   );
 }

@@ -5,6 +5,8 @@ import type {
   TrafficIncident,
   NewsItem,
   WaterLevel,
+  AirQuality,
+  RadarData,
   Coords,
 } from '@lagebild/shared';
 
@@ -34,6 +36,11 @@ export const fetchWeather = (c: Coords): Promise<ApiEnvelope<WeatherNow>> =>
   getJson(`/api/weather?${q(c)}`);
 
 export const fetchNews = (): Promise<ApiEnvelope<NewsItem[]>> => getJson(`/api/news`);
+
+export const fetchAir = (c: Coords): Promise<ApiEnvelope<AirQuality>> =>
+  getJson(`/api/air?${q(c)}`);
+
+export const fetchRadar = (): Promise<ApiEnvelope<RadarData>> => getJson(`/api/radar`);
 
 // Kartenausschnitt-bezogen (alles im sichtbaren Bereich):
 export const fetchWarnings = (b: Bbox): Promise<ApiEnvelope<WarningFeature[]>> =>

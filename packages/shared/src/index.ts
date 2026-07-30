@@ -105,12 +105,28 @@ export interface WaterLevel {
   coordinates?: Coords | null;
 }
 
-/** Luftqualitäts-Index (Umweltbundesamt). */
+/** Luftqualität nach European Air Quality Index (EAQI). */
+export type AirCategory = 'good' | 'fair' | 'moderate' | 'poor' | 'very-poor' | 'extremely-poor';
+
 export interface AirQuality {
-  station: string;
-  index: number | null;
-  category: 'very-good' | 'good' | 'moderate' | 'poor' | 'very-poor' | null;
+  aqi: number | null;
+  category: AirCategory | null;
+  pm10: number | null;
+  pm25: number | null;
+  no2: number | null;
+  o3: number | null;
   measuredAt: string | null;
+}
+
+/** Regenradar-Frames (RainViewer). `forecast` = Nowcast statt Vergangenheit. */
+export interface RadarFrame {
+  time: number;
+  path: string;
+  forecast: boolean;
+}
+export interface RadarData {
+  host: string;
+  frames: RadarFrame[];
 }
 
 /** Nachrichten-/Ereignismeldung (Tagesschau). */

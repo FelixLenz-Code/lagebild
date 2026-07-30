@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
 import { Sheet } from './Sheet.js';
-import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail } from './details.js';
-import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE } from './format.js';
+import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail } from './details.js';
+import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE, AIR_DE, AIR_COLOR } from './format.js';
 
-type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news';
+type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'air';
 
 /** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
 function boxAround(c: { lat: number; lon: number }): Bbox {
@@ -57,6 +57,8 @@ export function App() {
   const warnings = useApi(`warnings:${viewKey}`, () => fetchWarnings(viewport), [viewKey]);
   const traffic = useApi(`traffic:${viewKey}`, () => fetchTraffic(viewport), [viewKey]);
   const pegel = useApi(`pegel:${viewKey}`, () => fetchPegel(viewport), [viewKey]);
+  const air = useApi(`air:${geoKey}`, () => fetchAir(coords), [coords]);
+  const radar = useApi('radar', () => fetchRadar());
   const news = useApi('news', () => fetchNews());
 
   // Eine Warnung liegt als viele Gemeinde-Flächen vor → für Liste/Detail entdoppeln.
@@ -67,7 +69,7 @@ export function App() {
   }, [warnings.data]);
 
   const lastSync = weather.savedAt;
-  const anyCached = [weather, warnings, traffic, pegel, news].some((s) => s.fromCache);
+  const anyCached = [weather, warnings, traffic, pegel, air, news].some((s) => s.fromCache);
 
   const [detail, setDetail] = useState<DetailKey | null>(null);
 
@@ -76,6 +78,7 @@ export function App() {
     warnings: { title: 'Amtliche Warnungen', source: warnings.data?.source, savedAt: warnings.savedAt },
     traffic: { title: 'Verkehr im Ausschnitt', source: traffic.data?.source, savedAt: traffic.savedAt },
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
+    air: { title: `Luftqualität — ${place}`, source: air.data?.source, savedAt: air.savedAt },
     news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
   };
   const detailMeta = (k: DetailKey) => {
@@ -118,6 +121,7 @@ export function App() {
         warnings={warnings.data?.data ?? []}
         traffic={traffic.data?.data ?? []}
         pegel={pegel.data?.data ?? []}
+        radar={radar.data?.data ?? null}
         onViewport={setViewport}
       />
       <p className="map-hint">
@@ -213,8 +217,37 @@ export function App() {
           </Loader>
         </Tile>
 
-        <Tile title="Regenradar" pending>
-          <p className="muted">Radar-Layer folgt.</p>
+        <Tile
+          title="Luftqualität"
+          source={air.data?.source}
+          cached={air.fromCache}
+          onOpen={air.data ? () => setDetail('air') : undefined}
+        >
+          {!air.data && air.loading && <p className="muted">Lade …</p>}
+          {!air.data && air.error && <p className="err">{air.error}</p>}
+          {air.data && (
+            <>
+              <div className="metric">
+                <span className="big">{air.data.data.aqi ?? '–'}</span>
+                <span className="u">EAQI</span>
+                {air.data.data.category && (
+                  <span
+                    className="badge"
+                    style={{
+                      marginLeft: 'auto',
+                      background: `color-mix(in srgb, ${AIR_COLOR[air.data.data.category]} 16%, transparent)`,
+                      color: AIR_COLOR[air.data.data.category],
+                    }}
+                  >
+                    {AIR_DE[air.data.data.category]}
+                  </span>
+                )}
+              </div>
+              <div className="airbar">
+                <i style={{ left: `${Math.min(air.data.data.aqi ?? 0, 100)}%` }} />
+              </div>
+            </>
+          )}
         </Tile>
       </section>
 
@@ -224,6 +257,7 @@ export function App() {
           {detail === 'warnings' && <WarningsDetail list={uniqueWarnings} />}
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
+          {detail === 'air' && air.data && <AirDetail air={air.data.data} />}
           {detail === 'news' && news.data && <NewsDetail list={news.data.data} />}
         </Sheet>
       )}

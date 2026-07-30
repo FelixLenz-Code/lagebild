@@ -1,4 +1,4 @@
-import type { WeatherNow, WarningFeature, TrafficIncident, WaterLevel, NewsItem } from '@lagebild/shared';
+import type { WeatherNow, WarningFeature, TrafficIncident, WaterLevel, NewsItem, AirQuality } from '@lagebild/shared';
 import {
   relativeTime,
   timeUntil,
@@ -8,6 +8,8 @@ import {
   SEVERITY_DE,
   SEVERITY_VAR,
   TRAFFIC_DE,
+  AIR_DE,
+  AIR_COLOR,
 } from './format.js';
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -99,6 +101,29 @@ export function PegelDetail({ list }: { list: WaterLevel[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+export function AirDetail({ air }: { air: AirQuality }) {
+  const cat = air.category;
+  return (
+    <>
+      <div className="wx-hero">
+        <span className="wx-temp-lg" style={cat ? { color: AIR_COLOR[cat] } : undefined}>
+          {air.aqi ?? '–'}
+        </span>
+        <div>
+          <div className="wx-cond">{cat ? AIR_DE[cat] : 'Unbekannt'}</div>
+          <div className="wx-sub">European AQI · {relativeTime(air.measuredAt)}</div>
+        </div>
+      </div>
+      <div className="details">
+        <Detail label="Feinstaub PM2,5" value={air.pm25 != null ? `${air.pm25} µg/m³` : '–'} />
+        <Detail label="Feinstaub PM10" value={air.pm10 != null ? `${air.pm10} µg/m³` : '–'} />
+        <Detail label="Stickstoffdioxid" value={air.no2 != null ? `${air.no2} µg/m³` : '–'} />
+        <Detail label="Ozon" value={air.o3 != null ? `${air.o3} µg/m³` : '–'} />
+      </div>
+    </>
   );
 }
 

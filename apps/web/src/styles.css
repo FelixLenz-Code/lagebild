@@ -93,24 +93,48 @@ svg { display: block; }
 .mk-user { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
 .maplibregl-popup-content { font: 500 .8rem system-ui, sans-serif; color: #14181c; border-radius: 6px; padding: 10px 12px; }
 
-/* warning legend (severity filter) */
+/* warning legend (severity filter) — compact, single row */
 .legend {
-  position: absolute; bottom: 10px; left: 10px; z-index: 1;
-  background: color-mix(in srgb, var(--surface) 93%, transparent);
+  position: absolute; bottom: 8px; left: 8px; z-index: 1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: calc(100% - 56px);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 8px 10px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 3px 5px;
 }
-.legend-title { font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); margin-bottom: 6px; }
-.legend-items { display: flex; flex-wrap: wrap; gap: 5px; }
+.legend-title { font-size: .52rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin-right: 3px; }
 .legend-item {
-  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  font-size: .72rem; font-weight: 600; color: var(--ink);
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm);
-  padding: 4px 8px; min-height: 30px;
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  font-size: .64rem; font-weight: 600; color: var(--ink);
+  background: transparent; border: none; padding: 2px 4px; border-radius: 3px; min-height: 22px;
 }
-.legend-item .k { width: 10px; height: 10px; border-radius: 2px; flex: none; }
-.legend-item[aria-pressed='false'] { color: var(--faint); opacity: .55; }
-.legend-item[aria-pressed='false'] .k { opacity: .35; }
+.legend-item .k { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.legend-item:hover { background: var(--surface-2); }
+.legend-item[aria-pressed='false'] { color: var(--faint); opacity: .5; }
+.legend-item[aria-pressed='false'] .k { opacity: .3; }
+
+/* return-to-location button */
+.loc-btn {
+  position: absolute; right: 10px; bottom: 30px; z-index: 1;
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--accent); cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+.loc-btn svg { width: 18px; height: 18px; }
+.loc-btn:hover { border-color: var(--accent); }
+
+/* radar timeline */
+.radarbar { display: flex; align-items: center; gap: 12px; padding: 9px 12px; margin-top: 8px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r); }
+.radarbar .play { width: 34px; height: 34px; flex: none; border-radius: var(--r-sm); border: 1px solid var(--accent-ink); background: var(--accent); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.radarbar .play svg { width: 15px; height: 15px; }
+.radarbar input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; min-width: 60px; }
+.radarbar .rtime { font-size: .78rem; color: var(--ink); min-width: 128px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* air quality bar */
+.airbar { height: 7px; border-radius: 2px; margin-top: 8px; position: relative;
+  background: linear-gradient(90deg, #2c7448, #6f9e2e, #c9a70c, #c96f0f, #a92318, #6c2790); }
+.airbar i { position: absolute; top: -3px; width: 3px; height: 13px; border-radius: 1px; background: var(--ink); box-shadow: 0 0 0 2px var(--surface); transform: translateX(-50%); }
+.metric .badge { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 3px 8px; border-radius: 3px; }
 
 /* warning popup */
 .warn-popup .wp-sev { display: inline-block; font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #fff; padding: 2px 7px; border-radius: 3px; margin-bottom: 5px; }
