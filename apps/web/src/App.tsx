@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchAlerts, fetchTraffic, fetchPegel, fetchNews } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchAlerts, fetchTraffic, fetchPegel, fetchNews, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
 import { Sheet } from './Sheet.js';
@@ -9,16 +9,27 @@ import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFF
 
 type DetailKey = 'weather' | 'alerts' | 'traffic' | 'pegel' | 'news';
 
+/** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
+function boxAround(c: { lat: number; lon: number }): Bbox {
+  return { west: c.lon - 0.2, south: c.lat - 0.12, east: c.lon + 0.2, north: c.lat + 0.12 };
+}
+const bboxKey = (b: Bbox) =>
+  `${b.west.toFixed(2)},${b.south.toFixed(2)},${b.east.toFixed(2)},${b.north.toFixed(2)}`;
+
 export function App() {
   const [coords, setCoords] = useState<Coords>(DEFAULT_COORDS);
   const [place, setPlace] = useState('Berlin-Mitte');
+  // Sichtbarer Kartenausschnitt — steuert alle ortsbezogenen Kartendaten.
+  const [viewport, setViewport] = useState<Bbox>(() => boxAround(DEFAULT_COORDS));
 
   // Standort per Geolocation, Fallback bleibt Berlin-Mitte.
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        setCoords(c);
+        setViewport(boxAround(c));
         setPlace('Dein Standort');
       },
       () => {
@@ -41,10 +52,11 @@ export function App() {
   }, []);
 
   const geoKey = `${coords.lat.toFixed(3)},${coords.lon.toFixed(3)}`;
+  const viewKey = bboxKey(viewport);
   const weather = useApi(`weather:${geoKey}`, () => fetchWeather(coords), [coords]);
   const alerts = useApi(`alerts:${geoKey}`, () => fetchAlerts(coords), [coords]);
-  const traffic = useApi(`traffic:${geoKey}`, () => fetchTraffic(coords), [coords]);
-  const pegel = useApi(`pegel:${geoKey}`, () => fetchPegel(coords), [coords]);
+  const traffic = useApi(`traffic:${viewKey}`, () => fetchTraffic(viewport), [viewKey]);
+  const pegel = useApi(`pegel:${viewKey}`, () => fetchPegel(viewport), [viewKey]);
   const news = useApi('news', () => fetchNews());
 
   const lastSync = weather.savedAt;
@@ -55,7 +67,7 @@ export function App() {
   const detailInfo: Record<DetailKey, { title: string; source?: string; savedAt: number | null }> = {
     weather: { title: `Wetter — ${place}`, source: weather.data?.source, savedAt: weather.savedAt },
     alerts: { title: 'Amtliche Warnungen', source: alerts.data?.source, savedAt: alerts.savedAt },
-    traffic: { title: 'Verkehr in der Nähe', source: traffic.data?.source, savedAt: traffic.savedAt },
+    traffic: { title: 'Verkehr im Ausschnitt', source: traffic.data?.source, savedAt: traffic.savedAt },
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
     news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
   };
@@ -94,7 +106,15 @@ export function App() {
         <span className="src">{place}</span>
       </div>
 
-      <LageMap coords={coords} traffic={traffic.data?.data ?? []} pegel={pegel.data?.data ?? []} />
+      <LageMap
+        coords={coords}
+        traffic={traffic.data?.data ?? []}
+        pegel={pegel.data?.data ?? []}
+        onViewport={setViewport}
+      />
+      <p className="map-hint">
+        Karte und Kacheln zeigen den <b>sichtbaren Ausschnitt</b> — heraus­zoomen für die Gesamtlage.
+      </p>
 
       <section className="tiles">
         <Tile title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder" onOpen={w ? () => setDetail('weather') : undefined}>
@@ -146,7 +166,7 @@ export function App() {
           badgeKind="alert"
           onOpen={traffic.data ? () => setDetail('traffic') : undefined}
         >
-          <Loader state={traffic} empty="Keine Meldungen in der Nähe.">
+          <Loader state={traffic} empty="Keine Meldungen im Ausschnitt.">
             <ul className="list">
               {traffic.data?.data.slice(0, 4).map((t) => (
                 <li className="line-item" key={t.id}>
@@ -160,7 +180,7 @@ export function App() {
         </Tile>
 
         <Tile title="Pegel" source={pegel.data?.source} cached={pegel.fromCache} onOpen={pegel.data ? () => setDetail('pegel') : undefined}>
-          <Loader state={pegel} empty="Keine Messstelle in der Nähe.">
+          <Loader state={pegel} empty="Keine Messstelle im Ausschnitt.">
             <ul className="list">
               {pegel.data?.data.slice(0, 4).map((p, i) => (
                 <li className="line-item" key={p.station + i}>

@@ -66,7 +66,7 @@ export function AlertsDetail({ list }: { list: Warning[] }) {
 }
 
 export function TrafficDetail({ list }: { list: TrafficIncident[] }) {
-  if (list.length === 0) return <p className="muted">Keine Verkehrsmeldungen in der Nähe.</p>;
+  if (list.length === 0) return <p className="muted">Keine Verkehrsmeldungen im Kartenausschnitt.</p>;
   return (
     <div className="detail-list">
       {list.map((t) => (
@@ -87,7 +87,7 @@ export function TrafficDetail({ list }: { list: TrafficIncident[] }) {
 }
 
 export function PegelDetail({ list }: { list: WaterLevel[] }) {
-  if (list.length === 0) return <p className="muted">Keine Messstelle in der Nähe.</p>;
+  if (list.length === 0) return <p className="muted">Keine Messstelle im Kartenausschnitt.</p>;
   return (
     <div className="details">
       {list.map((p, i) => (

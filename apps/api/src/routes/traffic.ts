@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { TrafficIncident } from '@lagebild/shared';
-import { readCoords } from '../lib/geo.js';
+import { readCoords, readBbox, inBbox } from '../lib/geo.js';
 import { cached } from '../lib/cache.js';
 import { fetchJson } from '../lib/http.js';
 import { envelope } from '../lib/envelope.js';
@@ -77,18 +77,25 @@ async function loadAllWarnings(): Promise<TrafficIncident[]> {
 }
 
 trafficRoute.get('/', async (c) => {
+  const bbox = readBbox(c);
   const coords = readCoords(c);
-  if (!coords) return c.json({ error: 'lat und lon erforderlich' }, 400);
-  const radiusKm = Math.min(Number(c.req.query('radiusKm') ?? 50) || 50, 200);
+  if (!bbox && !coords) return c.json({ error: 'bbox oder lat/lon erforderlich' }, 400);
 
-  const all = await loadAllWarnings();
+  const all = (await loadAllWarnings()).filter((i) => i.coordinates);
+
+  // Kartenausschnitt: alle Meldungen im sichtbaren Bereich (bis 400).
+  if (bbox) {
+    const within = all.filter((i) => inBbox(i.coordinates!, bbox)).slice(0, 400);
+    return c.json(envelope(within, 'Autobahn GmbH (bund.dev)'));
+  }
+
+  // Fallback: Umkreis um einen Punkt.
+  const radiusKm = Math.min(Number(c.req.query('radiusKm') ?? 50) || 50, 200);
   const near = all
-    .filter((i) => i.coordinates)
-    .map((i) => ({ i, d: distanceKm(coords, i.coordinates!) }))
+    .map((i) => ({ i, d: distanceKm(coords!, i.coordinates!) }))
     .filter((x) => x.d <= radiusKm)
     .sort((a, b) => a.d - b.d)
     .slice(0, 30)
     .map((x) => x.i);
-
   return c.json(envelope(near, 'Autobahn GmbH (bund.dev)'));
 });

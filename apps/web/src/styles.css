@@ -71,7 +71,9 @@ svg { display: block; }
 .offline-tag + .badge { margin-left: 8px; }
 
 /* ---------- map ---------- */
-.mapwrap { position: relative; border: 1px solid var(--line-strong); border-radius: var(--r); overflow: hidden; margin-bottom: 12px; }
+.mapwrap { position: relative; border: 1px solid var(--line-strong); border-radius: var(--r); overflow: hidden; }
+.map-hint { font-size: .74rem; color: var(--muted); margin: 7px 2px 12px; }
+.map-hint b { color: var(--ink); font-weight: 600; }
 .lagemap { width: 100%; height: 340px; }
 @media (max-width: 560px) { .lagemap { height: 300px; } }
 .maptools { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; z-index: 1; }

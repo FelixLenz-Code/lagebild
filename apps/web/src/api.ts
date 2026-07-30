@@ -17,18 +17,30 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-const q = (c: Coords) => `lat=${c.lat}&lon=${c.lon}`;
+/** Kartenausschnitt (WGS84). */
+export interface Bbox {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}
 
+const q = (c: Coords) => `lat=${c.lat}&lon=${c.lon}`;
+const bboxQ = (b: Bbox) =>
+  `bbox=${b.west.toFixed(3)},${b.south.toFixed(3)},${b.east.toFixed(3)},${b.north.toFixed(3)}`;
+
+// Punktbezogen (dein Standort):
 export const fetchWeather = (c: Coords): Promise<ApiEnvelope<WeatherNow>> =>
   getJson(`/api/weather?${q(c)}`);
 
 export const fetchAlerts = (c: Coords): Promise<ApiEnvelope<Warning[]>> =>
   getJson(`/api/alerts?${q(c)}`);
 
-export const fetchTraffic = (c: Coords): Promise<ApiEnvelope<TrafficIncident[]>> =>
-  getJson(`/api/traffic?${q(c)}`);
-
-export const fetchPegel = (c: Coords): Promise<ApiEnvelope<WaterLevel[]>> =>
-  getJson(`/api/pegel?${q(c)}`);
-
 export const fetchNews = (): Promise<ApiEnvelope<NewsItem[]>> => getJson(`/api/news`);
+
+// Kartenausschnitt-bezogen (alles im sichtbaren Bereich):
+export const fetchTraffic = (b: Bbox): Promise<ApiEnvelope<TrafficIncident[]>> =>
+  getJson(`/api/traffic?${bboxQ(b)}`);
+
+export const fetchPegel = (b: Bbox): Promise<ApiEnvelope<WaterLevel[]>> =>
+  getJson(`/api/pegel?${bboxQ(b)}`);

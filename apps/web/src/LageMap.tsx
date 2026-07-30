@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type Map as MlMap, type Marker, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Coords, TrafficIncident, WaterLevel } from '@lagebild/shared';
+import type { Bbox } from './api.js';
 
 // Reine Raster-Karte auf Basis der OpenStreetMap-Kacheln — ohne API-Key.
 // Für den Offline-Betrieb pro Bundesland später gegen Vektor-Kacheln (PMTiles) tauschen.
@@ -31,13 +32,16 @@ interface Props {
   coords: Coords;
   traffic: TrafficIncident[];
   pegel: WaterLevel[];
+  onViewport: (b: Bbox) => void;
 }
 
-export function LageMap({ coords, traffic, pegel }: Props) {
+export function LageMap({ coords, traffic, pegel, onViewport }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const userMarker = useRef<Marker | null>(null);
   const dataMarkers = useRef<Marker[]>([]);
+  const onViewportRef = useRef(onViewport);
+  onViewportRef.current = onViewport;
   const [ready, setReady] = useState(false);
   const [showTraffic, setShowTraffic] = useState(true);
   const [showPegel, setShowPegel] = useState(true);
@@ -53,9 +57,26 @@ export function LageMap({ coords, traffic, pegel }: Props) {
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-    map.on('load', () => setReady(true));
+
+    // Sichtbaren Ausschnitt melden (entprellt), damit die Daten dem Zoom folgen.
+    const emit = () => {
+      const b = map.getBounds();
+      onViewportRef.current({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() });
+    };
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    const onMoveEnd = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(emit, 400);
+    };
+    map.on('load', () => {
+      setReady(true);
+      emit();
+    });
+    map.on('moveend', onMoveEnd);
+
     mapRef.current = map;
     return () => {
+      clearTimeout(debounce);
       map.remove();
       mapRef.current = null;
       setReady(false);
