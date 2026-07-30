@@ -227,7 +227,9 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }:
     if (showRadar && radar && frames.length > 0) {
       if (!map.getSource('radar')) {
         const url = radarTileUrl(radar.host, frames[Math.min(radarIdx, frames.length - 1)]!.path);
-        map.addSource('radar', { type: 'raster', tiles: [url], tileSize: 256 });
+        // maxzoom deckelt die Anfragen: darüber skaliert MapLibre hoch, statt
+        // RainViewers "zoom level not supported"-Kacheln zu laden.
+        map.addSource('radar', { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 11 });
         const beforeId = map.getLayer('warnings-fill') ? 'warnings-fill' : undefined;
         map.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': 0.7 } }, beforeId);
       }

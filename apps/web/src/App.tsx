@@ -116,19 +116,19 @@ export function App() {
         <span className="src">{place}</span>
       </div>
 
-      <LageMap
-        coords={coords}
-        warnings={warnings.data?.data ?? []}
-        traffic={traffic.data?.data ?? []}
-        pegel={pegel.data?.data ?? []}
-        radar={radar.data?.data ?? null}
-        onViewport={setViewport}
-      />
-      <p className="map-hint">
-        Karte und Kacheln zeigen den <b>sichtbaren Ausschnitt</b> — heraus­zoomen für die Gesamtlage.
-      </p>
+      <div className="layout">
+        <div className="map-col">
+          <LageMap
+            coords={coords}
+            warnings={warnings.data?.data ?? []}
+            traffic={traffic.data?.data ?? []}
+            pegel={pegel.data?.data ?? []}
+            radar={radar.data?.data ?? null}
+            onViewport={setViewport}
+          />
+        </div>
 
-      <section className="tiles">
+        <section className="tiles-col">
         <Tile title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder" onOpen={w ? () => setDetail('weather') : undefined}>
           {!w && weather.loading && <p className="muted">Lade …</p>}
           {!w && weather.error && <p className="err">{weather.error}</p>}
@@ -249,7 +249,8 @@ export function App() {
             </>
           )}
         </Tile>
-      </section>
+        </section>
+      </div>
 
       {detail && (
         <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>
