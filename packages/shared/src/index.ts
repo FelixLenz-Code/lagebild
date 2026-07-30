@@ -129,6 +129,28 @@ export interface RadarData {
   frames: RadarFrame[];
 }
 
+/** Eine Abfahrt an einem Halt (DB/ÖPNV) mit Echtzeit-Verspätung. */
+export interface TransitDeparture {
+  line: string;
+  product: string | null;
+  direction: string;
+  when: string | null;
+  plannedWhen: string | null;
+  delayMin: number | null;
+  platform: string | null;
+  cancelled: boolean;
+  remark?: string;
+}
+
+/** Ein Halt in der Nähe mit seinen nächsten Abfahrten. */
+export interface TransitStop {
+  id: string;
+  name: string;
+  distanceM: number | null;
+  coordinates: Coords | null;
+  departures: TransitDeparture[];
+}
+
 /** Nachrichten-/Ereignismeldung (Tagesschau). */
 export interface NewsItem {
   id: string;

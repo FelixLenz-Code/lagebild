@@ -1,7 +1,8 @@
-import type { WeatherNow, WarningFeature, TrafficIncident, WaterLevel, NewsItem, AirQuality } from '@lagebild/shared';
+import type { WeatherNow, WarningFeature, TrafficIncident, WaterLevel, NewsItem, AirQuality, TransitStop } from '@lagebild/shared';
 import {
   relativeTime,
   timeUntil,
+  timeHM,
   formatDateTime,
   compass,
   CONDITION_DE,
@@ -98,6 +99,39 @@ export function PegelDetail({ list }: { list: WaterLevel[] }) {
           <div className="dl">{p.water}</div>
           <div className="dv mono">{p.levelCm != null ? `${p.levelCm} cm` : '–'}</div>
           <div className="detail-sub">{p.station} · {relativeTime(p.measuredAt)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function TransitDetail({ stops }: { stops: TransitStop[] }) {
+  const withData = stops.filter((s) => s.departures.length > 0);
+  if (withData.length === 0)
+    return <p className="muted">Keine Abfahrten in der Nähe (Dienst evtl. nicht erreichbar).</p>;
+  return (
+    <div className="detail-list">
+      {withData.map((s) => (
+        <div className="alert-block" key={s.id}>
+          <div className="alert-top">
+            <b>{s.name}</b>
+            {s.distanceM != null && <span className="alert-meta mono">{Math.round(s.distanceM)} m</span>}
+          </div>
+          <div className="dep-list">
+            {s.departures.map((d, i) => (
+              <div className="dep" key={i}>
+                <span className="line-pill">{d.line}</span>
+                <span className="dep-dir">{d.direction}</span>
+                <span
+                  className={`dep-time mono${d.cancelled ? ' cancelled' : d.delayMin && d.delayMin >= 1 ? ' late' : ''}`}
+                >
+                  {d.cancelled
+                    ? 'fällt aus'
+                    : `${timeHM(d.when ?? d.plannedWhen)}${d.delayMin ? ` +${d.delayMin}` : ''}`}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>

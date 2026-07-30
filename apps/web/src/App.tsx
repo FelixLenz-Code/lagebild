@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchTransit, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
 import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
-import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail } from './details.js';
-import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE, AIR_DE, AIR_COLOR } from './format.js';
+import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail, TransitDetail } from './details.js';
+import { relativeTime, timeUntil, timeHM, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE, AIR_DE, AIR_COLOR } from './format.js';
 
-type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'air';
+type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'air' | 'transit';
 
 /** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
 function boxAround(c: { lat: number; lon: number }): Bbox {
@@ -81,8 +81,15 @@ export function App() {
   const traffic = useApi(`traffic:${viewKey}`, () => fetchTraffic(viewport), [viewKey]);
   const pegel = useApi(`pegel:${viewKey}`, () => fetchPegel(viewport), [viewKey]);
   const air = useApi(`air:${geoKey}`, () => fetchAir(coords), [coords]);
+  const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords]);
   const radar = useApi('radar', () => fetchRadar());
   const news = useApi('news', () => fetchNews());
+
+  const transitStops = transit.data?.data ?? [];
+  const transitDisruptions = transitStops
+    .flatMap((s) => s.departures)
+    .filter((d) => d.cancelled || (d.delayMin ?? 0) >= 5 || d.remark).length;
+  const nearestStop = transitStops.find((s) => s.departures.length > 0);
 
   // Eine Warnung liegt als viele Gemeinde-Flächen vor → für Liste/Detail entdoppeln.
   const uniqueWarnings = useMemo(() => {
@@ -92,7 +99,7 @@ export function App() {
   }, [warnings.data]);
 
   const lastSync = weather.savedAt;
-  const anyCached = [weather, warnings, traffic, pegel, air, news].some((s) => s.fromCache);
+  const anyCached = [weather, warnings, traffic, pegel, air, transit, news].some((s) => s.fromCache);
 
   const [detail, setDetail] = useState<DetailKey | null>(null);
 
@@ -102,6 +109,7 @@ export function App() {
     traffic: { title: 'Verkehr im Ausschnitt', source: traffic.data?.source, savedAt: traffic.savedAt },
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
     air: { title: `Luftqualität — ${place}`, source: air.data?.source, savedAt: air.savedAt },
+    transit: { title: 'Bahn / ÖPNV in der Nähe', source: transit.data?.source, savedAt: transit.savedAt },
     news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
   };
   const detailMeta = (k: DetailKey) => {
@@ -237,6 +245,36 @@ export function App() {
           </Loader>
         </Tile>
 
+        <Tile
+          title="Bahn / ÖPNV"
+          source={transit.data?.source}
+          cached={transit.fromCache}
+          badge={transitDisruptions > 0 ? `${transitDisruptions} Störung` : undefined}
+          badgeKind="warn"
+          onOpen={transitStops.length ? () => setDetail('transit') : undefined}
+        >
+          {!transit.data && transit.loading && <p className="muted">Lade …</p>}
+          {transit.data && !nearestStop && <p className="muted">Keine ÖPNV-Daten in der Nähe.</p>}
+          {nearestStop && (
+            <>
+              <div className="stop-name">{nearestStop.name}</div>
+              <ul className="list">
+                {nearestStop.departures.slice(0, 3).map((d, i) => (
+                  <li className="line-item" key={i}>
+                    <span className="line-pill">{d.line}</span>
+                    <span className="t">{d.direction}</span>
+                    <span className={`meta${d.cancelled || (d.delayMin ?? 0) >= 1 ? ' late' : ''}`}>
+                      {d.cancelled
+                        ? 'fällt aus'
+                        : `${timeHM(d.when ?? d.plannedWhen)}${d.delayMin ? ` +${d.delayMin}` : ''}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Tile>
+
         <Tile title="News" source={news.data?.source} cached={news.fromCache} wide onOpen={news.data ? () => setDetail('news') : undefined}>
           <Loader state={news} empty="Keine Meldungen.">
             <ul className="news">
@@ -308,6 +346,7 @@ export function App() {
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
           {detail === 'air' && air.data && <AirDetail air={air.data.data} />}
+          {detail === 'transit' && <TransitDetail stops={transitStops} />}
           {detail === 'news' && news.data && <NewsDetail list={news.data.data} />}
         </Sheet>
       )}

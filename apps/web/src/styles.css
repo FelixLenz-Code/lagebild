@@ -266,3 +266,14 @@ svg { display: block; }
 .pp-action { display: inline-flex; align-items: center; gap: 7px; padding: 9px 12px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; font-size: .82rem; font-weight: 600; }
 .pp-action svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
 .pp-action:hover { border-color: var(--accent); }
+
+/* ---------- transit (Bahn/ÖPNV) ---------- */
+.stop-name { font-size: .9rem; font-weight: 600; }
+.line-pill { display: inline-flex; align-items: center; font-size: .68rem; font-weight: 700; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); padding: 2px 6px; border-radius: 3px; flex: none; }
+.line-item .meta.late { color: var(--sev2); font-weight: 600; }
+.dep-list { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
+.dep { display: flex; align-items: center; gap: 9px; font-size: .84rem; }
+.dep-dir { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dep-time { color: var(--muted); white-space: nowrap; }
+.dep-time.late { color: var(--sev2); font-weight: 600; }
+.dep-time.cancelled { color: var(--sev3); font-weight: 600; }

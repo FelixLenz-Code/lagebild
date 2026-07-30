@@ -25,6 +25,11 @@ export function compass(deg: number | null): string {
   return COMPASS[Math.round(deg / 45) % 8]!;
 }
 
+export function timeHM(iso: string | null): string {
+  if (!iso) return '–';
+  return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
 export function formatDateTime(iso: string | null): string {
   if (!iso) return '–';
   return new Date(iso).toLocaleString('de-DE', {

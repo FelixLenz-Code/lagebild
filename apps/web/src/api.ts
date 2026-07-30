@@ -8,6 +8,7 @@ import type {
   AirQuality,
   RadarData,
   GeoResult,
+  TransitStop,
   Coords,
 } from '@lagebild/shared';
 
@@ -40,6 +41,9 @@ export const fetchNews = (): Promise<ApiEnvelope<NewsItem[]>> => getJson(`/api/n
 
 export const fetchAir = (c: Coords): Promise<ApiEnvelope<AirQuality>> =>
   getJson(`/api/air?${q(c)}`);
+
+export const fetchTransit = (c: Coords): Promise<ApiEnvelope<TransitStop[]>> =>
+  getJson(`/api/transit?${q(c)}`);
 
 export const fetchRadar = (): Promise<ApiEnvelope<RadarData>> => getJson(`/api/radar`);
 

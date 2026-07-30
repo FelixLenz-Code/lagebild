@@ -14,6 +14,7 @@ import { pegelRoute } from './routes/pegel.js';
 import { airRoute } from './routes/air.js';
 import { radarRoute } from './routes/radar.js';
 import { geocodeRoute } from './routes/geocode.js';
+import { transitRoute } from './routes/transit.js';
 
 const app = new Hono();
 
@@ -33,6 +34,7 @@ app.route('/api/pegel', pegelRoute);
 app.route('/api/air', airRoute);
 app.route('/api/radar', radarRoute);
 app.route('/api/geocode', geocodeRoute);
+app.route('/api/transit', transitRoute);
 
 // --- statisches PWA-Bundle (nur wenn gebaut vorhanden) ---
 if (existsSync(config.webRoot)) {

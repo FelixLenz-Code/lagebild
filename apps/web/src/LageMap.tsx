@@ -9,7 +9,7 @@ import maplibregl, {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity, RadarData } from '@lagebild/shared';
 import type { Bbox } from './api.js';
-import { SEVERITY_DE, radarTimeLabel } from './format.js';
+import { SEVERITY_DE, TRAFFIC_DE, formatDateTime, radarTimeLabel } from './format.js';
 
 /** Kachel-URL eines RainViewer-Radar-Frames (Farbschema 4, geglättet). */
 function radarTileUrl(host: string, path: string): string {
@@ -38,6 +38,29 @@ const ALL_SEVERITIES: Severity[] = ['minor', 'moderate', 'severe', 'extreme'];
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
+}
+
+function trafficPopupHtml(t: TrafficIncident): string {
+  const color = t.kind === 'closure' ? '#a92318' : t.kind === 'jam' ? '#c96f0f' : '#b58a10';
+  return (
+    `<div class="warn-popup">` +
+    `<span class="wp-sev" style="background:${color}">${esc(TRAFFIC_DE[t.kind] ?? t.kind)}</span>` +
+    `<b>${esc(t.title)}</b>` +
+    (t.startsAt ? `<div class="wp-meta">seit ${esc(formatDateTime(t.startsAt))}</div>` : '') +
+    (t.description ? `<p class="wp-desc">${esc(t.description)}</p>` : '') +
+    `</div>`
+  );
+}
+
+function pegelPopupHtml(p: WaterLevel): string {
+  const level = p.levelCm != null ? `${p.levelCm} cm` : '–';
+  return (
+    `<div class="warn-popup">` +
+    `<b>${esc(p.station)}</b>` +
+    (p.water ? `<div class="wp-region">${esc(p.water)}</div>` : '') +
+    `<p class="wp-desc">Wasserstand: ${esc(level)}${p.measuredAt ? ` · ${esc(formatDateTime(p.measuredAt))}` : ''}</p>` +
+    `</div>`
+  );
 }
 
 function warningPopupHtml(w: WarningFeature): string {
@@ -271,7 +294,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }:
         const color = t.kind === 'closure' ? 'var(--sev3)' : 'var(--sev2)';
         const m = new maplibregl.Marker({ element: markerEl(color, 13) })
           .setLngLat([t.coordinates.lon, t.coordinates.lat])
-          .setPopup(new maplibregl.Popup({ offset: 12 }).setText(t.title))
+          .setPopup(new maplibregl.Popup({ offset: 12, maxWidth: '300px' }).setHTML(trafficPopupHtml(t)))
           .addTo(map);
         dataMarkers.current.push(m);
       }
@@ -279,10 +302,9 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }:
     if (showPegel) {
       for (const p of pegel) {
         if (!p.coordinates) continue;
-        const label = `${p.station}: ${p.levelCm != null ? `${p.levelCm} cm` : '–'}`;
         const m = new maplibregl.Marker({ element: markerEl('var(--accent)', 12) })
           .setLngLat([p.coordinates.lon, p.coordinates.lat])
-          .setPopup(new maplibregl.Popup({ offset: 12 }).setText(label))
+          .setPopup(new maplibregl.Popup({ offset: 12, maxWidth: '300px' }).setHTML(pegelPopupHtml(p)))
           .addTo(map);
         dataMarkers.current.push(m);
       }
