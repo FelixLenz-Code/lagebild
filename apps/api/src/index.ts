@@ -6,6 +6,10 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { config } from './config.js';
 import { weatherRoute } from './routes/weather.js';
+import { alertsRoute } from './routes/alerts.js';
+import { trafficRoute } from './routes/traffic.js';
+import { newsRoute } from './routes/news.js';
+import { pegelRoute } from './routes/pegel.js';
 
 const app = new Hono();
 
@@ -17,6 +21,10 @@ app.get('/api/health', (c) =>
   c.json({ ok: true, service: 'lagebild-api', ts: new Date().toISOString() }),
 );
 app.route('/api/weather', weatherRoute);
+app.route('/api/alerts', alertsRoute);
+app.route('/api/traffic', trafficRoute);
+app.route('/api/news', newsRoute);
+app.route('/api/pegel', pegelRoute);
 
 // --- statisches PWA-Bundle (nur wenn gebaut vorhanden) ---
 if (existsSync(config.webRoot)) {

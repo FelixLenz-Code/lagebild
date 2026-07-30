@@ -1,40 +1,18 @@
-import { useEffect, useState } from 'react';
-import type { ApiEnvelope, WeatherNow } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather } from './api.js';
+import type { ReactNode } from 'react';
+import { DEFAULT_COORDS, fetchWeather, fetchAlerts, fetchTraffic, fetchPegel, fetchNews } from './api.js';
+import { useApi } from './useApi.js';
+import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE } from './format.js';
 
-const CONDITION_DE: Record<string, string> = {
-  dry: 'Trocken',
-  fog: 'Nebel',
-  rain: 'Regen',
-  sleet: 'Schneeregen',
-  snow: 'Schnee',
-  hail: 'Hagel',
-  thunderstorm: 'Gewitter',
-  'clear-day': 'Klar',
-  'clear-night': 'Klar',
-  'partly-cloudy-day': 'Teils bewölkt',
-  'partly-cloudy-night': 'Teils bewölkt',
-  cloudy: 'Bewölkt',
-};
-
-function relativeTime(iso: string): string {
-  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return 'gerade eben';
-  if (mins < 60) return `vor ${mins} Min.`;
-  return `vor ${Math.round(mins / 60)} Std.`;
-}
+const coords = DEFAULT_COORDS;
 
 export function App() {
-  const [weather, setWeather] = useState<ApiEnvelope<WeatherNow> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const weather = useApi(() => fetchWeather(coords));
+  const alerts = useApi(() => fetchAlerts(coords));
+  const traffic = useApi(() => fetchTraffic(coords));
+  const pegel = useApi(() => fetchPegel(coords));
+  const news = useApi(() => fetchNews());
 
-  useEffect(() => {
-    fetchWeather(DEFAULT_COORDS)
-      .then(setWeather)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Fehler'));
-  }, []);
-
-  const w = weather?.data;
+  const w = weather.data?.data;
 
   return (
     <div className="app">
@@ -55,29 +33,21 @@ export function App() {
 
       <div className="statusline">
         <span className="live"><i />LIVE</span>
-        <span>
-          {weather ? `Aktualisiert ${relativeTime(weather.fetchedAt)}` : 'Lade …'}
-        </span>
+        <span>{weather.data ? `Aktualisiert ${relativeTime(weather.data.fetchedAt)}` : 'Lade …'}</span>
         <span className="src">Berlin-Mitte</span>
       </div>
 
       <section className="tiles">
-        <article className="tile warnborder">
-          <div className="head">
-            <h3>Wetter</h3>
-            <span className="src-tag">{weather?.source ?? '—'}</span>
-          </div>
-          {error && <p className="err">Konnte Wetter nicht laden: {error}</p>}
-          {!error && !w && <p className="muted">Lade Wetterdaten …</p>}
+        <Tile title="Wetter" source={weather.data?.source} warn className="warnborder">
+          {weather.loading && <p className="muted">Lade …</p>}
+          {weather.error && <p className="err">{weather.error}</p>}
           {w && (
             <>
               <div className="wx-main">
                 <span className="wx-temp">{w.tempC != null ? `${Math.round(w.tempC)}°` : '–'}</span>
                 <div>
                   <div className="wx-cond">{w.condition ? (CONDITION_DE[w.condition] ?? w.condition) : 'Unbekannt'}</div>
-                  <div className="wx-sub">
-                    {w.observedAt ? `Messung ${relativeTime(w.observedAt)}` : ''}
-                  </div>
+                  <div className="wx-sub">{w.observedAt ? `Messung ${relativeTime(w.observedAt)}` : ''}</div>
                 </div>
               </div>
               <div className="wx-row">
@@ -86,21 +56,110 @@ export function App() {
               </div>
             </>
           )}
-        </article>
+        </Tile>
 
-        <article className="tile pending">
-          <div className="head"><h3>Regenradar</h3></div>
-          <p className="muted">In Arbeit — folgt.</p>
-        </article>
-        <article className="tile pending">
-          <div className="head"><h3>Warnungen</h3></div>
-          <p className="muted">In Arbeit — folgt.</p>
-        </article>
-        <article className="tile pending">
-          <div className="head"><h3>Verkehr</h3></div>
-          <p className="muted">In Arbeit — folgt.</p>
-        </article>
+        <Tile
+          title="Warnungen"
+          source={alerts.data?.source}
+          badge={alerts.data ? (alerts.data.data.length ? `${alerts.data.data.length} aktiv` : 'keine') : undefined}
+          badgeKind={alerts.data?.data.length ? 'warn' : 'ok'}
+        >
+          <Loader state={alerts} empty="Keine amtlichen Warnungen.">
+            <ul className="list">
+              {alerts.data?.data.slice(0, 4).map((a) => (
+                <li className="line-item" key={a.id}>
+                  <span className="sv" style={{ background: SEVERITY_VAR[a.severity] }} />
+                  <span className="t">{a.event}</span>
+                  <span className="meta">{SEVERITY_DE[a.severity]}{a.expires ? ` · bis ${timeUntil(a.expires)}` : ''}</span>
+                </li>
+              ))}
+            </ul>
+          </Loader>
+        </Tile>
+
+        <Tile
+          title="Verkehr"
+          source={traffic.data?.source}
+          badge={traffic.data?.data.length ? `${traffic.data.data.length}` : undefined}
+          badgeKind="alert"
+        >
+          <Loader state={traffic} empty="Keine Meldungen in der Nähe.">
+            <ul className="list">
+              {traffic.data?.data.slice(0, 4).map((t) => (
+                <li className="line-item" key={t.id}>
+                  <span className="sv" style={{ background: t.kind === 'closure' ? 'var(--sev3)' : 'var(--sev2)' }} />
+                  <span className="t">{t.title}</span>
+                  <span className="meta">{TRAFFIC_DE[t.kind] ?? t.kind}</span>
+                </li>
+              ))}
+            </ul>
+          </Loader>
+        </Tile>
+
+        <Tile title="Pegel" source={pegel.data?.source}>
+          <Loader state={pegel} empty="Keine Messstelle in der Nähe.">
+            <ul className="list">
+              {pegel.data?.data.slice(0, 4).map((p, i) => (
+                <li className="line-item" key={p.station + i}>
+                  <span className="t">{p.station}</span>
+                  <span className="meta"><b>{p.levelCm != null ? `${p.levelCm} cm` : '–'}</b></span>
+                </li>
+              ))}
+            </ul>
+          </Loader>
+        </Tile>
+
+        <Tile title="News" source={news.data?.source} wide>
+          <Loader state={news} empty="Keine Meldungen.">
+            <ul className="news">
+              {news.data?.data.slice(0, 5).map((n) => (
+                <li className="news-item" key={n.id}>
+                  <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
+                  <span className="tm">{n.topic ? `${n.topic} · ` : ''}{relativeTime(n.publishedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          </Loader>
+        </Tile>
+
+        <Tile title="Regenradar" pending>
+          <p className="muted">Karte folgt — als Nächstes.</p>
+        </Tile>
       </section>
     </div>
   );
+}
+
+function Tile(props: {
+  title: string;
+  source?: string;
+  badge?: string;
+  badgeKind?: 'warn' | 'ok' | 'alert';
+  warn?: boolean;
+  wide?: boolean;
+  pending?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const cls = ['tile'];
+  if (props.className) cls.push(props.className);
+  if (props.wide) cls.push('wide');
+  if (props.pending) cls.push('pending');
+  return (
+    <article className={cls.join(' ')}>
+      <div className="head">
+        <h3>{props.title}</h3>
+        {props.badge && <span className={`badge ${props.badgeKind ?? 'warn'}`}>{props.badge}</span>}
+        {props.source && !props.badge && <span className="src-tag">{props.source}</span>}
+      </div>
+      {props.children}
+    </article>
+  );
+}
+
+function Loader<T>(props: { state: { loading: boolean; error: string | null; data: { data: T[] } | null }; empty: string; children: ReactNode }) {
+  if (props.state.loading) return <p className="muted">Lade …</p>;
+  if (props.state.error) return <p className="err">{props.state.error}</p>;
+  if (props.state.data && props.state.data.data.length === 0) return <p className="muted">{props.empty}</p>;
+  return <>{props.children}</>;
 }
