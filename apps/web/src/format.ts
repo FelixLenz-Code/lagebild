@@ -19,6 +19,22 @@ export function timeUntil(iso: string | null): string {
   return `${hrs} Std.`;
 }
 
+const COMPASS = ['N', 'NO', 'O', 'SO', 'S', 'SW', 'W', 'NW'];
+export function compass(deg: number | null): string {
+  if (deg == null) return '–';
+  return COMPASS[Math.round(deg / 45) % 8]!;
+}
+
+export function formatDateTime(iso: string | null): string {
+  if (!iso) return '–';
+  return new Date(iso).toLocaleString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export const CONDITION_DE: Record<string, string> = {
   dry: 'Trocken',
   fog: 'Nebel',

@@ -1,9 +1,13 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords } from '@lagebild/shared';
 import { DEFAULT_COORDS, fetchWeather, fetchAlerts, fetchTraffic, fetchPegel, fetchNews } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
+import { Sheet } from './Sheet.js';
+import { WeatherDetail, AlertsDetail, TrafficDetail, PegelDetail, NewsDetail } from './details.js';
 import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE } from './format.js';
+
+type DetailKey = 'weather' | 'alerts' | 'traffic' | 'pegel' | 'news';
 
 export function App() {
   const [coords, setCoords] = useState<Coords>(DEFAULT_COORDS);
@@ -46,6 +50,22 @@ export function App() {
   const lastSync = weather.savedAt;
   const anyCached = [weather, alerts, traffic, pegel, news].some((s) => s.fromCache);
 
+  const [detail, setDetail] = useState<DetailKey | null>(null);
+
+  const detailInfo: Record<DetailKey, { title: string; source?: string; savedAt: number | null }> = {
+    weather: { title: `Wetter — ${place}`, source: weather.data?.source, savedAt: weather.savedAt },
+    alerts: { title: 'Amtliche Warnungen', source: alerts.data?.source, savedAt: alerts.savedAt },
+    traffic: { title: 'Verkehr in der Nähe', source: traffic.data?.source, savedAt: traffic.savedAt },
+    pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
+    news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
+  };
+  const detailMeta = (k: DetailKey) => {
+    const info = detailInfo[k];
+    const parts = [info.source];
+    if (info.savedAt) parts.push(`aktualisiert ${relativeTime(new Date(info.savedAt).toISOString())}`);
+    return parts.filter(Boolean).join(' · ');
+  };
+
   const w = weather.data?.data;
 
   return (
@@ -77,7 +97,7 @@ export function App() {
       <LageMap coords={coords} traffic={traffic.data?.data ?? []} pegel={pegel.data?.data ?? []} />
 
       <section className="tiles">
-        <Tile title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder">
+        <Tile title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder" onOpen={w ? () => setDetail('weather') : undefined}>
           {!w && weather.loading && <p className="muted">Lade …</p>}
           {!w && weather.error && <p className="err">{weather.error}</p>}
           {w && (
@@ -103,6 +123,7 @@ export function App() {
           cached={alerts.fromCache}
           badge={alerts.data ? (alerts.data.data.length ? `${alerts.data.data.length} aktiv` : 'keine') : undefined}
           badgeKind={alerts.data?.data.length ? 'warn' : 'ok'}
+          onOpen={alerts.data ? () => setDetail('alerts') : undefined}
         >
           <Loader state={alerts} empty="Keine amtlichen Warnungen.">
             <ul className="list">
@@ -123,6 +144,7 @@ export function App() {
           cached={traffic.fromCache}
           badge={traffic.data?.data.length ? `${traffic.data.data.length}` : undefined}
           badgeKind="alert"
+          onOpen={traffic.data ? () => setDetail('traffic') : undefined}
         >
           <Loader state={traffic} empty="Keine Meldungen in der Nähe.">
             <ul className="list">
@@ -137,7 +159,7 @@ export function App() {
           </Loader>
         </Tile>
 
-        <Tile title="Pegel" source={pegel.data?.source} cached={pegel.fromCache}>
+        <Tile title="Pegel" source={pegel.data?.source} cached={pegel.fromCache} onOpen={pegel.data ? () => setDetail('pegel') : undefined}>
           <Loader state={pegel} empty="Keine Messstelle in der Nähe.">
             <ul className="list">
               {pegel.data?.data.slice(0, 4).map((p, i) => (
@@ -150,7 +172,7 @@ export function App() {
           </Loader>
         </Tile>
 
-        <Tile title="News" source={news.data?.source} cached={news.fromCache} wide>
+        <Tile title="News" source={news.data?.source} cached={news.fromCache} wide onOpen={news.data ? () => setDetail('news') : undefined}>
           <Loader state={news} empty="Keine Meldungen.">
             <ul className="news">
               {news.data?.data.slice(0, 5).map((n) => (
@@ -164,9 +186,19 @@ export function App() {
         </Tile>
 
         <Tile title="Regenradar" pending>
-          <p className="muted">Karte folgt — als Nächstes.</p>
+          <p className="muted">Radar-Layer folgt.</p>
         </Tile>
       </section>
+
+      {detail && (
+        <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>
+          {detail === 'weather' && w && <WeatherDetail w={w} />}
+          {detail === 'alerts' && alerts.data && <AlertsDetail list={alerts.data.data} />}
+          {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
+          {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
+          {detail === 'news' && news.data && <NewsDetail list={news.data.data} />}
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -180,19 +212,35 @@ function Tile(props: {
   wide?: boolean;
   pending?: boolean;
   className?: string;
+  onOpen?: () => void;
   children: ReactNode;
 }) {
   const cls = ['tile'];
   if (props.className) cls.push(props.className);
   if (props.wide) cls.push('wide');
   if (props.pending) cls.push('pending');
+  if (props.onOpen) cls.push('tap');
+  const interactive = props.onOpen
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick: props.onOpen,
+        onKeyDown: (e: ReactKeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            props.onOpen!();
+          }
+        },
+      }
+    : {};
   return (
-    <article className={cls.join(' ')}>
+    <article className={cls.join(' ')} {...interactive}>
       <div className="head">
         <h3>{props.title}</h3>
         {props.cached && <span className="offline-tag" title="Offline — letzter Stand">offline</span>}
         {props.badge && <span className={`badge ${props.badgeKind ?? 'warn'}`}>{props.badge}</span>}
         {props.source && !props.badge && !props.cached && <span className="src-tag">{props.source}</span>}
+        {props.onOpen && <span className="chevron" aria-hidden="true">›</span>}
       </div>
       {props.children}
     </article>
