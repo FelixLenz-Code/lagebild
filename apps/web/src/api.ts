@@ -1,7 +1,7 @@
 import type {
   ApiEnvelope,
   WeatherNow,
-  Warning,
+  WarningFeature,
   TrafficIncident,
   NewsItem,
   WaterLevel,
@@ -33,12 +33,12 @@ const bboxQ = (b: Bbox) =>
 export const fetchWeather = (c: Coords): Promise<ApiEnvelope<WeatherNow>> =>
   getJson(`/api/weather?${q(c)}`);
 
-export const fetchAlerts = (c: Coords): Promise<ApiEnvelope<Warning[]>> =>
-  getJson(`/api/alerts?${q(c)}`);
-
 export const fetchNews = (): Promise<ApiEnvelope<NewsItem[]>> => getJson(`/api/news`);
 
 // Kartenausschnitt-bezogen (alles im sichtbaren Bereich):
+export const fetchWarnings = (b: Bbox): Promise<ApiEnvelope<WarningFeature[]>> =>
+  getJson(`/api/warnings?${bboxQ(b)}`);
+
 export const fetchTraffic = (b: Bbox): Promise<ApiEnvelope<TrafficIncident[]>> =>
   getJson(`/api/traffic?${bboxQ(b)}`);
 

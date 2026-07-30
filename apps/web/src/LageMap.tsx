@@ -1,8 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type Map as MlMap, type Marker, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Coords, TrafficIncident, WaterLevel } from '@lagebild/shared';
+import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity } from '@lagebild/shared';
 import type { Bbox } from './api.js';
+
+const SEVERITY_COLOR: Record<Severity, string> = {
+  minor: '#b58a10',
+  moderate: '#c96f0f',
+  severe: '#a92318',
+  extreme: '#6c2790',
+};
+
+function warningsToGeoJson(features: WarningFeature[]) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: features.map((f) => ({
+      type: 'Feature' as const,
+      properties: { severity: f.severity, color: SEVERITY_COLOR[f.severity] },
+      geometry: f.geometry,
+    })),
+  };
+}
 
 // Reine Raster-Karte auf Basis der OpenStreetMap-Kacheln — ohne API-Key.
 // Für den Offline-Betrieb pro Bundesland später gegen Vektor-Kacheln (PMTiles) tauschen.
@@ -30,12 +48,13 @@ function markerEl(color: string, size = 16, ring = false): HTMLDivElement {
 
 interface Props {
   coords: Coords;
+  warnings: WarningFeature[];
   traffic: TrafficIncident[];
   pegel: WaterLevel[];
   onViewport: (b: Bbox) => void;
 }
 
-export function LageMap({ coords, traffic, pegel, onViewport }: Props) {
+export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const userMarker = useRef<Marker | null>(null);
@@ -43,6 +62,7 @@ export function LageMap({ coords, traffic, pegel, onViewport }: Props) {
   const onViewportRef = useRef(onViewport);
   onViewportRef.current = onViewport;
   const [ready, setReady] = useState(false);
+  const [showWarn, setShowWarn] = useState(true);
   const [showTraffic, setShowTraffic] = useState(true);
   const [showPegel, setShowPegel] = useState(true);
 
@@ -95,6 +115,43 @@ export function LageMap({ coords, traffic, pegel, onViewport }: Props) {
     userMarker.current.setLngLat([coords.lon, coords.lat]).addTo(map);
   }, [coords, ready]);
 
+  // Warn-Polygone: Quelle + Layer einmalig anlegen
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('warnings')) return;
+    map.addSource('warnings', { type: 'geojson', data: warningsToGeoJson(warnings) });
+    map.addLayer({
+      id: 'warnings-fill',
+      type: 'fill',
+      source: 'warnings',
+      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.28 },
+    });
+    map.addLayer({
+      id: 'warnings-line',
+      type: 'line',
+      source: 'warnings',
+      paint: { 'line-color': ['get', 'color'], 'line-width': 1.4 },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Warn-Daten aktualisieren
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('warnings') as maplibregl.GeoJSONSource | undefined;
+    src?.setData(warningsToGeoJson(warnings));
+  }, [warnings, ready]);
+
+  // Warn-Layer ein-/ausblenden
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const v = showWarn ? 'visible' : 'none';
+    if (map.getLayer('warnings-fill')) map.setLayoutProperty('warnings-fill', 'visibility', v);
+    if (map.getLayer('warnings-line')) map.setLayoutProperty('warnings-line', 'visibility', v);
+  }, [showWarn, ready]);
+
   // Daten-Marker (Verkehr, Pegel) neu aufbauen
   useEffect(() => {
     const map = mapRef.current;
@@ -130,6 +187,15 @@ export function LageMap({ coords, traffic, pegel, onViewport }: Props) {
     <div className="mapwrap">
       <div ref={containerRef} className="lagemap" />
       <div className="maptools">
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={showWarn}
+          onClick={() => setShowWarn((v) => !v)}
+        >
+          <span className="k" style={{ background: SEVERITY_COLOR.moderate }} />
+          Warnungen
+        </button>
         <button
           type="button"
           className="chip"

@@ -1,4 +1,4 @@
-import type { WeatherNow, Warning, TrafficIncident, WaterLevel, NewsItem } from '@lagebild/shared';
+import type { WeatherNow, WarningFeature, TrafficIncident, WaterLevel, NewsItem } from '@lagebild/shared';
 import {
   relativeTime,
   timeUntil,
@@ -42,8 +42,8 @@ export function WeatherDetail({ w }: { w: WeatherNow }) {
   );
 }
 
-export function AlertsDetail({ list }: { list: Warning[] }) {
-  if (list.length === 0) return <p className="muted">Keine amtlichen Warnungen für deinen Standort.</p>;
+export function WarningsDetail({ list }: { list: WarningFeature[] }) {
+  if (list.length === 0) return <p className="muted">Keine amtlichen Warnungen im Kartenausschnitt.</p>;
   return (
     <div className="detail-list">
       {list.map((a) => (
@@ -59,6 +59,7 @@ export function AlertsDetail({ list }: { list: Warning[] }) {
             {a.expires ? ` – ${formatDateTime(a.expires)} (in ${timeUntil(a.expires)})` : ''}
           </div>
           {a.description && <p className="alert-desc">{a.description}</p>}
+          {a.instruction && <p className="alert-desc alert-instruction">{a.instruction}</p>}
         </div>
       ))}
     </div>

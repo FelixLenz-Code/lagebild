@@ -69,6 +69,21 @@ export interface Warning {
   area?: GeoJsonGeometry | null;
 }
 
+/** Amtliche Warnung mit Geometrie fürs Kartenlayer (DWD-GeoServer). Eine
+ *  Warnung (gleiche `id`) kann als mehrere Gemeinde-Flächen vorliegen. */
+export interface WarningFeature {
+  id: string;
+  event: string;
+  headline: string;
+  description?: string;
+  instruction?: string;
+  severity: Severity;
+  regionName?: string;
+  onset: string | null;
+  expires: string | null;
+  geometry: GeoJsonGeometry;
+}
+
 /** Verkehrsmeldung (Autobahn-API: Baustelle, Sperrung, Stau). */
 export interface TrafficIncident {
   id: string;

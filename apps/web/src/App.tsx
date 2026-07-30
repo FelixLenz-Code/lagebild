@@ -1,13 +1,13 @@
-import { useEffect, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Coords } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchAlerts, fetchTraffic, fetchPegel, fetchNews, type Bbox } from './api.js';
+import { useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { Coords, WarningFeature } from '@lagebild/shared';
+import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
 import { Sheet } from './Sheet.js';
-import { WeatherDetail, AlertsDetail, TrafficDetail, PegelDetail, NewsDetail } from './details.js';
+import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail } from './details.js';
 import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE } from './format.js';
 
-type DetailKey = 'weather' | 'alerts' | 'traffic' | 'pegel' | 'news';
+type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news';
 
 /** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
 function boxAround(c: { lat: number; lon: number }): Bbox {
@@ -54,19 +54,26 @@ export function App() {
   const geoKey = `${coords.lat.toFixed(3)},${coords.lon.toFixed(3)}`;
   const viewKey = bboxKey(viewport);
   const weather = useApi(`weather:${geoKey}`, () => fetchWeather(coords), [coords]);
-  const alerts = useApi(`alerts:${geoKey}`, () => fetchAlerts(coords), [coords]);
+  const warnings = useApi(`warnings:${viewKey}`, () => fetchWarnings(viewport), [viewKey]);
   const traffic = useApi(`traffic:${viewKey}`, () => fetchTraffic(viewport), [viewKey]);
   const pegel = useApi(`pegel:${viewKey}`, () => fetchPegel(viewport), [viewKey]);
   const news = useApi('news', () => fetchNews());
 
+  // Eine Warnung liegt als viele Gemeinde-Flächen vor → für Liste/Detail entdoppeln.
+  const uniqueWarnings = useMemo(() => {
+    const seen = new Map<string, WarningFeature>();
+    for (const f of warnings.data?.data ?? []) if (!seen.has(f.id)) seen.set(f.id, f);
+    return [...seen.values()];
+  }, [warnings.data]);
+
   const lastSync = weather.savedAt;
-  const anyCached = [weather, alerts, traffic, pegel, news].some((s) => s.fromCache);
+  const anyCached = [weather, warnings, traffic, pegel, news].some((s) => s.fromCache);
 
   const [detail, setDetail] = useState<DetailKey | null>(null);
 
   const detailInfo: Record<DetailKey, { title: string; source?: string; savedAt: number | null }> = {
     weather: { title: `Wetter — ${place}`, source: weather.data?.source, savedAt: weather.savedAt },
-    alerts: { title: 'Amtliche Warnungen', source: alerts.data?.source, savedAt: alerts.savedAt },
+    warnings: { title: 'Amtliche Warnungen', source: warnings.data?.source, savedAt: warnings.savedAt },
     traffic: { title: 'Verkehr im Ausschnitt', source: traffic.data?.source, savedAt: traffic.savedAt },
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
     news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
@@ -108,6 +115,7 @@ export function App() {
 
       <LageMap
         coords={coords}
+        warnings={warnings.data?.data ?? []}
         traffic={traffic.data?.data ?? []}
         pegel={pegel.data?.data ?? []}
         onViewport={setViewport}
@@ -139,19 +147,19 @@ export function App() {
 
         <Tile
           title="Warnungen"
-          source={alerts.data?.source}
-          cached={alerts.fromCache}
-          badge={alerts.data ? (alerts.data.data.length ? `${alerts.data.data.length} aktiv` : 'keine') : undefined}
-          badgeKind={alerts.data?.data.length ? 'warn' : 'ok'}
-          onOpen={alerts.data ? () => setDetail('alerts') : undefined}
+          source={warnings.data?.source}
+          cached={warnings.fromCache}
+          badge={warnings.data ? (uniqueWarnings.length ? `${uniqueWarnings.length} aktiv` : 'keine') : undefined}
+          badgeKind={uniqueWarnings.length ? 'warn' : 'ok'}
+          onOpen={warnings.data && uniqueWarnings.length ? () => setDetail('warnings') : undefined}
         >
-          <Loader state={alerts} empty="Keine amtlichen Warnungen.">
+          <Loader state={warnings} empty="Keine amtlichen Warnungen im Ausschnitt.">
             <ul className="list">
-              {alerts.data?.data.slice(0, 4).map((a) => (
-                <li className="line-item" key={a.id}>
-                  <span className="sv" style={{ background: SEVERITY_VAR[a.severity] }} />
-                  <span className="t">{a.event}</span>
-                  <span className="meta">{SEVERITY_DE[a.severity]}{a.expires ? ` · bis ${timeUntil(a.expires)}` : ''}</span>
+              {uniqueWarnings.slice(0, 4).map((wn) => (
+                <li className="line-item" key={wn.id}>
+                  <span className="sv" style={{ background: SEVERITY_VAR[wn.severity] }} />
+                  <span className="t">{wn.event}</span>
+                  <span className="meta">{SEVERITY_DE[wn.severity]}{wn.expires ? ` · bis ${timeUntil(wn.expires)}` : ''}</span>
                 </li>
               ))}
             </ul>
@@ -213,7 +221,7 @@ export function App() {
       {detail && (
         <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>
           {detail === 'weather' && w && <WeatherDetail w={w} />}
-          {detail === 'alerts' && alerts.data && <AlertsDetail list={alerts.data.data} />}
+          {detail === 'warnings' && <WarningsDetail list={uniqueWarnings} />}
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
           {detail === 'news' && news.data && <NewsDetail list={news.data.data} />}

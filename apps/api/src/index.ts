@@ -7,6 +7,7 @@ import { logger } from 'hono/logger';
 import { config } from './config.js';
 import { weatherRoute } from './routes/weather.js';
 import { alertsRoute } from './routes/alerts.js';
+import { warningsRoute } from './routes/warnings.js';
 import { trafficRoute } from './routes/traffic.js';
 import { newsRoute } from './routes/news.js';
 import { pegelRoute } from './routes/pegel.js';
@@ -22,6 +23,7 @@ app.get('/api/health', (c) =>
 );
 app.route('/api/weather', weatherRoute);
 app.route('/api/alerts', alertsRoute);
+app.route('/api/warnings', warningsRoute);
 app.route('/api/traffic', trafficRoute);
 app.route('/api/news', newsRoute);
 app.route('/api/pegel', pegelRoute);
