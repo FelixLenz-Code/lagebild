@@ -9,6 +9,22 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        // Kartenschriften & -symbole (Protomaps-Assets) offline vorhalten, damit
+        // die Offline-Karte auch Beschriftungen zeigt, sobald sie einmal online
+        // gerendert wurde.
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/protomaps\.github\.io\/basemaps-assets\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'map-assets',
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'Lagebild — Sicher unterwegs',
         short_name: 'Lagebild',
