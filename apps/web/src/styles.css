@@ -91,7 +91,34 @@ svg { display: block; }
 
 .mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); cursor: pointer; }
 .mk-user { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
-.maplibregl-popup-content { font: 500 .8rem system-ui, sans-serif; color: #14181c; border-radius: 6px; padding: 7px 10px; }
+.maplibregl-popup-content { font: 500 .8rem system-ui, sans-serif; color: #14181c; border-radius: 6px; padding: 10px 12px; }
+
+/* warning legend (severity filter) */
+.legend {
+  position: absolute; bottom: 10px; left: 10px; z-index: 1;
+  background: color-mix(in srgb, var(--surface) 93%, transparent);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 8px 10px;
+}
+.legend-title { font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); margin-bottom: 6px; }
+.legend-items { display: flex; flex-wrap: wrap; gap: 5px; }
+.legend-item {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: .72rem; font-weight: 600; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  padding: 4px 8px; min-height: 30px;
+}
+.legend-item .k { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.legend-item[aria-pressed='false'] { color: var(--faint); opacity: .55; }
+.legend-item[aria-pressed='false'] .k { opacity: .35; }
+
+/* warning popup */
+.warn-popup .wp-sev { display: inline-block; font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #fff; padding: 2px 7px; border-radius: 3px; margin-bottom: 5px; }
+.warn-popup b { display: block; font-size: .84rem; color: #14181c; }
+.warn-popup .wp-region { font-size: .72rem; color: #4a5560; margin-top: 2px; }
+.warn-popup .wp-meta { font-size: .7rem; color: #6a7580; margin-top: 3px; }
+.warn-popup .wp-desc { font-size: .76rem; color: #24303a; margin: 7px 0 0; line-height: 1.4; max-height: 180px; overflow-y: auto; }
+.warn-popup .wp-instr { color: #5a6570; font-style: italic; }
 
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 @media (max-width: 480px) { .tiles { grid-template-columns: 1fr; } }

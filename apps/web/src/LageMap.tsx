@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import maplibregl, { type Map as MlMap, type Marker, type StyleSpecification } from 'maplibre-gl';
+import maplibregl, {
+  type Map as MlMap,
+  type Marker,
+  type Popup as MlPopup,
+  type StyleSpecification,
+  type FilterSpecification,
+} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity } from '@lagebild/shared';
 import type { Bbox } from './api.js';
+import { SEVERITY_DE } from './format.js';
 
 const SEVERITY_COLOR: Record<Severity, string> = {
   minor: '#b58a10',
@@ -16,10 +23,32 @@ function warningsToGeoJson(features: WarningFeature[]) {
     type: 'FeatureCollection' as const,
     features: features.map((f) => ({
       type: 'Feature' as const,
-      properties: { severity: f.severity, color: SEVERITY_COLOR[f.severity] },
+      properties: { id: f.id, severity: f.severity, color: SEVERITY_COLOR[f.severity] },
       geometry: f.geometry,
     })),
   };
+}
+
+const ALL_SEVERITIES: Severity[] = ['minor', 'moderate', 'severe', 'extreme'];
+
+function esc(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
+}
+
+function warningPopupHtml(w: WarningFeature): string {
+  const validity = w.expires
+    ? `gültig bis ${new Date(w.expires).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+    : '';
+  return (
+    `<div class="warn-popup">` +
+    `<span class="wp-sev" style="background:${SEVERITY_COLOR[w.severity]}">${esc(SEVERITY_DE[w.severity])}</span>` +
+    `<b>${esc(w.headline)}</b>` +
+    (w.regionName ? `<div class="wp-region">${esc(w.regionName)}</div>` : '') +
+    (validity ? `<div class="wp-meta">${esc(validity)}</div>` : '') +
+    (w.description ? `<p class="wp-desc">${esc(w.description)}</p>` : '') +
+    (w.instruction ? `<p class="wp-desc wp-instr">${esc(w.instruction)}</p>` : '') +
+    `</div>`
+  );
 }
 
 // Reine Raster-Karte auf Basis der OpenStreetMap-Kacheln — ohne API-Key.
@@ -61,10 +90,17 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
   const dataMarkers = useRef<Marker[]>([]);
   const onViewportRef = useRef(onViewport);
   onViewportRef.current = onViewport;
+  const warnPopup = useRef<MlPopup | null>(null);
+  const warnById = useRef<Map<string, WarningFeature>>(new Map());
   const [ready, setReady] = useState(false);
-  const [showWarn, setShowWarn] = useState(true);
+  const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
   const [showTraffic, setShowTraffic] = useState(true);
   const [showPegel, setShowPegel] = useState(true);
+
+  // Nachschlagetabelle id → Warnung (für Klick-Popup)
+  useEffect(() => {
+    warnById.current = new Map(warnings.map((w) => [w.id, w]));
+  }, [warnings]);
 
   // Karte einmalig erzeugen
   useEffect(() => {
@@ -132,6 +168,21 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
       source: 'warnings',
       paint: { 'line-color': ['get', 'color'], 'line-width': 1.4 },
     });
+
+    // Klick auf ein Warngebiet → Popup mit dem Warntext
+    warnPopup.current = new maplibregl.Popup({ maxWidth: '300px' });
+    map.on('click', 'warnings-fill', (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const wf = id ? warnById.current.get(id) : undefined;
+      if (!wf) return;
+      warnPopup.current!.setLngLat(e.lngLat).setHTML(warningPopupHtml(wf)).addTo(map);
+    });
+    map.on('mouseenter', 'warnings-fill', () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', 'warnings-fill', () => {
+      map.getCanvas().style.cursor = '';
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
@@ -143,14 +194,14 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
     src?.setData(warningsToGeoJson(warnings));
   }, [warnings, ready]);
 
-  // Warn-Layer ein-/ausblenden
+  // Warn-Layer nach Warnstufe filtern (Legenden-Umschalter)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const v = showWarn ? 'visible' : 'none';
-    if (map.getLayer('warnings-fill')) map.setLayoutProperty('warnings-fill', 'visibility', v);
-    if (map.getLayer('warnings-line')) map.setLayoutProperty('warnings-line', 'visibility', v);
-  }, [showWarn, ready]);
+    const filter: FilterSpecification = ['in', ['get', 'severity'], ['literal', [...activeSev]]];
+    if (map.getLayer('warnings-fill')) map.setFilter('warnings-fill', filter);
+    if (map.getLayer('warnings-line')) map.setFilter('warnings-line', filter);
+  }, [activeSev, ready]);
 
   // Daten-Marker (Verkehr, Pegel) neu aufbauen
   useEffect(() => {
@@ -190,15 +241,6 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
         <button
           type="button"
           className="chip"
-          aria-pressed={showWarn}
-          onClick={() => setShowWarn((v) => !v)}
-        >
-          <span className="k" style={{ background: SEVERITY_COLOR.moderate }} />
-          Warnungen
-        </button>
-        <button
-          type="button"
-          className="chip"
           aria-pressed={showTraffic}
           onClick={() => setShowTraffic((v) => !v)}
         >
@@ -214,6 +256,31 @@ export function LageMap({ coords, warnings, traffic, pegel, onViewport }: Props)
           <span className="k" style={{ background: 'var(--accent)' }} />
           Pegel
         </button>
+      </div>
+
+      <div className="legend" role="group" aria-label="Warnstufen filtern">
+        <div className="legend-title">Warnstufen</div>
+        <div className="legend-items">
+          {ALL_SEVERITIES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="legend-item"
+              aria-pressed={activeSev.has(s)}
+              onClick={() =>
+                setActiveSev((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(s)) next.delete(s);
+                  else next.add(s);
+                  return next;
+                })
+              }
+            >
+              <span className="k" style={{ background: SEVERITY_COLOR[s] }} />
+              {SEVERITY_DE[s]}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
