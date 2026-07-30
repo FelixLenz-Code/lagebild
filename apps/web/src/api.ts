@@ -7,6 +7,7 @@ import type {
   WaterLevel,
   AirQuality,
   RadarData,
+  GeoResult,
   Coords,
 } from '@lagebild/shared';
 
@@ -41,6 +42,9 @@ export const fetchAir = (c: Coords): Promise<ApiEnvelope<AirQuality>> =>
   getJson(`/api/air?${q(c)}`);
 
 export const fetchRadar = (): Promise<ApiEnvelope<RadarData>> => getJson(`/api/radar`);
+
+export const fetchGeocode = (query: string): Promise<ApiEnvelope<GeoResult[]>> =>
+  getJson(`/api/geocode?q=${encodeURIComponent(query)}`);
 
 // Kartenausschnitt-bezogen (alles im sichtbaren Bereich):
 export const fetchWarnings = (b: Bbox): Promise<ApiEnvelope<WarningFeature[]>> =>

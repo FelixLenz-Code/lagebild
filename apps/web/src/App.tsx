@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
 import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
+import { PlacePicker } from './PlacePicker.js';
+import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
 import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail } from './details.js';
 import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE, AIR_DE, AIR_COLOR } from './format.js';
@@ -21,16 +23,20 @@ export function App() {
   const [place, setPlace] = useState('Berlin-Mitte');
   // Sichtbarer Kartenausschnitt — steuert alle ortsbezogenen Kartendaten.
   const [viewport, setViewport] = useState<Bbox>(() => boxAround(DEFAULT_COORDS));
+  const [favorites, setFavorites] = useState<Place[]>(() => loadFavorites());
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Standort per Geolocation, Fallback bleibt Berlin-Mitte.
-  useEffect(() => {
+  useEffect(() => saveFavorites(favorites), [favorites]);
+
+  // Standort per Geolocation (auch aus dem Ort-Auswähler aufrufbar).
+  const locate = useCallback(() => {
     if (!('geolocation' in navigator)) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setCoords(c);
         setViewport(boxAround(c));
-        setPlace('Dein Standort');
+        setPlace('Mein Standort');
       },
       () => {
         /* Berechtigung verweigert → Standardort behalten */
@@ -38,6 +44,23 @@ export function App() {
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
     );
   }, []);
+  useEffect(() => {
+    locate();
+  }, [locate]);
+
+  const selectPlace = (p: Place) => {
+    setCoords({ lat: p.lat, lon: p.lon });
+    setViewport(boxAround({ lat: p.lat, lon: p.lon }));
+    setPlace(p.name);
+    setPickerOpen(false);
+  };
+  const saveCurrent = () =>
+    setFavorites((prev) =>
+      prev.some((f) => f.name === place) ? prev : [...prev, { name: place, lat: coords.lat, lon: coords.lon }],
+    );
+  const removeFavorite = (p: Place) =>
+    setFavorites((prev) => prev.filter((f) => !(f.lat === p.lat && f.lon === p.lon)));
+  const isFavorite = favorites.some((f) => f.name === place);
 
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
@@ -105,6 +128,17 @@ export function App() {
             <span>Sicher unterwegs</span>
           </div>
         </div>
+
+        <button type="button" className="place-btn" onClick={() => setPickerOpen(true)} title="Ort wechseln">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11Z" />
+            <circle cx="12" cy="10" r="2.2" />
+          </svg>
+          <span className="pl-name">{place}</span>
+          <svg className="pl-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
       </header>
 
       <div className="statusline" data-state={online && !anyCached ? 'live' : 'offline'}>
@@ -113,7 +147,6 @@ export function App() {
           {lastSync ? `Aktualisiert ${relativeTime(new Date(lastSync).toISOString())}` : 'Lade …'}
           {(!online || anyCached) && ' · letzter Stand'}
         </span>
-        <span className="src">{place}</span>
       </div>
 
       <div className="layout">
@@ -251,6 +284,22 @@ export function App() {
         </Tile>
         </section>
       </div>
+
+      {pickerOpen && (
+        <PlacePicker
+          current={place}
+          favorites={favorites}
+          isFavorite={isFavorite}
+          onClose={() => setPickerOpen(false)}
+          onSelect={selectPlace}
+          onUseGeolocation={() => {
+            locate();
+            setPickerOpen(false);
+          }}
+          onSaveCurrent={saveCurrent}
+          onRemoveFavorite={removeFavorite}
+        />
+      )}
 
       {detail && (
         <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>

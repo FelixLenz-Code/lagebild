@@ -156,6 +156,13 @@ export interface ApiEnvelope<T> {
   stale?: boolean;
 }
 
+/** Ergebnis einer Ortssuche (Geocoding). */
+export interface GeoResult {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
 /** Amtlicher Gemeindeschlüssel → die ersten zwei Ziffern kennzeichnen das Bundesland. */
 export type StateCode =
   | '01' | '02' | '03' | '04' | '05' | '06' | '07' | '08'
