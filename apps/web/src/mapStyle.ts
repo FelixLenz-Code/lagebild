@@ -1,5 +1,5 @@
 import maplibregl, { type StyleSpecification } from 'maplibre-gl';
-import { Protocol } from 'pmtiles';
+import { Protocol, PMTiles, FileSource } from 'pmtiles';
 import { layers, GRAYSCALE, DARK, type Flavor } from '@protomaps/basemaps';
 
 /**
@@ -13,13 +13,22 @@ export const ONLINE_PMTILES_URL: string =
 // Schriften & Symbole der Protomaps-Basemap (für Offline später mit einbetten).
 const ASSETS = 'https://protomaps.github.io/basemaps-assets';
 
-let registered = false;
+let protocol: Protocol | null = null;
 /** Registriert das pmtiles://-Protokoll bei MapLibre (nur einmal nötig). */
 export function registerPmtiles(): void {
-  if (registered) return;
-  const protocol = new Protocol();
+  if (protocol) return;
+  protocol = new Protocol();
   maplibregl.addProtocol('pmtiles', protocol.tile);
-  registered = true;
+}
+
+/**
+ * Registriert eine lokale (OPFS-)PMTiles-Datei beim Protokoll und gibt den
+ * Quell-Key zurück, der als `pmtiles://<key>` im Style referenziert wird.
+ */
+export function addLocalPmtiles(file: File): string {
+  registerPmtiles();
+  protocol!.add(new PMTiles(new FileSource(file)));
+  return file.name;
 }
 
 /** Baut einen MapLibre-Style über einer PMTiles-Quelle (URL oder pmtiles-Handle). */

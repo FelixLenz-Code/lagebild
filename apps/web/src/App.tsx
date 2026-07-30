@@ -6,6 +6,7 @@ import { LageMap } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { opfsSupported, listOffline } from './offlineMaps.js';
+import { inStateBounds } from './stateBounds.js';
 import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
 import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail, TransitDetail } from './details.js';
@@ -102,6 +103,12 @@ export function App() {
     refreshOffline();
   }, [refreshOffline]);
 
+  // Offline (kein Netz) + heruntergeladene Region am Standort → Offline-Basiskarte.
+  const offlineCode = useMemo(() => {
+    if (online) return null;
+    return Object.keys(offlineMapsState).find((code) => inStateBounds(coords, code)) ?? null;
+  }, [online, offlineMapsState, coords]);
+
   const transitStops = transit.data?.data ?? [];
   const transitDisruptions = transitStops
     .flatMap((s) => s.departures)
@@ -191,6 +198,7 @@ export function App() {
             pegel={pegel.data?.data ?? []}
             radar={radar.data?.data ?? null}
             flowAvailable={flowAvailable}
+            offlineCode={offlineCode}
             onViewport={setViewport}
           />
         </div>

@@ -8,7 +8,8 @@ import maplibregl, {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity, RadarData } from '@lagebild/shared';
 import type { Bbox } from './api.js';
-import { registerPmtiles, buildStyle, ONLINE_PMTILES_URL } from './mapStyle.js';
+import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
+import { getOfflineFile } from './offlineMaps.js';
 import { SEVERITY_DE, TRAFFIC_DE, formatDateTime, radarTimeLabel } from './format.js';
 
 /** Kachel-URL eines RainViewer-Radar-Frames (Farbschema 4, geglättet). */
@@ -95,10 +96,12 @@ interface Props {
   pegel: WaterLevel[];
   radar: RadarData | null;
   flowAvailable: boolean;
+  /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt online. */
+  offlineCode: string | null;
   onViewport: (b: Bbox) => void;
 }
 
-export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable, onViewport }: Props) {
+export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable, offlineCode, onViewport }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const userMarker = useRef<Marker | null>(null);
@@ -107,7 +110,9 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
   onViewportRef.current = onViewport;
   const warnPopup = useRef<MlPopup | null>(null);
   const warnById = useRef<Map<string, WarningFeature>>(new Map());
+  const currentBase = useRef<string>('online');
   const [ready, setReady] = useState(false);
+  const [styleEpoch, setStyleEpoch] = useState(0);
   const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
   const [showTraffic, setShowTraffic] = useState(true);
   const [showPegel, setShowPegel] = useState(true);
@@ -134,6 +139,23 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+    // Warn-Popup + Klick/Hover einmalig registrieren (überlebt Style-Wechsel).
+    warnPopup.current = new maplibregl.Popup({ maxWidth: '300px' });
+    map.on('click', 'warnings-fill', (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const wf = id ? warnById.current.get(id) : undefined;
+      if (!wf) return;
+      warnPopup.current!.setLngLat(e.lngLat).setHTML(warningPopupHtml(wf)).addTo(map);
+    });
+    map.on('mouseenter', 'warnings-fill', () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', 'warnings-fill', () => {
+      map.getCanvas().style.cursor = '';
+    });
+    // Nach jedem (Neu-)Laden des Styles die Overlays neu auflegen.
+    map.on('style.load', () => setStyleEpoch((n) => n + 1));
 
     // Sichtbaren Ausschnitt melden (entprellt), damit die Daten dem Zoom folgen.
     const emit = () => {
@@ -172,6 +194,31 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     userMarker.current.setLngLat([coords.lon, coords.lat]).addTo(map);
   }, [coords, ready]);
 
+  // Basiskarte online ↔ offline (OPFS-PMTiles) umschalten
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const desired = offlineCode ?? 'online';
+    if (desired === currentBase.current) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (offlineCode) {
+      let cancelled = false;
+      getOfflineFile(offlineCode)
+        .then((file) => {
+          if (cancelled || mapRef.current !== map) return;
+          const key = addLocalPmtiles(file);
+          currentBase.current = offlineCode;
+          map.setStyle(buildStyle(`pmtiles://${key}`, dark), { diff: false });
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
+    currentBase.current = 'online';
+    map.setStyle(buildStyle(ONLINE_PMTILES_URL, dark), { diff: false });
+  }, [offlineCode, ready]);
+
   // Warn-Polygone: Quelle + Layer einmalig anlegen
   useEffect(() => {
     const map = mapRef.current;
@@ -189,23 +236,8 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
       source: 'warnings',
       paint: { 'line-color': ['get', 'color'], 'line-width': 1.4 },
     });
-
-    // Klick auf ein Warngebiet → Popup mit dem Warntext
-    warnPopup.current = new maplibregl.Popup({ maxWidth: '300px' });
-    map.on('click', 'warnings-fill', (e) => {
-      const id = e.features?.[0]?.properties?.id as string | undefined;
-      const wf = id ? warnById.current.get(id) : undefined;
-      if (!wf) return;
-      warnPopup.current!.setLngLat(e.lngLat).setHTML(warningPopupHtml(wf)).addTo(map);
-    });
-    map.on('mouseenter', 'warnings-fill', () => {
-      map.getCanvas().style.cursor = 'pointer';
-    });
-    map.on('mouseleave', 'warnings-fill', () => {
-      map.getCanvas().style.cursor = '';
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, [ready, styleEpoch]);
 
   // Warn-Daten aktualisieren
   useEffect(() => {
@@ -213,7 +245,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     if (!map || !ready) return;
     const src = map.getSource('warnings') as maplibregl.GeoJSONSource | undefined;
     src?.setData(warningsToGeoJson(warnings));
-  }, [warnings, ready]);
+  }, [warnings, ready, styleEpoch]);
 
   // Warn-Layer nach Warnstufe filtern (Legenden-Umschalter)
   useEffect(() => {
@@ -222,7 +254,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     const filter: FilterSpecification = ['in', ['get', 'severity'], ['literal', [...activeSev]]];
     if (map.getLayer('warnings-fill')) map.setFilter('warnings-fill', filter);
     if (map.getLayer('warnings-line')) map.setFilter('warnings-line', filter);
-  }, [activeSev, ready]);
+  }, [activeSev, ready, styleEpoch]);
 
   // Neue Radar-Daten → auf den aktuellsten Vergangenheits-Frame springen
   useEffect(() => {
@@ -252,7 +284,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
       if (radarPlaying) setRadarPlaying(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRadar, radar, ready]);
+  }, [showRadar, radar, ready, styleEpoch]);
 
   // Frame wechseln
   useEffect(() => {
@@ -261,7 +293,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     const src = map.getSource('radar') as maplibregl.RasterTileSource | undefined;
     const frame = radar.frames[Math.min(radarIdx, radar.frames.length - 1)];
     if (src && frame) src.setTiles([radarTileUrl(radar.host, frame.path)]);
-  }, [radarIdx, showRadar, radar, ready]);
+  }, [radarIdx, showRadar, radar, ready, styleEpoch]);
 
   // Abspielen
   useEffect(() => {
@@ -288,7 +320,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
       if (map.getLayer('flow')) map.removeLayer('flow');
       if (map.getSource('flow')) map.removeSource('flow');
     }
-  }, [showFlow, flowAvailable, ready]);
+  }, [showFlow, flowAvailable, ready, styleEpoch]);
 
   // Daten-Marker (Verkehr, Pegel) neu aufbauen
   useEffect(() => {
