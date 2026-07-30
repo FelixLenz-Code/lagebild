@@ -15,6 +15,7 @@ import { airRoute } from './routes/air.js';
 import { radarRoute } from './routes/radar.js';
 import { geocodeRoute } from './routes/geocode.js';
 import { transitRoute } from './routes/transit.js';
+import { flowRoute } from './routes/flow.js';
 
 const app = new Hono();
 
@@ -23,7 +24,12 @@ app.use('/api/*', cors());
 
 // --- API ---
 app.get('/api/health', (c) =>
-  c.json({ ok: true, service: 'lagebild-api', ts: new Date().toISOString() }),
+  c.json({
+    ok: true,
+    service: 'lagebild-api',
+    ts: new Date().toISOString(),
+    features: { flow: config.tomtomKey.length > 0 },
+  }),
 );
 app.route('/api/weather', weatherRoute);
 app.route('/api/alerts', alertsRoute);
@@ -35,6 +41,7 @@ app.route('/api/air', airRoute);
 app.route('/api/radar', radarRoute);
 app.route('/api/geocode', geocodeRoute);
 app.route('/api/transit', transitRoute);
+app.route('/api/flow', flowRoute);
 
 // --- statisches PWA-Bundle (nur wenn gebaut vorhanden) ---
 if (existsSync(config.webRoot)) {

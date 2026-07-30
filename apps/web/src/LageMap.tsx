@@ -109,10 +109,11 @@ interface Props {
   traffic: TrafficIncident[];
   pegel: WaterLevel[];
   radar: RadarData | null;
+  flowAvailable: boolean;
   onViewport: (b: Bbox) => void;
 }
 
-export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }: Props) {
+export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable, onViewport }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const userMarker = useRef<Marker | null>(null);
@@ -128,6 +129,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }:
   const [showRadar, setShowRadar] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
   const [radarPlaying, setRadarPlaying] = useState(false);
+  const [showFlow, setShowFlow] = useState(false);
 
   // Nachschlagetabelle id → Warnung (für Klick-Popup)
   useEffect(() => {
@@ -281,6 +283,26 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }:
     return () => clearInterval(t);
   }, [radarPlaying, radar]);
 
+  // Verkehrsfluss-Layer (TomTom via Proxy) an-/abschalten, unter Radar/Warnungen
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (showFlow && flowAvailable) {
+      if (!map.getSource('flow')) {
+        map.addSource('flow', { type: 'raster', tiles: ['/api/flow/{z}/{x}/{y}.png'], tileSize: 256 });
+        const beforeId = map.getLayer('radar')
+          ? 'radar'
+          : map.getLayer('warnings-fill')
+            ? 'warnings-fill'
+            : undefined;
+        map.addLayer({ id: 'flow', type: 'raster', source: 'flow', paint: { 'raster-opacity': 0.85 } }, beforeId);
+      }
+    } else {
+      if (map.getLayer('flow')) map.removeLayer('flow');
+      if (map.getSource('flow')) map.removeSource('flow');
+    }
+  }, [showFlow, flowAvailable, ready]);
+
   // Daten-Marker (Verkehr, Pegel) neu aufbauen
   useEffect(() => {
     const map = mapRef.current;
@@ -323,6 +345,12 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }:
             <span className="k" style={{ background: '#3f83d4' }} />
             Regenradar
           </button>
+          {flowAvailable && (
+            <button type="button" className="chip" aria-pressed={showFlow} onClick={() => setShowFlow((v) => !v)}>
+              <span className="k" style={{ background: 'linear-gradient(90deg,#2c9e5b,#e0a90b,#c0392b)' }} />
+              Verkehrsfluss
+            </button>
+          )}
           <button type="button" className="chip" aria-pressed={showTraffic} onClick={() => setShowTraffic((v) => !v)}>
             <span className="k" style={{ background: 'var(--sev3)' }} />
             Verkehr

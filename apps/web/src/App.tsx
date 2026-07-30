@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchTransit, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchTransit, fetchHealth, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
@@ -84,6 +84,8 @@ export function App() {
   const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords]);
   const radar = useApi('radar', () => fetchRadar());
   const news = useApi('news', () => fetchNews());
+  const health = useApi('health', () => fetchHealth());
+  const flowAvailable = health.data?.features?.flow ?? false;
 
   const transitStops = transit.data?.data ?? [];
   const transitDisruptions = transitStops
@@ -165,6 +167,7 @@ export function App() {
             traffic={traffic.data?.data ?? []}
             pegel={pegel.data?.data ?? []}
             radar={radar.data?.data ?? null}
+            flowAvailable={flowAvailable}
             onViewport={setViewport}
           />
         </div>

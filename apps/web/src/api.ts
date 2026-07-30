@@ -50,6 +50,12 @@ export const fetchRadar = (): Promise<ApiEnvelope<RadarData>> => getJson(`/api/r
 export const fetchGeocode = (query: string): Promise<ApiEnvelope<GeoResult[]>> =>
   getJson(`/api/geocode?q=${encodeURIComponent(query)}`);
 
+export interface Health {
+  ok: boolean;
+  features?: { flow?: boolean };
+}
+export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
+
 // Kartenausschnitt-bezogen (alles im sichtbaren Bereich):
 export const fetchWarnings = (b: Bbox): Promise<ApiEnvelope<WarningFeature[]>> =>
   getJson(`/api/warnings?${bboxQ(b)}`);
