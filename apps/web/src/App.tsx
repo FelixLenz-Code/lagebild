@@ -24,11 +24,27 @@ export function App() {
     );
   }, []);
 
-  const weather = useApi(() => fetchWeather(coords), [coords]);
-  const alerts = useApi(() => fetchAlerts(coords), [coords]);
-  const traffic = useApi(() => fetchTraffic(coords), [coords]);
-  const pegel = useApi(() => fetchPegel(coords), [coords]);
-  const news = useApi(() => fetchNews());
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+
+  const geoKey = `${coords.lat.toFixed(3)},${coords.lon.toFixed(3)}`;
+  const weather = useApi(`weather:${geoKey}`, () => fetchWeather(coords), [coords]);
+  const alerts = useApi(`alerts:${geoKey}`, () => fetchAlerts(coords), [coords]);
+  const traffic = useApi(`traffic:${geoKey}`, () => fetchTraffic(coords), [coords]);
+  const pegel = useApi(`pegel:${geoKey}`, () => fetchPegel(coords), [coords]);
+  const news = useApi('news', () => fetchNews());
+
+  const lastSync = weather.savedAt;
+  const anyCached = [weather, alerts, traffic, pegel, news].some((s) => s.fromCache);
 
   const w = weather.data?.data;
 
@@ -49,18 +65,21 @@ export function App() {
         </div>
       </header>
 
-      <div className="statusline">
-        <span className="live"><i />LIVE</span>
-        <span>{weather.data ? `Aktualisiert ${relativeTime(weather.data.fetchedAt)}` : 'Lade …'}</span>
+      <div className="statusline" data-state={online && !anyCached ? 'live' : 'offline'}>
+        <span className="live"><i />{online && !anyCached ? 'LIVE' : 'OFFLINE'}</span>
+        <span>
+          {lastSync ? `Aktualisiert ${relativeTime(new Date(lastSync).toISOString())}` : 'Lade …'}
+          {(!online || anyCached) && ' · letzter Stand'}
+        </span>
         <span className="src">{place}</span>
       </div>
 
       <LageMap coords={coords} traffic={traffic.data?.data ?? []} pegel={pegel.data?.data ?? []} />
 
       <section className="tiles">
-        <Tile title="Wetter" source={weather.data?.source} warn className="warnborder">
-          {weather.loading && <p className="muted">Lade …</p>}
-          {weather.error && <p className="err">{weather.error}</p>}
+        <Tile title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder">
+          {!w && weather.loading && <p className="muted">Lade …</p>}
+          {!w && weather.error && <p className="err">{weather.error}</p>}
           {w && (
             <>
               <div className="wx-main">
@@ -81,6 +100,7 @@ export function App() {
         <Tile
           title="Warnungen"
           source={alerts.data?.source}
+          cached={alerts.fromCache}
           badge={alerts.data ? (alerts.data.data.length ? `${alerts.data.data.length} aktiv` : 'keine') : undefined}
           badgeKind={alerts.data?.data.length ? 'warn' : 'ok'}
         >
@@ -100,6 +120,7 @@ export function App() {
         <Tile
           title="Verkehr"
           source={traffic.data?.source}
+          cached={traffic.fromCache}
           badge={traffic.data?.data.length ? `${traffic.data.data.length}` : undefined}
           badgeKind="alert"
         >
@@ -116,7 +137,7 @@ export function App() {
           </Loader>
         </Tile>
 
-        <Tile title="Pegel" source={pegel.data?.source}>
+        <Tile title="Pegel" source={pegel.data?.source} cached={pegel.fromCache}>
           <Loader state={pegel} empty="Keine Messstelle in der Nähe.">
             <ul className="list">
               {pegel.data?.data.slice(0, 4).map((p, i) => (
@@ -129,7 +150,7 @@ export function App() {
           </Loader>
         </Tile>
 
-        <Tile title="News" source={news.data?.source} wide>
+        <Tile title="News" source={news.data?.source} cached={news.fromCache} wide>
           <Loader state={news} empty="Keine Meldungen.">
             <ul className="news">
               {news.data?.data.slice(0, 5).map((n) => (
@@ -155,7 +176,7 @@ function Tile(props: {
   source?: string;
   badge?: string;
   badgeKind?: 'warn' | 'ok' | 'alert';
-  warn?: boolean;
+  cached?: boolean;
   wide?: boolean;
   pending?: boolean;
   className?: string;
@@ -169,17 +190,22 @@ function Tile(props: {
     <article className={cls.join(' ')}>
       <div className="head">
         <h3>{props.title}</h3>
+        {props.cached && <span className="offline-tag" title="Offline — letzter Stand">offline</span>}
         {props.badge && <span className={`badge ${props.badgeKind ?? 'warn'}`}>{props.badge}</span>}
-        {props.source && !props.badge && <span className="src-tag">{props.source}</span>}
+        {props.source && !props.badge && !props.cached && <span className="src-tag">{props.source}</span>}
       </div>
       {props.children}
     </article>
   );
 }
 
-function Loader<T>(props: { state: { loading: boolean; error: string | null; data: { data: T[] } | null }; empty: string; children: ReactNode }) {
+function Loader<T>(props: {
+  state: { loading: boolean; error: string | null; data: { data: T[] } | null };
+  empty: string;
+  children: ReactNode;
+}) {
+  const env = props.state.data;
+  if (env) return env.data.length === 0 ? <p className="muted">{props.empty}</p> : <>{props.children}</>;
   if (props.state.loading) return <p className="muted">Lade …</p>;
-  if (props.state.error) return <p className="err">{props.state.error}</p>;
-  if (props.state.data && props.state.data.data.length === 0) return <p className="muted">{props.empty}</p>;
-  return <>{props.children}</>;
+  return <p className="err">{props.state.error ?? 'Fehler'}</p>;
 }
