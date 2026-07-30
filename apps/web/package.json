@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@lagebild/shared": "workspace:*",
+    "@protomaps/basemaps": "^5.7.2",
     "dexie": "^4.0.10",
     "maplibre-gl": "^4.7.1",
+    "pmtiles": "^4.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

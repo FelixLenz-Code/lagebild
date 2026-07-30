@@ -3,12 +3,12 @@ import maplibregl, {
   type Map as MlMap,
   type Marker,
   type Popup as MlPopup,
-  type StyleSpecification,
   type FilterSpecification,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity, RadarData } from '@lagebild/shared';
 import type { Bbox } from './api.js';
+import { registerPmtiles, buildStyle, ONLINE_PMTILES_URL } from './mapStyle.js';
 import { SEVERITY_DE, TRAFFIC_DE, formatDateTime, radarTimeLabel } from './format.js';
 
 /** Kachel-URL eines RainViewer-Radar-Frames (Farbschema 4, geglättet). */
@@ -79,21 +79,6 @@ function warningPopupHtml(w: WarningFeature): string {
   );
 }
 
-// Reine Raster-Karte auf Basis der OpenStreetMap-Kacheln — ohne API-Key.
-// Für den Offline-Betrieb pro Bundesland später gegen Vektor-Kacheln (PMTiles) tauschen.
-const OSM_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '© OpenStreetMap-Mitwirkende',
-    },
-  },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-};
-
 function markerEl(color: string, size = 16, ring = false): HTMLDivElement {
   const el = document.createElement('div');
   el.className = ring ? 'mk mk-user' : 'mk';
@@ -139,9 +124,11 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
   // Karte einmalig erzeugen
   useEffect(() => {
     if (!containerRef.current) return;
+    registerPmtiles();
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: OSM_STYLE,
+      style: buildStyle(ONLINE_PMTILES_URL, dark),
       center: [coords.lon, coords.lat],
       zoom: 11,
       attributionControl: { compact: true },
