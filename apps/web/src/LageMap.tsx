@@ -10,7 +10,27 @@ import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity, Rad
 import type { Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
 import { getOfflineFile } from './offlineMaps.js';
+import { DrawList } from './DrawList.js';
+import { loadDraw, saveDraw, newId, type DrawFeature } from './drawStore.js';
 import { SEVERITY_DE, TRAFFIC_DE, formatDateTime, radarTimeLabel } from './format.js';
+
+const DRAW_COLOR = '#0d9488';
+type DrawMode = 'off' | 'point' | 'area';
+
+function drawToGeoJson(features: DrawFeature[], areaVertices: [number, number][]): GeoJSON.FeatureCollection {
+  const out: GeoJSON.Feature[] = features.map((d) => ({
+    type: 'Feature',
+    properties: { kind: d.kind, name: d.name },
+    geometry: d.geometry,
+  }));
+  if (areaVertices.length >= 2) {
+    out.push({ type: 'Feature', properties: { kind: 'progress' }, geometry: { type: 'LineString', coordinates: areaVertices } });
+  }
+  for (const v of areaVertices) {
+    out.push({ type: 'Feature', properties: { kind: 'vertex' }, geometry: { type: 'Point', coordinates: v } });
+  }
+  return { type: 'FeatureCollection', features: out };
+}
 
 /** Kachel-URL eines RainViewer-Radar-Frames (Farbschema 4, geglättet). */
 function radarTileUrl(host: string, path: string): string {
@@ -120,6 +140,14 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
   const [radarIdx, setRadarIdx] = useState(0);
   const [radarPlaying, setRadarPlaying] = useState(false);
   const [showFlow, setShowFlow] = useState(false);
+  const [drawFeatures, setDrawFeatures] = useState<DrawFeature[]>(() => loadDraw());
+  const [drawMode, setDrawMode] = useState<DrawMode>('off');
+  const [drawBarOpen, setDrawBarOpen] = useState(false);
+  const [areaVertices, setAreaVertices] = useState<[number, number][]>([]);
+  const [listOpen, setListOpen] = useState(false);
+  const drawModeRef = useRef<DrawMode>('off');
+  drawModeRef.current = drawMode;
+  useEffect(() => saveDraw(drawFeatures), [drawFeatures]);
 
   // Nachschlagetabelle id → Warnung (für Klick-Popup)
   useEffect(() => {
@@ -143,10 +171,25 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     // Warn-Popup + Klick/Hover einmalig registrieren (überlebt Style-Wechsel).
     warnPopup.current = new maplibregl.Popup({ maxWidth: '300px' });
     map.on('click', 'warnings-fill', (e) => {
+      if (drawModeRef.current !== 'off') return;
       const id = e.features?.[0]?.properties?.id as string | undefined;
       const wf = id ? warnById.current.get(id) : undefined;
       if (!wf) return;
       warnPopup.current!.setLngLat(e.lngLat).setHTML(warningPopupHtml(wf)).addTo(map);
+    });
+
+    // Zeichnen: Klick setzt einen Punkt bzw. eine Flächen-Ecke.
+    map.on('click', (e) => {
+      const mode = drawModeRef.current;
+      const c: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+      if (mode === 'point') {
+        setDrawFeatures((prev) => [
+          ...prev,
+          { id: newId(), name: `Ort ${prev.filter((f) => f.kind === 'point').length + 1}`, kind: 'point', geometry: { type: 'Point', coordinates: c } },
+        ]);
+      } else if (mode === 'area') {
+        setAreaVertices((prev) => [...prev, c]);
+      }
     });
     map.on('mouseenter', 'warnings-fill', () => {
       map.getCanvas().style.cursor = 'pointer';
@@ -322,6 +365,35 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     }
   }, [showFlow, flowAvailable, ready, styleEpoch]);
 
+  // Eigene Markierungen: Quelle + Layer anlegen (oberste Ebene)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('draw')) return;
+    map.addSource('draw', { type: 'geojson', data: drawToGeoJson(drawFeatures, areaVertices) });
+    map.addLayer({ id: 'draw-area-fill', type: 'fill', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'fill-color': DRAW_COLOR, 'fill-opacity': 0.15 } });
+    map.addLayer({ id: 'draw-area-line', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'line-color': DRAW_COLOR, 'line-width': 2 } });
+    map.addLayer({ id: 'draw-progress', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'progress'], paint: { 'line-color': DRAW_COLOR, 'line-width': 2, 'line-dasharray': [2, 1] } });
+    map.addLayer({ id: 'draw-vertex', type: 'circle', source: 'draw', filter: ['==', ['get', 'kind'], 'vertex'], paint: { 'circle-radius': 4, 'circle-color': '#fff', 'circle-stroke-color': DRAW_COLOR, 'circle-stroke-width': 2 } });
+    map.addLayer({ id: 'draw-point', type: 'circle', source: 'draw', filter: ['==', ['get', 'kind'], 'point'], paint: { 'circle-radius': 6, 'circle-color': DRAW_COLOR, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    map.addLayer({ id: 'draw-label', type: 'symbol', source: 'draw', filter: ['in', ['get', 'kind'], ['literal', ['point', 'area']]], layout: { 'text-field': ['get', 'name'], 'text-size': 12, 'text-offset': [0, 1.1], 'text-anchor': 'top' }, paint: { 'text-color': '#111', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, styleEpoch]);
+
+  // Markierungs-Daten aktualisieren
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('draw') as maplibregl.GeoJSONSource | undefined;
+    src?.setData(drawToGeoJson(drawFeatures, areaVertices));
+  }, [drawFeatures, areaVertices, ready, styleEpoch]);
+
+  // Zeichen-Cursor
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    map.getCanvas().style.cursor = drawMode === 'off' ? '' : 'crosshair';
+  }, [drawMode, ready]);
+
   // Daten-Marker (Verkehr, Pegel) neu aufbauen
   useEffect(() => {
     const map = mapRef.current;
@@ -352,6 +424,22 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     }
   }, [traffic, pegel, showTraffic, showPegel, ready]);
 
+  const finishArea = () => {
+    if (areaVertices.length >= 3) {
+      const ring: [number, number][] = [...areaVertices, areaVertices[0]!];
+      setDrawFeatures((prev) => [
+        ...prev,
+        { id: newId(), name: `Fläche ${prev.filter((f) => f.kind === 'area').length + 1}`, kind: 'area', geometry: { type: 'Polygon', coordinates: [ring] } },
+      ]);
+    }
+    setAreaVertices([]);
+    setDrawMode('off');
+  };
+  const cancelArea = () => {
+    setAreaVertices([]);
+    setDrawMode('off');
+  };
+
   const frames = radar?.frames ?? [];
   const curFrame = frames[Math.min(radarIdx, frames.length - 1)];
 
@@ -378,7 +466,51 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
             <span className="k" style={{ background: 'var(--accent)' }} />
             Pegel
           </button>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={drawBarOpen}
+            onClick={() =>
+              setDrawBarOpen((v) => {
+                if (v) {
+                  setDrawMode('off');
+                  setAreaVertices([]);
+                }
+                return !v;
+              })
+            }
+          >
+            <span className="k" style={{ background: DRAW_COLOR }} />
+            Markieren
+          </button>
         </div>
+
+        {drawBarOpen && (
+          <div className="drawbar">
+            <button type="button" className="chip" aria-pressed={drawMode === 'point'} onClick={() => setDrawMode((m) => (m === 'point' ? 'off' : 'point'))}>
+              Punkt
+            </button>
+            <button type="button" className="chip" aria-pressed={drawMode === 'area'} onClick={() => setDrawMode((m) => (m === 'area' ? 'off' : 'area'))}>
+              Fläche
+            </button>
+            {drawMode === 'area' && areaVertices.length > 0 && (
+              <>
+                <button type="button" className="chip chip-ok" onClick={finishArea} disabled={areaVertices.length < 3}>
+                  Fertig
+                </button>
+                <button type="button" className="chip" onClick={cancelArea}>
+                  Abbrechen
+                </button>
+              </>
+            )}
+            <button type="button" className="chip" onClick={() => setListOpen(true)}>
+              Liste ({drawFeatures.length})
+            </button>
+            {drawMode !== 'off' && (
+              <span className="drawhint">{drawMode === 'point' ? 'Karte antippen für Punkt' : 'Ecken antippen, dann „Fertig"'}</span>
+            )}
+          </div>
+        )}
 
         <button
           type="button"
@@ -446,6 +578,19 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
           />
           <div className="rtime">{curFrame ? radarTimeLabel(curFrame.time, curFrame.forecast) : ''}</div>
         </div>
+      )}
+
+      {listOpen && (
+        <DrawList
+          features={drawFeatures}
+          onRename={(id, name) => setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, name } : f)))}
+          onDelete={(id) => setDrawFeatures((prev) => prev.filter((f) => f.id !== id))}
+          onClear={() => {
+            setDrawFeatures([]);
+            setListOpen(false);
+          }}
+          onClose={() => setListOpen(false)}
+        />
       )}
     </>
   );

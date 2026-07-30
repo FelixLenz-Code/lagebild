@@ -305,3 +305,11 @@ svg { display: block; }
 .rprog .track { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
 .rprog .track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 .rprog .pct { font-size: .68rem; color: var(--muted); margin-top: 3px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- draw tool ---------- */
+.drawbar { position: absolute; top: 52px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; z-index: 1; }
+.chip.chip-ok { color: #fff; background: var(--ok); border-color: var(--ok); }
+.chip.chip-ok:disabled { opacity: .5; cursor: default; }
+.drawhint { font-size: .68rem; color: var(--ink); background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 3px 8px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.draw-kind { width: 20px; flex: none; color: #0d9488; display: grid; place-items: center; }
+.draw-kind svg { width: 16px; height: 16px; }
