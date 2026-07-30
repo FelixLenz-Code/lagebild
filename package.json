@@ -1,0 +1,19 @@
+{
+  "name": "lagebild",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lagebild — Wetter, amtliche Warnungen, Verkehr und News für sicheres Bewegen. Offline-first PWA.",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel -r --filter=@lagebild/api --filter=@lagebild/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "start": "node apps/api/dist/index.js"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

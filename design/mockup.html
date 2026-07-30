@@ -1,0 +1,687 @@
+<title>Lagebild — Mockup</title>
+<style>
+  :root {
+    --bg: #e7e7e9;
+    --surface: #ffffff;
+    --surface-2: #eeeeef;
+    --ink: #17181a;
+    --muted: #5b5b60;
+    --faint: #8a8a8f;
+    --line: #d9d9db;
+    --line-strong: #bfbfc3;
+    --accent: #1d4e73;
+    --accent-ink: #143a58;
+    --accent-soft: rgba(29,78,115,0.10);
+    --sev1: #b58a10;
+    --sev2: #c96f0f;
+    --sev3: #a92318;
+    --sev4: #6c2790;
+    --ok: #2c7448;
+    --land: #e2e2e4;
+    --water: #b3c6d6;
+    --park: #cdd9c9;
+    --road: #ffffff;
+    --road-line: #d1d1d4;
+    --radar-a: #8faec9;
+    --radar-b: #3f6f9e;
+    --radar-c: #3c8a63;
+    --radar-d: #c1a538;
+    --r: 8px; --r-sm: 5px;
+    --shadow: 0 1px 1px rgba(16,22,29,.05);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f10; --surface: #1a1a1c; --surface-2: #141416;
+      --ink: #e7e7e9; --muted: #9a9a9f; --faint: #66666b;
+      --line: #2a2a2d; --line-strong: #38383c;
+      --accent: #4a90d9; --accent-ink: #7fb4e6; --accent-soft: rgba(74,144,217,0.15);
+      --sev1: #d9ad2e; --sev2: #dd8226; --sev3: #cf4034; --sev4: #9a56c8; --ok: #3c9c66;
+      --land: #1c1c1e; --water: #123244; --park: #172b20; --road: #2a2a2d; --road-line: #333336;
+      --radar-a: #37597c; --radar-b: #2f6291; --radar-c: #2d8055; --radar-d: #b39530;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #e7e7e9; --surface: #ffffff; --surface-2: #eeeeef;
+    --ink: #17181a; --muted: #5b5b60; --faint: #8a8a8f; --line: #d9d9db; --line-strong: #bfbfc3;
+    --accent: #1d4e73; --accent-ink: #143a58; --accent-soft: rgba(29,78,115,0.10);
+    --sev1: #b58a10; --sev2: #c96f0f; --sev3: #a92318; --sev4: #6c2790; --ok: #2c7448;
+    --land: #e2e2e4; --water: #b3c6d6; --park: #cdd9c9; --road: #ffffff; --road-line: #d1d1d4;
+    --radar-a: #8faec9; --radar-b: #3f6f9e; --radar-c: #3c8a63; --radar-d: #c1a538;
+    --shadow: 0 1px 1px rgba(16,22,29,.05); color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f0f10; --surface: #1a1a1c; --surface-2: #141416;
+    --ink: #e7e7e9; --muted: #9a9a9f; --faint: #66666b; --line: #2a2a2d; --line-strong: #38383c;
+    --accent: #4a90d9; --accent-ink: #7fb4e6; --accent-soft: rgba(74,144,217,0.15);
+    --sev1: #d9ad2e; --sev2: #dd8226; --sev3: #cf4034; --sev4: #9a56c8; --ok: #3c9c66;
+    --land: #1c1c1e; --water: #123244; --park: #172b20; --road: #2a2a2d; --road-line: #333336;
+    --radar-a: #37597c; --radar-b: #2f6291; --radar-c: #2d8055; --radar-d: #b39530;
+    --shadow: 0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .app { max-width: 1080px; margin: 0 auto; padding: 14px clamp(10px, 3vw, 20px) 56px; }
+  svg { display: block; }
+
+  /* ---------- top bar ---------- */
+  .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 2px 0 12px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+  .brand .mark {
+    width: 34px; height: 34px; border-radius: var(--r-sm); flex: none;
+    background: var(--accent); display: grid; place-items: center; color: #fff;
+    border: 1px solid var(--accent-ink);
+  }
+  .brand .mark svg { width: 19px; height: 19px; }
+  .brand b { font-size: 1.05rem; font-weight: 700; letter-spacing: .01em; display: block; }
+  .brand span { font-size: .64rem; color: var(--muted); letter-spacing: .16em; text-transform: uppercase; font-weight: 600; }
+  .place {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 40px;
+    background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink);
+    padding: 0 12px; border-radius: var(--r-sm); font-size: .85rem; font-weight: 600; cursor: pointer;
+  }
+  .place svg { width: 15px; height: 15px; color: var(--accent); }
+  .iconbtn {
+    width: 40px; height: 40px; flex: none; border-radius: var(--r-sm);
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+    cursor: pointer; display: grid; place-items: center;
+  }
+  .iconbtn svg { width: 18px; height: 18px; }
+  .iconbtn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* status strip */
+  .statusline {
+    flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+    padding: 8px 12px; margin-top: 2px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--ok); border-radius: var(--r-sm);
+    font-size: .72rem; color: var(--muted); letter-spacing: .02em;
+  }
+  .statusline .live { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
+  .statusline .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .statusline .src { margin-left: auto; color: var(--faint); text-transform: uppercase; letter-spacing: .1em; font-size: .64rem; }
+  @media (prefers-reduced-motion: no-preference) { .statusline .live i { animation: blink 2.4s ease-in-out infinite; } @keyframes blink { 50% { opacity: .35; } } }
+
+  /* ---------- map ---------- */
+  .mapwrap { position: relative; border-radius: var(--r); overflow: hidden; border: 1px solid var(--line-strong); background: var(--land); }
+  .map { width: 100%; height: auto; aspect-ratio: 8 / 4.6; }
+  @media (max-width: 560px) { .map { aspect-ratio: 3 / 3.2; } }
+  .m-land { fill: var(--land); } .m-water { fill: var(--water); } .m-park { fill: var(--park); }
+  .m-road { stroke: var(--road); } .m-roadline { stroke: var(--road-line); }
+
+  #warnLayer,#trafficLayer,#radarLayer,#pegelLayer { transition: opacity .2s ease; }
+  #warnLayer { opacity: 0; } .show-warn #warnLayer { opacity: 1; }
+  #trafficLayer { opacity: 0; } .show-traffic #trafficLayer { opacity: 1; }
+  #radarLayer { opacity: 0; } .show-radar #radarLayer { opacity: .8; }
+  #pegelLayer { opacity: 0; } .show-pegel #pegelLayer { opacity: 1; }
+  .warn-poly { fill: var(--sev2); fill-opacity: .15; stroke: var(--sev2); stroke-width: 2; stroke-dasharray: 5 4; }
+  .traffic-seg { stroke: var(--sev3); stroke-width: 6; stroke-linecap: round; fill: none; }
+  .radar-blob { filter: url(#soften); }
+  .userdot { fill: var(--accent); stroke: #fff; stroke-width: 3; }
+  .userpulse { fill: var(--accent); opacity: .26; transform-origin: center; }
+  @media (prefers-reduced-motion: no-preference) {
+    .userpulse { animation: pulse 2.8s ease-out infinite; }
+    @keyframes pulse { 0% { transform: scale(1); opacity: .3; } 70% { transform: scale(2.6); opacity: 0; } 100% { opacity: 0; } }
+  }
+  .pin circle { stroke: #fff; stroke-width: 2; }
+
+  .maptools {
+    position: absolute; top: 10px; left: 10px; right: 10px;
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px;
+  }
+  .maptools::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; cursor: pointer; user-select: none; min-height: 34px;
+    display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border-radius: var(--r-sm);
+    font-size: .78rem; font-weight: 600; white-space: nowrap;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    border: 1px solid var(--line-strong); color: var(--muted);
+  }
+  .chip .k { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .chip[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+  .chip[data-layer="warn"][aria-pressed="true"] { color: var(--sev2); border-color: var(--sev2); }
+  .chip[data-layer="radar"][aria-pressed="true"] { color: var(--radar-b); border-color: var(--radar-b); }
+  .chip[data-layer="traffic"][aria-pressed="true"] { color: var(--sev3); border-color: var(--sev3); }
+  .chip[data-layer="pegel"][aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+  .chip[aria-pressed="false"] .k { opacity: .3; }
+
+  .legend {
+    position: absolute; bottom: 10px; left: 10px;
+    background: color-mix(in srgb, var(--surface) 93%, transparent);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 7px 10px;
+    font-size: .66rem; color: var(--muted);
+  }
+  @media (max-width: 420px) { .legend { display: none; } }
+  .legend .lbl { text-transform: uppercase; letter-spacing: .1em; font-weight: 700; font-size: .58rem; margin-bottom: 5px; color: var(--faint); }
+  .legend .scale { display: flex; border-radius: 2px; overflow: hidden; width: 128px; }
+  .legend .scale i { height: 7px; flex: 1; }
+  .legend .marks { display: flex; justify-content: space-between; margin-top: 3px; text-transform: uppercase; letter-spacing: .06em; font-size: .56rem; }
+
+  .radarbar { display: none; align-items: center; gap: 12px; padding: 11px 13px; background: var(--surface); border: 1px solid var(--line-strong); border-top: none; }
+  .app.radar-on .radarbar { display: flex; }
+  .play { width: 38px; height: 38px; flex: none; border-radius: var(--r-sm); border: 1px solid var(--accent-ink); background: var(--accent); color: #fff; cursor: pointer; display: grid; place-items: center; }
+  .play svg { width: 16px; height: 16px; }
+  .radarbar input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; min-width: 60px; }
+  .rtime { font-size: .8rem; min-width: 120px; text-align: right; color: var(--ink); }
+  .rtime .fc { color: var(--accent); }
+
+  /* ---------- tiles ---------- */
+  .tiles { display: grid; gap: 10px; margin-top: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  @media (max-width: 480px) { .tiles { grid-template-columns: 1fr; } }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 15px; box-shadow: var(--shadow); position: relative; display: flex; flex-direction: column; gap: 9px; min-height: 116px; }
+  .tile.tap { cursor: pointer; transition: border-color .12s ease, transform .12s ease; }
+  .tile.tap:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .tile .head { display: flex; align-items: center; gap: 9px; }
+  .tile .head .ic { width: 28px; height: 28px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--surface-2); color: var(--accent); flex: none; border: 1px solid var(--line); }
+  .tile .head .ic svg { width: 16px; height: 16px; }
+  .tile .head h3 { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
+  .tile .head .badge { margin-left: auto; font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 3px 8px; border-radius: 3px; }
+  .badge.warn { background: color-mix(in srgb, var(--sev2) 15%, transparent); color: var(--sev2); }
+  .badge.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .badge.alert { background: color-mix(in srgb, var(--sev3) 15%, transparent); color: var(--sev3); }
+  .tile.warnborder { border-left: 3px solid var(--sev2); }
+
+  .wx-main { display: flex; align-items: baseline; gap: 10px; }
+  .wx-temp { font-size: 2.1rem; font-weight: 650; letter-spacing: -.02em; }
+  .wx-cond { font-size: .88rem; color: var(--ink); font-weight: 600; }
+  .wx-sub { font-size: .76rem; color: var(--muted); }
+  .wx-row { display: flex; gap: 16px; font-size: .8rem; color: var(--muted); margin-top: auto; align-items: center; }
+  .wx-row span { display: inline-flex; align-items: center; gap: 6px; }
+  .wx-row svg { width: 15px; height: 15px; color: var(--faint); }
+  .wx-row b { color: var(--ink); font-weight: 600; }
+
+  .list { display: flex; flex-direction: column; gap: 7px; }
+  .line-item { display: flex; align-items: center; gap: 8px; font-size: .83rem; }
+  .line-item .sv { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .line-item .t { color: var(--ink); }
+  .line-item .meta { margin-left: auto; color: var(--faint); font-size: .74rem; }
+
+  .metric { display: flex; align-items: baseline; gap: 8px; }
+  .metric .big { font-size: 1.7rem; font-weight: 650; letter-spacing: -.01em; }
+  .metric .u { color: var(--muted); font-size: .8rem; }
+  .trend { font-size: .76rem; color: var(--muted); margin-top: auto; display: inline-flex; align-items: center; gap: 6px; }
+  .trend svg { width: 13px; height: 13px; }
+  .aqi-bar { height: 7px; border-radius: 2px; background: linear-gradient(90deg,var(--ok),var(--sev1),var(--sev2),var(--sev3)); position: relative; margin-top: 6px; }
+  .aqi-bar i { position: absolute; top: -3px; width: 3px; height: 13px; border-radius: 1px; background: var(--ink); box-shadow: 0 0 0 2px var(--surface); }
+  .news-item { font-size: .83rem; color: var(--ink); line-height: 1.4; }
+  .news-item + .news-item { padding-top: 7px; border-top: 1px solid var(--line); margin-top: 7px; }
+  .news-item .tm { font-size: .68rem; color: var(--faint); }
+  .footnote { font-size: .78rem; color: var(--muted); margin-top: auto; }
+  .footnote b { color: var(--ink); }
+
+  /* ---------- weather sheet ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(6,10,14,.5); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); display: none; align-items: flex-end; justify-content: center; z-index: 50; }
+  .scrim.open { display: flex; }
+  .sheet { background: var(--bg); width: 100%; max-width: 1080px; border-radius: var(--r) var(--r) 0 0; padding: 18px clamp(14px,3vw,24px) 28px; max-height: 92vh; overflow-y: auto; border: 1px solid var(--line-strong); }
+  @media (min-width: 640px) { .scrim { align-items: center; padding: 20px; } .sheet { border-radius: var(--r); max-height: 88vh; } }
+  .sheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--line-strong); margin: 0 auto 14px; }
+  @media (min-width: 640px) { .sheet .grip { display: none; } }
+  .sheet-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+  .sheet-head h2 { margin: 0; font-size: 1.1rem; }
+  .sheet-head .sub { font-size: .76rem; color: var(--muted); }
+  .sheet-head .close { margin-left: auto; }
+  .warnbanner { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--sev2) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--sev2) 40%, transparent); color: var(--ink); font-size: .84rem; margin-bottom: 6px; }
+  .warnbanner .wi { width: 26px; height: 26px; flex: none; border-radius: var(--r-sm); background: var(--sev2); color: #fff; display: grid; place-items: center; }
+  .warnbanner .wi svg { width: 16px; height: 16px; }
+  .warnbanner b { color: var(--sev2); }
+  .sect-label { font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); margin: 20px 0 9px; }
+  .hours { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+  .hour { flex: none; width: 60px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 4px; }
+  .hour .h { font-size: .7rem; color: var(--muted); }
+  .hour .em { margin: 5px auto 4px; color: var(--accent); width: 20px; height: 20px; }
+  .hour .em svg { width: 20px; height: 20px; }
+  .hour .tp { font-size: .88rem; font-weight: 600; }
+  .hour .pp { font-size: .66rem; color: var(--radar-b); font-weight: 600; min-height: .9em; }
+  .days { display: flex; flex-direction: column; }
+  .day { display: grid; grid-template-columns: 40px 24px 1fr 88px; align-items: center; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: .86rem; }
+  .day:last-child { border-bottom: none; }
+  .day .dn { font-weight: 600; }
+  .day .dw { color: var(--accent); } .day .dw svg { width: 18px; height: 18px; }
+  .day .bar { height: 6px; border-radius: 3px; background: var(--surface-2); position: relative; overflow: hidden; }
+  .day .bar i { position: absolute; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--sev2)); }
+  .day .tmp { text-align: right; color: var(--muted); }
+  .day .tmp b { color: var(--ink); }
+  .details { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 9px; }
+  .detail { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; }
+  .detail .dl { font-size: .66rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .detail .dv { font-size: 1.1rem; font-weight: 600; margin-top: 2px; }
+  .detail .dv small { font-size: .72rem; color: var(--muted); font-weight: 400; }
+  .planbar { margin-top: 24px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); font-size: .78rem; color: var(--muted); }
+  .planbar b { color: var(--accent-ink); }
+  /* ---------- offline regions ---------- */
+  .panel { position: fixed; inset: 0; background: var(--bg); z-index: 60; display: none; flex-direction: column; }
+  .panel.open { display: flex; }
+  .panel-head { display: flex; align-items: center; gap: 12px; padding: 12px clamp(12px,3vw,20px); border-bottom: 1px solid var(--line-strong); background: var(--surface); flex: none; }
+  .panel-head h2 { margin: 0; font-size: 1.05rem; line-height: 1.15; }
+  .panel-head .sub { font-size: .62rem; letter-spacing: .16em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+  .panel-body { overflow-y: auto; padding: 14px clamp(12px,3vw,20px) 44px; width: 100%; max-width: 760px; margin: 0 auto; }
+  .storage-sum { display: flex; align-items: baseline; gap: 8px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: 10px; }
+  .storage-sum .big { font-size: 1.5rem; font-weight: 650; letter-spacing: -.01em; }
+  .storage-sum .u { color: var(--muted); font-size: .82rem; }
+  .storage-sum .free { margin-left: auto; font-size: .74rem; color: var(--faint); }
+  .always-on { display: flex; gap: 9px; align-items: center; font-size: .8rem; color: var(--muted); padding: 11px 14px; border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); border-radius: var(--r-sm); margin-bottom: 18px; }
+  .always-on svg { width: 16px; height: 16px; color: var(--ok); flex: none; }
+  .always-on b { color: var(--ink); font-weight: 600; }
+  .region-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+  .region { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  .region:last-child { border-bottom: none; }
+  .rcode { font-size: .72rem; color: var(--faint); width: 20px; flex: none; }
+  .rinfo { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
+  .rinfo b { font-size: .9rem; font-weight: 600; }
+  .rinfo .rmeta { font-size: .72rem; color: var(--muted); }
+  .raction { display: flex; align-items: center; gap: 8px; flex: none; }
+  .rbtn { min-height: 34px; padding: 0 13px; border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: .78rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .rbtn.ghost { background: transparent; color: var(--accent); }
+  .rok { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-size: .78rem; font-weight: 600; white-space: nowrap; }
+  .rok svg { width: 15px; height: 15px; }
+  .rdel { width: 34px; height: 34px; flex: none; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+  .rdel:hover { color: var(--sev3); border-color: var(--sev3); }
+  .rdel svg { width: 15px; height: 15px; }
+  .rprog { width: 128px; }
+  @media (max-width: 420px) { .rprog { width: 84px; } .rcode { display: none; } }
+  .rprog .track { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .rprog .track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
+  .rprog .pct { font-size: .68rem; color: var(--muted); margin-top: 3px; text-align: right; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+</style>
+
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 2.5v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V5.5L12 3Z"/><path d="M9 12l2 2 4-4"/></svg>
+      </div>
+      <div>
+        <b>Lagebild</b>
+        <span>Sicher unterwegs</span>
+      </div>
+    </div>
+    <button class="place" type="button" title="Ort wechseln">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11Z"/><circle cx="12" cy="10" r="2.2"/></svg>
+      Berlin-Mitte
+    </button>
+    <button class="iconbtn" id="regionsBtn" type="button" title="Offline-Regionen" aria-label="Offline-Regionen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11M12 14l-4-4M12 14l4-4M5 20h14"/></svg>
+    </button>
+    <button class="iconbtn" id="themeBtn" type="button" title="Hell/Dunkel umschalten" aria-label="Theme umschalten">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+    </button>
+    <div class="statusline">
+      <span class="live"><i></i>LIVE</span>
+      <span>Aktualisiert vor <span id="ago" class="mono">3</span> Min.</span>
+      <span>Offline verfügbar</span>
+      <span class="src">DWD · NINA · Autobahn · DB</span>
+    </div>
+  </header>
+
+  <div class="mapwrap">
+    <svg class="map" viewBox="0 0 800 460" role="img" aria-label="Lagekarte um Berlin-Mitte mit Warn-, Radar- und Verkehrs-Ebenen">
+      <defs><filter id="soften" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="9"/></filter></defs>
+      <rect class="m-land" x="0" y="0" width="800" height="460"/>
+      <path class="m-park" d="M70 60 q60 -20 120 10 q20 60 -30 90 q-70 20 -100 -30 Z"/>
+      <path class="m-park" d="M600 300 q70 -10 120 30 q10 60 -60 70 q-70 -5 -80 -60 Z"/>
+      <path class="m-water" d="M-20 180 C 140 140, 220 260, 380 250 C 520 242, 600 320, 830 300 L 830 340 C 600 360, 520 288, 380 296 C 220 306, 150 200, -20 224 Z"/>
+      <g fill="none" stroke-linecap="round">
+        <path class="m-road" stroke-width="16" d="M-10 90 H 810"/><path class="m-roadline" stroke-width="14" d="M-10 90 H 810"/>
+        <path class="m-road" stroke-width="14" d="M120 -10 V 470"/><path class="m-roadline" stroke-width="12" d="M120 -10 V 470"/>
+        <path class="m-road" stroke-width="12" d="M-10 380 H 810"/><path class="m-roadline" stroke-width="10" d="M-10 380 H 810"/>
+        <path class="m-road" stroke-width="11" d="M470 -10 C 500 160, 430 300, 500 470"/><path class="m-roadline" stroke-width="9" d="M470 -10 C 500 160, 430 300, 500 470"/>
+        <path class="m-road" stroke-width="10" d="M660 -10 V 470"/><path class="m-roadline" stroke-width="8" d="M660 -10 V 470"/>
+      </g>
+
+      <g id="radarLayer"><g id="radarGroup" class="radar-blob">
+        <ellipse cx="180" cy="330" rx="90" ry="60" fill="var(--radar-a)"/>
+        <ellipse cx="150" cy="340" rx="55" ry="38" fill="var(--radar-b)"/>
+        <ellipse cx="240" cy="300" rx="42" ry="30" fill="var(--radar-c)"/>
+        <ellipse cx="130" cy="350" rx="22" ry="16" fill="var(--radar-d)"/>
+      </g></g>
+
+      <g id="warnLayer">
+        <path class="warn-poly" d="M330 60 L 560 90 L 600 240 L 380 270 L 300 150 Z"/>
+        <g class="pin" transform="translate(452,150)"><circle r="15" fill="var(--sev2)"/><path d="M0 -8 L 7 6 L -7 6 Z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><line x1="0" y1="-1" x2="0" y2="2.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="0" cy="4.4" r="1" fill="#fff"/></g>
+      </g>
+
+      <g id="trafficLayer">
+        <path class="traffic-seg" d="M470 40 C 496 150, 445 250, 500 360"/>
+        <g class="pin" transform="translate(486,120)"><circle r="12" fill="var(--sev3)"/><line x1="-5" y1="0" x2="5" y2="0" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></g>
+        <g class="pin" transform="translate(470,300)"><circle r="12" fill="var(--sev3)"/><line x1="-5" y1="0" x2="5" y2="0" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></g>
+      </g>
+
+      <g id="pegelLayer">
+        <g class="pin" transform="translate(360,270)"><circle r="12" fill="var(--accent)"/><path d="M-6 1 q3 -4 6 0 t6 0" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></g>
+      </g>
+
+      <g transform="translate(400,225)"><circle class="userpulse" r="16"/><circle class="userdot" r="9"/></g>
+    </svg>
+
+    <div class="maptools" role="group" aria-label="Karten-Ebenen">
+      <button class="chip" data-layer="warn" aria-pressed="true"><span class="k" style="background:var(--sev2)"></span>Warnungen</button>
+      <button class="chip" data-layer="radar" aria-pressed="false"><span class="k" style="background:var(--radar-b)"></span>Regenradar</button>
+      <button class="chip" data-layer="traffic" aria-pressed="true"><span class="k" style="background:var(--sev3)"></span>Verkehr</button>
+      <button class="chip" data-layer="pegel" aria-pressed="false"><span class="k" style="background:var(--accent)"></span>Pegel</button>
+    </div>
+
+    <div class="legend">
+      <div class="lbl">Warnstufe · DWD/NINA</div>
+      <div class="scale"><i style="background:var(--sev1)"></i><i style="background:var(--sev2)"></i><i style="background:var(--sev3)"></i><i style="background:var(--sev4)"></i></div>
+      <div class="marks mono"><span>gering</span><span>extrem</span></div>
+    </div>
+  </div>
+
+  <div class="radarbar" role="group" aria-label="Regenradar-Zeitleiste">
+    <button class="play" id="playBtn" type="button" aria-label="Radar abspielen"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+    <input type="range" id="radarRange" min="0" max="10" value="8" aria-label="Zeitpunkt">
+    <div class="rtime mono" id="radarTime">Jetzt</div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile tap warnborder" id="wxTile" role="button" tabindex="0" aria-label="Wetter-Details öffnen">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.6-1.5A4 4 0 0 0 6 19Z"/><path d="M8 20l-1 2M12 20l-1 2M16 20l-1 2"/></svg></span>
+        <h3>Wetter</h3>
+        <span class="badge warn">Warnung</span>
+      </div>
+      <div class="wx-main"><span class="wx-temp mono">14°</span><div><div class="wx-cond">Leichter Regen</div><div class="wx-sub mono">gefühlt 12° · H 18° / T 9°</div></div></div>
+      <div class="wx-row">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.4-3M3 12h15a2.5 2.5 0 1 1-2.4 3M3 16h8"/></svg><b class="mono">24 km/h</b></span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11Z"/></svg><b class="mono">70 %</b></span>
+      </div>
+    </div>
+
+    <div class="tile tap" id="radarTile" role="button" tabindex="0" aria-label="Regenradar auf der Karte anzeigen">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 12 20 8"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg></span>
+        <h3>Regenradar</h3>
+      </div>
+      <div style="font-size:.9rem">Regen zieht von <b>Südwest</b> auf.</div>
+      <div class="footnote">Erreicht deinen Standort in <b class="mono">~25 Min.</b></div>
+    </div>
+
+    <div class="tile">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v5M12 18h.01"/></svg></span>
+        <h3>Warnungen</h3>
+        <span class="badge warn">2 aktiv</span>
+      </div>
+      <div class="list">
+        <div class="line-item"><span class="sv" style="background:var(--sev2)"></span><span class="t">Windböen — Stufe 2</span><span class="meta mono">bis 18:00</span></div>
+        <div class="line-item"><span class="sv" style="background:var(--sev1)"></span><span class="t">Hochwasser — Stufe 1</span><span class="meta mono">Spree</span></div>
+      </div>
+    </div>
+
+    <div class="tile">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M6 17l1-6h10l1 6M8 11l1-4h6l1 4"/><circle cx="7.5" cy="17.5" r="1.4"/><circle cx="16.5" cy="17.5" r="1.4"/></svg></span>
+        <h3>Verkehr</h3>
+        <span class="badge alert">Sperrung</span>
+      </div>
+      <div class="list">
+        <div class="line-item"><span class="sv" style="background:var(--sev3)"></span><span class="t">A100 · Vollsperrung</span><span class="meta mono">AS Tempelhof</span></div>
+        <div class="line-item"><span class="sv" style="background:var(--sev2)"></span><span class="t">Stau · stockend</span><span class="meta mono">3 km</span></div>
+      </div>
+    </div>
+
+    <div class="tile">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="12" rx="2"/><path d="M6 10h12M9 20l-2 2M15 20l2 2"/><circle cx="9" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1" fill="currentColor" stroke="none"/></svg></span>
+        <h3>Bahn / ÖPNV</h3>
+        <span class="badge warn">Störung</span>
+      </div>
+      <div class="list">
+        <div class="line-item"><span class="sv" style="background:var(--sev2)"></span><span class="t">S1 → Wannsee</span><span class="meta mono">+12 Min</span></div>
+        <div class="line-item"><span class="sv" style="background:var(--sev3)"></span><span class="t">RE5 · fällt aus</span><span class="meta mono">Baustelle</span></div>
+      </div>
+    </div>
+
+    <div class="tile">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14c2 0 2-1.5 4-1.5S11 14 13 14s2-1.5 4-1.5S19 14 21 14M3 19c2 0 2-1.5 4-1.5S11 19 13 19s2-1.5 4-1.5S19 19 21 19"/></svg></span>
+        <h3>Pegel Spree</h3>
+        <span class="badge warn">steigend</span>
+      </div>
+      <div class="metric"><span class="big mono">3,42</span><span class="u">m</span></div>
+      <div class="trend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg><span class="mono">+18 cm / 6 Std · Meldehöhe 4,10 m</span></div>
+    </div>
+
+    <div class="tile">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h10a3 3 0 1 0-3-3M4 14h13a3 3 0 1 1-3 3M4 12h7"/></svg></span>
+        <h3>Luftqualität</h3>
+        <span class="badge ok">Gut</span>
+      </div>
+      <div class="metric"><span class="big mono">2</span><span class="u">von 5 · UBA-Index</span></div>
+      <div class="aqi-bar"><i style="left:20%"></i></div>
+    </div>
+
+    <div class="tile">
+      <div class="head">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H5a2 2 0 0 1-2-2V5Z"/><path d="M17 8h3v9a2 2 0 0 1-2 2M7 9h6M7 13h6M7 16h4"/></svg></span>
+        <h3>News</h3>
+      </div>
+      <div>
+        <div class="news-item">Unwetterlage: DWD warnt vor kräftigen Böen im Nordosten. <span class="tm mono">vor 22 Min</span></div>
+        <div class="news-item">Sperrung A100: Umleitung über Stadtring eingerichtet. <span class="tm mono">vor 1 Std</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Wetter-Details Berlin-Mitte">
+    <div class="grip"></div>
+    <div class="sheet-head">
+      <div><h2>Berlin-Mitte</h2><div class="sub mono">14° · Leichter Regen · aktualisiert vor 3 Min.</div></div>
+      <button class="iconbtn close" id="closeSheet" type="button" aria-label="Schließen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="warnbanner">
+      <span class="wi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg></span>
+      <div><b>Amtliche Warnung: Windböen (Stufe 2)</b> — Böen bis 60 km/h, gültig bis 18:00 Uhr.</div>
+    </div>
+    <div class="sect-label">Stündlich</div>
+    <div class="hours" id="hours"></div>
+    <div class="sect-label">7-Tage-Vorhersage</div>
+    <div class="days" id="days"></div>
+    <div class="sect-label">Details</div>
+    <div class="details">
+      <div class="detail"><div class="dl">Wind</div><div class="dv mono">24 <small>km/h · Böen 45 · NW</small></div></div>
+      <div class="detail"><div class="dl">Luftfeuchte</div><div class="dv mono">82 <small>%</small></div></div>
+      <div class="detail"><div class="dl">Luftdruck</div><div class="dv mono">1004 <small>hPa · fallend</small></div></div>
+      <div class="detail"><div class="dl">Sonne</div><div class="dv mono">06:12 <small>· 20:41</small></div></div>
+      <div class="detail"><div class="dl">UV-Index</div><div class="dv mono">3 <small>· moderat</small></div></div>
+      <div class="detail"><div class="dl">Niederschlag</div><div class="dv mono">1,8 <small>mm / h</small></div></div>
+    </div>
+    <div class="planbar">Datenquelle im echten Build: <b>Bright Sky (DWD)</b> — standortgenau, ohne API-Key, offline vorgehalten.</div>
+  </div>
+</div>
+
+<div class="panel" id="regions" aria-label="Offline-Regionen">
+  <header class="panel-head">
+    <button class="iconbtn" id="regionsBack" type="button" aria-label="Zurück">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </button>
+    <div>
+      <div class="sub">Offline</div>
+      <h2>Regionen</h2>
+    </div>
+  </header>
+  <div class="panel-body">
+    <div class="storage-sum">
+      <span class="big mono" id="rCount">2</span><span class="u">Regionen offline</span>
+      <span class="free"><span class="mono" id="rBytes">66</span> MB belegt</span>
+    </div>
+    <div class="always-on">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <div><b>Fachdaten sind bundesweit immer offline</b> — Warnungen, Wetter, Pegel, Verkehr &amp; Bahn. Hier lädst du zusätzlich die <b>Hintergrundkarte</b> pro Bundesland.</div>
+    </div>
+    <div class="region-list" id="regionList"></div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement, app = document.getElementById('app');
+
+    /* weather glyphs (monoline) */
+    var ICON = {
+      rain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15a4 4 0 0 1 .3-8 5 5 0 0 1 9.6 1.2A3.5 3.5 0 0 1 17 15Z"/><path d="M8 18l-1 2M12 18l-1 2M16 18l-1 2"/></svg>',
+      cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1 .3-8 5 5 0 0 1 9.6 1.2A3.5 3.5 0 0 1 17 18Z"/></svg>',
+      sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+      part: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><path d="M8 2.5V4M3.5 8H2M4.3 4.3l-.9-.9M12.5 8h.5"/><path d="M9 19a3.5 3.5 0 0 1 .3-7 4.4 4.4 0 0 1 8.4 1A3 3 0 0 1 17.5 19Z"/></svg>',
+      moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13.5A8 8 0 1 1 10.5 4a6.3 6.3 0 0 0 9.5 9.5Z"/></svg>'
+    };
+
+    document.getElementById('themeBtn').addEventListener('click', function () {
+      var cur = root.getAttribute('data-theme');
+      if (!cur) cur = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    });
+
+    var layerClass = { warn: 'show-warn', radar: 'show-radar', traffic: 'show-traffic', pegel: 'show-pegel' };
+    function applyLayer(name, on) { app.classList.toggle(layerClass[name], on); if (name === 'radar') app.classList.toggle('radar-on', on); }
+    document.querySelectorAll('.chip').forEach(function (chip) {
+      var name = chip.dataset.layer;
+      applyLayer(name, chip.getAttribute('aria-pressed') === 'true');
+      chip.addEventListener('click', function () { var on = chip.getAttribute('aria-pressed') !== 'true'; chip.setAttribute('aria-pressed', on); applyLayer(name, on); });
+    });
+    document.getElementById('radarTile').addEventListener('click', function () {
+      var chip = document.querySelector('.chip[data-layer="radar"]');
+      chip.setAttribute('aria-pressed', 'true'); applyLayer('radar', true);
+      document.querySelector('.mapwrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    var range = document.getElementById('radarRange'), rGroup = document.getElementById('radarGroup'),
+        rTime = document.getElementById('radarTime'), playBtn = document.getElementById('playBtn'),
+        playIcon = document.getElementById('playIcon'), timer = null;
+    function frameToMin(f) { return (f - 8) * 15; }
+    function renderFrame(f) {
+      var min = frameToMin(f), dx = f * 26 - 130, dy = -f * 9 + 40;
+      rGroup.setAttribute('transform', 'translate(' + dx + ',' + dy + ')');
+      rGroup.style.opacity = min > 0 ? 0.5 : 1;
+      if (min < 0) rTime.textContent = 'vor ' + (-min) + ' Min';
+      else if (min === 0) rTime.textContent = 'Jetzt';
+      else rTime.innerHTML = '<span class="fc">in ' + min + ' Min · Prognose</span>';
+    }
+    range.addEventListener('input', function () { renderFrame(+range.value); });
+    renderFrame(+range.value);
+    function setPlaying(on) {
+      if (on) { playIcon.innerHTML = '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>'; timer = setInterval(function () { var v = (+range.value + 1) % 11; range.value = v; renderFrame(v); }, 700); }
+      else { playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>'; clearInterval(timer); timer = null; }
+    }
+    playBtn.addEventListener('click', function () { setPlaying(timer === null); });
+
+    var scrim = document.getElementById('scrim');
+    function openSheet() { scrim.classList.add('open'); }
+    function closeSheet() { scrim.classList.remove('open'); }
+    var wxTile = document.getElementById('wxTile');
+    wxTile.addEventListener('click', openSheet);
+    wxTile.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet(); } });
+    document.getElementById('closeSheet').addEventListener('click', closeSheet);
+    scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
+
+    var hourData = [['14h','rain','14°','70'],['15h','rain','14°','60'],['16h','part','13°','40'],['17h','cloud','13°','20'],['18h','cloud','12°','10'],['19h','moon','12°',''],['20h','moon','11°',''],['21h','moon','11°',''],['22h','moon','10°','']];
+    document.getElementById('hours').innerHTML = hourData.map(function (h) {
+      return '<div class="hour"><div class="h mono">' + h[0] + '</div><div class="em">' + ICON[h[1]] + '</div><div class="tp mono">' + h[2] + '</div><div class="pp mono">' + (h[3] ? h[3] + '%' : '') + '</div></div>';
+    }).join('');
+
+    var dayData = [['Mi','part',9,18],['Do','cloud',8,16],['Fr','sun',11,21],['Sa','part',12,22],['So','rain',10,17],['Mo','rain',9,15],['Di','part',10,18]];
+    var lo = 6, hi = 24;
+    document.getElementById('days').innerHTML = dayData.map(function (d) {
+      var left = (d[2] - lo) / (hi - lo) * 100, width = (d[3] - d[2]) / (hi - lo) * 100;
+      return '<div class="day"><span class="dn">' + d[0] + '</span><span class="dw">' + ICON[d[1]] + '</span><div class="bar"><i style="left:' + left + '%;width:' + width + '%"></i></div><span class="tmp mono">' + d[2] + '° <b>' + d[3] + '°</b></span></div>';
+    }).join('');
+
+    var ago = document.getElementById('ago'), n = 3;
+    setInterval(function () { n++; ago.textContent = n; }, 60000);
+
+    /* ---- offline regions ---- */
+    var STATES = [
+      { c: '01', n: 'Schleswig-Holstein', mb: 34, s: 'none' },
+      { c: '02', n: 'Hamburg', mb: 8, s: 'none' },
+      { c: '03', n: 'Niedersachsen', mb: 78, s: 'none' },
+      { c: '04', n: 'Bremen', mb: 5, s: 'none' },
+      { c: '05', n: 'Nordrhein-Westfalen', mb: 74, s: 'none' },
+      { c: '06', n: 'Hessen', mb: 48, s: 'none' },
+      { c: '07', n: 'Rheinland-Pfalz', mb: 44, s: 'none' },
+      { c: '08', n: 'Baden-Württemberg', mb: 68, s: 'none' },
+      { c: '09', n: 'Bayern', mb: 92, s: 'none' },
+      { c: '10', n: 'Saarland', mb: 9, s: 'none' },
+      { c: '11', n: 'Berlin', mb: 12, s: 'stored' },
+      { c: '12', n: 'Brandenburg', mb: 54, s: 'stored' },
+      { c: '13', n: 'Mecklenburg-Vorpommern', mb: 46, s: 'none' },
+      { c: '14', n: 'Sachsen', mb: 40, s: 'update' },
+      { c: '15', n: 'Sachsen-Anhalt', mb: 42, s: 'none' },
+      { c: '16', n: 'Thüringen', mb: 38, s: 'none' }
+    ];
+    var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    var TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>';
+    var regionList = document.getElementById('regionList');
+    var rCount = document.getElementById('rCount'), rBytes = document.getElementById('rBytes');
+    var dlTimers = {};
+
+    function meta(st) {
+      if (st.s === 'stored') return 'Offline · ' + st.mb + ' MB · aktuell';
+      if (st.s === 'update') return 'Update verfügbar · ' + st.mb + ' MB';
+      if (st.s === 'downloading') return 'Wird geladen …';
+      return 'Nicht geladen';
+    }
+    function action(st) {
+      if (st.s === 'stored')
+        return '<span class="rok">' + CHECK + 'Offline</span>' +
+          '<button class="rdel" data-act="del" data-c="' + st.c + '" aria-label="Löschen">' + TRASH + '</button>';
+      if (st.s === 'update')
+        return '<button class="rbtn ghost" data-act="get" data-c="' + st.c + '">Update</button>' +
+          '<button class="rdel" data-act="del" data-c="' + st.c + '" aria-label="Löschen">' + TRASH + '</button>';
+      if (st.s === 'downloading')
+        return '<div class="rprog"><div class="track"><i style="width:' + (st.p || 0) + '%"></i></div>' +
+          '<div class="pct mono">' + Math.round(st.p || 0) + ' %</div></div>' +
+          '<button class="rdel" data-act="cancel" data-c="' + st.c + '" aria-label="Abbrechen">' + TRASH + '</button>';
+      return '<span class="rsize mono" style="font-size:.76rem;color:var(--muted)">' + st.mb + ' MB</span>' +
+        '<button class="rbtn" data-act="get" data-c="' + st.c + '">Laden</button>';
+    }
+    function renderRegions() {
+      regionList.innerHTML = STATES.map(function (st) {
+        return '<div class="region"><span class="rcode mono">' + st.c + '</span>' +
+          '<div class="rinfo"><b>' + st.n + '</b><span class="rmeta">' + meta(st) + '</span></div>' +
+          '<div class="raction">' + action(st) + '</div></div>';
+      }).join('');
+      var stored = STATES.filter(function (s) { return s.s === 'stored'; });
+      rCount.textContent = stored.length;
+      rBytes.textContent = stored.reduce(function (a, s) { return a + s.mb; }, 0);
+    }
+    function byCode(c) { return STATES.filter(function (s) { return s.c === c; })[0]; }
+    function startDownload(st) {
+      st.s = 'downloading'; st.p = 0; renderRegions();
+      dlTimers[st.c] = setInterval(function () {
+        st.p += 6 + Math.random() * 8;
+        if (st.p >= 100) { st.p = 100; clearInterval(dlTimers[st.c]); delete dlTimers[st.c]; st.s = 'stored'; }
+        renderRegions();
+      }, 130);
+    }
+    regionList.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-act]'); if (!btn) return;
+      var st = byCode(btn.dataset.c), act = btn.dataset.act;
+      if (act === 'get') startDownload(st);
+      else if (act === 'del') { st.s = 'none'; delete st.p; renderRegions(); }
+      else if (act === 'cancel') { clearInterval(dlTimers[st.c]); delete dlTimers[st.c]; st.s = 'none'; delete st.p; renderRegions(); }
+    });
+    renderRegions();
+
+    var panel = document.getElementById('regions');
+    document.getElementById('regionsBtn').addEventListener('click', function () { panel.classList.add('open'); });
+    document.getElementById('regionsBack').addEventListener('click', function () { panel.classList.remove('open'); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') panel.classList.remove('open'); });
+  })();
+</script>
