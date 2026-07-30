@@ -1,15 +1,33 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { Coords } from '@lagebild/shared';
 import { DEFAULT_COORDS, fetchWeather, fetchAlerts, fetchTraffic, fetchPegel, fetchNews } from './api.js';
 import { useApi } from './useApi.js';
+import { LageMap } from './LageMap.js';
 import { relativeTime, timeUntil, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE } from './format.js';
 
-const coords = DEFAULT_COORDS;
-
 export function App() {
-  const weather = useApi(() => fetchWeather(coords));
-  const alerts = useApi(() => fetchAlerts(coords));
-  const traffic = useApi(() => fetchTraffic(coords));
-  const pegel = useApi(() => fetchPegel(coords));
+  const [coords, setCoords] = useState<Coords>(DEFAULT_COORDS);
+  const [place, setPlace] = useState('Berlin-Mitte');
+
+  // Standort per Geolocation, Fallback bleibt Berlin-Mitte.
+  useEffect(() => {
+    if (!('geolocation' in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        setPlace('Dein Standort');
+      },
+      () => {
+        /* Berechtigung verweigert → Standardort behalten */
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+    );
+  }, []);
+
+  const weather = useApi(() => fetchWeather(coords), [coords]);
+  const alerts = useApi(() => fetchAlerts(coords), [coords]);
+  const traffic = useApi(() => fetchTraffic(coords), [coords]);
+  const pegel = useApi(() => fetchPegel(coords), [coords]);
   const news = useApi(() => fetchNews());
 
   const w = weather.data?.data;
@@ -34,8 +52,10 @@ export function App() {
       <div className="statusline">
         <span className="live"><i />LIVE</span>
         <span>{weather.data ? `Aktualisiert ${relativeTime(weather.data.fetchedAt)}` : 'Lade …'}</span>
-        <span className="src">Berlin-Mitte</span>
+        <span className="src">{place}</span>
       </div>
+
+      <LageMap coords={coords} traffic={traffic.data?.data ?? []} pegel={pegel.data?.data ?? []} />
 
       <section className="tiles">
         <Tile title="Wetter" source={weather.data?.source} warn className="warnborder">
