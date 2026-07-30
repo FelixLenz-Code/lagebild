@@ -227,9 +227,10 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, onViewport }:
     if (showRadar && radar && frames.length > 0) {
       if (!map.getSource('radar')) {
         const url = radarTileUrl(radar.host, frames[Math.min(radarIdx, frames.length - 1)]!.path);
-        // maxzoom deckelt die Anfragen: darüber skaliert MapLibre hoch, statt
-        // RainViewers "zoom level not supported"-Kacheln zu laden.
-        map.addSource('radar', { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 11 });
+        // RainViewer liefert Radar-Kacheln nur bis Zoom 7; ab z8 kommt eine
+        // "zoom level not supported"-Platzhalterkachel. maxzoom: 7 lässt MapLibre
+        // die z7-Kacheln überzoomen (geglättet), statt die Platzhalter zu laden.
+        map.addSource('radar', { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 7 });
         const beforeId = map.getLayer('warnings-fill') ? 'warnings-fill' : undefined;
         map.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': 0.7 } }, beforeId);
       }
