@@ -33,6 +33,25 @@ pnpm build      # baut alle Pakete
 pnpm typecheck  # Typprüfung über alle Pakete
 ```
 
+## Offline-Karten (PMTiles pro Bundesland)
+
+Die App kann die Hintergrundkarte pro Bundesland offline vorhalten (Vektor-Kacheln
+im OPFS des Browsers). Die PMTiles-Dateien erzeugst du einmalig:
+
+```bash
+scripts/build-maps.sh            # alle 16 Länder nach apps/api/maps/
+scripts/build-maps.sh 04 11      # nur einzelne (Code)
+```
+
+Das Skript schneidet die Ausschnitte per `pmtiles extract` aus einer Planet-PMTiles
+(Default: öffentliche Protomaps-Planet-Datei, Protomaps-Schema — passend zum Style;
+`SOURCE`/`OUT_DIR`/`MAXZOOM` sind per Env übersteuerbar). Der API-Server liefert die
+Dateien automatisch unter `/api/maps` aus. Dateien in `apps/api/maps/` sind
+gitignored (große Binärdaten).
+
+Die **Online**-Basiskarte kommt aus `VITE_MAP_PMTILES_URL` (Default: Protomaps-Demo;
+in Produktion auf die eigene, gehostete Deutschland-PMTiles zeigen).
+
 ## Deployment
 
 Läuft hinter einem eigenen Reverse-Proxy (TLS dort terminieren). Installation und
