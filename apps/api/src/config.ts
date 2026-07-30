@@ -34,5 +34,7 @@ export const config = {
   webRoot: process.env.WEB_ROOT ?? join(here, 'public'),
   /** TomTom-API-Key für die Verkehrsfluss-Kacheln (bleibt serverseitig). */
   tomtomKey: process.env.TOMTOM_KEY ?? '',
+  /** Verzeichnis mit den Offline-PMTiles pro Bundesland (z.B. 04.pmtiles). */
+  mapsDir: process.env.MAPS_DIR ?? join(process.cwd(), 'maps'),
   isProd: process.env.NODE_ENV === 'production',
 };

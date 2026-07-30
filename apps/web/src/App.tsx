@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchTransit, fetchHealth, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
+import { OfflineRegions } from './OfflineRegions.js';
+import { opfsSupported, listOffline } from './offlineMaps.js';
 import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
 import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail, TransitDetail } from './details.js';
@@ -87,6 +89,19 @@ export function App() {
   const health = useApi('health', () => fetchHealth());
   const flowAvailable = health.data?.features?.flow ?? false;
 
+  const maps = useApi('maps', () => fetchMaps());
+  const availableMap: Record<string, number> = Object.fromEntries(
+    (maps.data?.data ?? []).map((m) => [m.code, m.bytes]),
+  );
+  const [regionsOpen, setRegionsOpen] = useState(false);
+  const [offlineMapsState, setOfflineMapsState] = useState<Record<string, number>>({});
+  const refreshOffline = useCallback(() => {
+    if (opfsSupported()) listOffline().then(setOfflineMapsState).catch(() => {});
+  }, []);
+  useEffect(() => {
+    refreshOffline();
+  }, [refreshOffline]);
+
   const transitStops = transit.data?.data ?? [];
   const transitDisruptions = transitStops
     .flatMap((s) => s.departures)
@@ -149,6 +164,14 @@ export function App() {
             <path d="M6 9l6 6 6-6" />
           </svg>
         </button>
+
+        {opfsSupported() && (
+          <button type="button" className="iconbtn" onClick={() => setRegionsOpen(true)} title="Offline-Regionen" aria-label="Offline-Regionen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v11M12 14l-4-4M12 14l4-4M5 20h14" />
+            </svg>
+          </button>
+        )}
       </header>
 
       <div className="statusline" data-state={online && !anyCached ? 'live' : 'offline'}>
@@ -325,6 +348,15 @@ export function App() {
         </Tile>
         </section>
       </div>
+
+      {regionsOpen && (
+        <OfflineRegions
+          availableMap={availableMap}
+          offline={offlineMapsState}
+          onClose={() => setRegionsOpen(false)}
+          onChanged={refreshOffline}
+        />
+      )}
 
       {pickerOpen && (
         <PlacePicker

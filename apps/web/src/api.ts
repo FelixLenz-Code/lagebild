@@ -56,6 +56,11 @@ export interface Health {
 }
 export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
 
+export interface MapsList {
+  data: { code: string; bytes: number }[];
+}
+export const fetchMaps = (): Promise<MapsList> => getJson(`/api/maps`);
+
 // Kartenausschnitt-bezogen (alles im sichtbaren Bereich):
 export const fetchWarnings = (b: Bbox): Promise<ApiEnvelope<WarningFeature[]>> =>
   getJson(`/api/warnings?${bboxQ(b)}`);

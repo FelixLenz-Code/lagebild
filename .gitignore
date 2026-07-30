@@ -6,6 +6,10 @@ node_modules/
 dist/
 apps/api/public/
 
+# offline map tiles (large binaries, generated/hosted separately)
+apps/api/maps/
+*.pmtiles
+
 # env / secrets
 .env
 .env.*
@@ -24,3 +28,6 @@ npm-debug.log*
 # misc
 *.local
 coverage/
+
+# local tooling
+.claude/

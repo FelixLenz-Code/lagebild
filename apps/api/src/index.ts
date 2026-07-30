@@ -16,6 +16,7 @@ import { radarRoute } from './routes/radar.js';
 import { geocodeRoute } from './routes/geocode.js';
 import { transitRoute } from './routes/transit.js';
 import { flowRoute } from './routes/flow.js';
+import { mapsRoute } from './routes/maps.js';
 
 const app = new Hono();
 
@@ -42,6 +43,12 @@ app.route('/api/radar', radarRoute);
 app.route('/api/geocode', geocodeRoute);
 app.route('/api/transit', transitRoute);
 app.route('/api/flow', flowRoute);
+app.route('/api/maps', mapsRoute);
+// Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
+app.use(
+  '/api/maps/*',
+  serveStatic({ root: config.mapsDir, rewriteRequestPath: (p) => p.replace(/^\/api\/maps\//, '/') }),
+);
 
 // --- statisches PWA-Bundle (nur wenn gebaut vorhanden) ---
 if (existsSync(config.webRoot)) {
