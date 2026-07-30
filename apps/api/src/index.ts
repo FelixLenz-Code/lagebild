@@ -15,7 +15,7 @@ import { airRoute } from './routes/air.js';
 import { radarRoute } from './routes/radar.js';
 import { geocodeRoute } from './routes/geocode.js';
 import { transitRoute } from './routes/transit.js';
-import { flowRoute } from './routes/flow.js';
+import { flowRoute, flowUsable } from './routes/flow.js';
 import { mapsRoute } from './routes/maps.js';
 
 const app = new Hono();
@@ -24,12 +24,12 @@ app.use('*', logger());
 app.use('/api/*', cors());
 
 // --- API ---
-app.get('/api/health', (c) =>
+app.get('/api/health', async (c) =>
   c.json({
     ok: true,
     service: 'lagebild-api',
     ts: new Date().toISOString(),
-    features: { flow: config.tomtomKey.length > 0 },
+    features: { flow: await flowUsable() },
   }),
 );
 app.route('/api/weather', weatherRoute);
