@@ -19,6 +19,7 @@ import { flowRoute, flowUsable } from './routes/flow.js';
 import { mapsRoute } from './routes/maps.js';
 import { aircraftRoute } from './routes/aircraft.js';
 import { vesselsRoute, startAisCollector, aisUsable } from './routes/vessels.js';
+import { aprsRoute, aprsUsable } from './routes/aprs.js';
 
 const app = new Hono();
 
@@ -31,7 +32,7 @@ app.get('/api/health', async (c) =>
     ok: true,
     service: 'lagebild-api',
     ts: new Date().toISOString(),
-    features: { flow: await flowUsable(), ais: aisUsable() },
+    features: { flow: await flowUsable(), ais: aisUsable(), aprs: aprsUsable() },
   }),
 );
 app.route('/api/weather', weatherRoute);
@@ -48,6 +49,7 @@ app.route('/api/flow', flowRoute);
 app.route('/api/maps', mapsRoute);
 app.route('/api/aircraft', aircraftRoute);
 app.route('/api/vessels', vesselsRoute);
+app.route('/api/aprs', aprsRoute);
 // Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
 app.use(
   '/api/maps/*',

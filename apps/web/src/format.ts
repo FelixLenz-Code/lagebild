@@ -83,6 +83,15 @@ export const SEVERITY_VAR: Record<Severity, string> = {
   extreme: 'var(--sev4)',
 };
 
+export const APRS_KIND_DE: Record<string, string> = {
+  station: 'APRS-Station',
+  object: 'APRS-Objekt',
+  item: 'APRS-Item',
+  weather: 'Wetterstation',
+  ais: 'Schiff (AIS über APRS)',
+  other: 'APRS-Ziel',
+};
+
 export const VESSEL_DE: Record<string, string> = {
   cargo: 'Frachter',
   tanker: 'Tanker',

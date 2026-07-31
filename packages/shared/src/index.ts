@@ -241,6 +241,43 @@ export interface Vessel {
   reportedAt: string;
 }
 
+/** Wetterwerte einer APRS-Wetterstation (aprs.fi liefert metrisch). */
+export interface AprsWeather {
+  tempC: number | null;
+  humidityPct: number | null;
+  pressureHpa: number | null;
+  windDirDeg: number | null;
+  windKmh: number | null;
+  windGustKmh: number | null;
+  rain1hMm: number | null;
+  reportedAt: string | null;
+}
+
+/**
+ * Ein APRS-Ziel (Amateurfunk) von aprs.fi. Die API kennt nur gezielte
+ * Rufzeichen-Abfragen — es gibt also immer eine Beobachtungsliste, nie
+ * „alles im Ausschnitt".
+ */
+export interface AprsStation {
+  /** Eindeutiges Rufzeichen/Objektname, z.B. „DL1ABC-9". */
+  name: string;
+  /** Anzeigename, falls abweichend. */
+  showname: string | null;
+  kind: 'station' | 'object' | 'item' | 'weather' | 'ais' | 'other';
+  coordinates: Coords;
+  courseDeg: number | null;
+  speedKmh: number | null;
+  altitudeM: number | null;
+  /** APRS-Symbolkennung (Tabelle + Code), z.B. „/>" für ein Auto. */
+  symbol: string | null;
+  comment: string | null;
+  status: string | null;
+  path: string | null;
+  /** Zeitpunkt der letzten Meldung von dieser Position. */
+  lastHeard: string;
+  weather: AprsWeather | null;
+}
+
 /** Nachrichten-/Ereignismeldung (Tagesschau). */
 export interface NewsItem {
   id: string;

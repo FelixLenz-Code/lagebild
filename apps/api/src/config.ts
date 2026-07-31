@@ -51,6 +51,10 @@ export const config = {
   aisKey: process.env.AISSTREAM_KEY ?? '',
   /** AIS-Stream-Endpunkt (nur für Tests/eigene Quellen zu ändern). */
   aisUrl: process.env.AISSTREAM_URL ?? 'wss://stream.aisstream.io/v0/stream',
+  /** aprs.fi-Key für die Amateurfunk-Ebene (kostenlos, eigener Key je Nutzer). */
+  aprsKey: process.env.APRSFI_KEY ?? '',
+  /** aprs.fi-Endpunkt (nur für Tests zu ändern). */
+  aprsUrl: process.env.APRSFI_URL ?? 'https://api.aprs.fi/api/get',
   /** Beobachteter AIS-Ausschnitt [[lat,lon],[lat,lon]] — Default: Deutschland + Küsten. */
   aisBbox: parseBbox(process.env.AISSTREAM_BBOX) ?? [
     [47.0, 5.5],

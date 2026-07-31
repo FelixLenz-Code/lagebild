@@ -13,6 +13,7 @@ import type {
   TransitStop,
   Aircraft,
   Vessel,
+  AprsStation,
   Coords,
 } from '@lagebild/shared';
 
@@ -63,7 +64,7 @@ export const fetchGeocode = (query: string): Promise<ApiEnvelope<GeoResult[]>> =
 
 export interface Health {
   ok: boolean;
-  features?: { flow?: boolean; ais?: boolean };
+  features?: { flow?: boolean; ais?: boolean; aprs?: boolean };
 }
 export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
 
@@ -87,3 +88,7 @@ export const fetchAircraft = (b: Bbox): Promise<ApiEnvelope<Aircraft[]>> =>
 
 export const fetchVessels = (b: Bbox): Promise<ApiEnvelope<Vessel[]>> =>
   getJson(`/api/vessels?${bboxQ(b)}`);
+
+/** APRS: aprs.fi beantwortet nur gezielte Rufzeichen-Abfragen (max. 20). */
+export const fetchAprs = (targets: string[]): Promise<ApiEnvelope<AprsStation[]>> =>
+  getJson(`/api/aprs?targets=${encodeURIComponent(targets.join(','))}`);

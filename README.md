@@ -37,8 +37,9 @@ pnpm typecheck  # Typprüfung über alle Pakete
 
 ## Kartenebenen
 
-Die Karte startet **ohne** Fachebenen — jede Ebene wird über einen eigenen Chip
-zugeschaltet:
+Die Karte startet **ohne** Fachebenen. Alle Ebenen liegen im Ausklapp-Menü
+**„Ebenen"** oben links (nach Themen gruppiert, mit Zähler der aktiven Ebenen
+und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 
 | Ebene | Quelle | Hinweis |
 | --- | --- | --- |
@@ -48,6 +49,7 @@ zugeschaltet:
 | Verkehr / Pegel | Autobahn GmbH / PEGELONLINE | folgen dem Kartenausschnitt |
 | Flugzeuge | adsb.lol (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
 | Schiffe | aisstream.io (AIS) | nur mit `AISSTREAM_KEY` |
+| Amateurfunk | aprs.fi (APRS) | nur mit `APRSFI_KEY`, feste Rufzeichenliste |
 | Tag/Nacht | selbst gerechnet | Dämmerungssaum, wandert minütlich mit |
 | Markieren | eigene Punkte/Flächen | Benennung direkt beim Anlegen |
 
@@ -83,6 +85,27 @@ aisstream liefert per WebSocket — der Server hält die zuletzt gemeldeten
 Schiffe deshalb bis zu 20 Minuten im Speicher (gedeckelt, kein Datenbank-State)
 und beantwortet daraus die Ausschnitts-Abfragen. Ohne Key bleibt die Ebene
 unsichtbar; `/api/health` meldet das als `features.ais`.
+
+## Amateurfunk (APRS) einrichten
+
+Key im [aprs.fi](https://aprs.fi/)-Konto unter *My account* holen (kostenlos)
+und eintragen — laut Nutzungsbedingungen **je Nutzer ein eigener Key**:
+
+```bash
+APRSFI_KEY=dein-key
+```
+
+Wichtig fürs Verständnis der Ebene: Die aprs.fi-API beantwortet ausdrücklich
+**nur Abfragen konkreter Rufzeichen** — es gibt keine Umkreis- oder
+Wildcard-Suche. Über das Stift-Symbol neben „Amateurfunk" pflegst du deshalb
+eine Beobachtungsliste (max. 20 Rufzeichen, so viele erlaubt die API pro
+Abfrage). Wetterstationen liefern zusätzlich Temperatur, Wind, Druck und Regen.
+
+Die Route hält sich an die [API-Bedingungen](https://aprs.fi/page/api):
+sprechender User-Agent, Abruf nur bei eingeschalteter Ebene (im Minutentakt,
+serverseitig 45 s gecacht), exponentielles Zurückfahren nach Fehlern, und die
+Quellenangabe mit Rücklink auf aprs.fi steht im Menü, in der Rufzeichenliste
+und in jedem Popup. Ein abgelehnter Key schaltet die Ebene automatisch ab.
 
 ## Offline-Karten (PMTiles pro Bundesland)
 

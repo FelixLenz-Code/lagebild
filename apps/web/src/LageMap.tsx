@@ -16,6 +16,7 @@ import type {
   RadarForecast,
   Aircraft,
   Vessel,
+  AprsStation,
 } from '@lagebild/shared';
 import type { Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
@@ -26,7 +27,20 @@ import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from '
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
 import { ensureMapIcons } from './mapIcons.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
-import { SEVERITY_DE, TRAFFIC_DE, VESSEL_DE, VESSEL_STATUS_DE, formatDateTime, radarTimeLabel, timeHM } from './format.js';
+import { AprsTargets } from './AprsTargets.js';
+import { loadTargets, saveTargets } from './aprsStore.js';
+import { LayerMenu, type LayerOption } from './LayerMenu.js';
+import {
+  SEVERITY_DE,
+  TRAFFIC_DE,
+  VESSEL_DE,
+  VESSEL_STATUS_DE,
+  APRS_KIND_DE,
+  formatDateTime,
+  radarTimeLabel,
+  relativeTime,
+  timeHM,
+} from './format.js';
 
 const DRAW_COLOR = '#0d9488';
 type DrawMode = 'off' | 'point' | 'area';
@@ -203,6 +217,54 @@ function vesselsToGeoJson(list: Vessel[]): GeoJSON.FeatureCollection {
   };
 }
 
+function aprsPopupHtml(s: AprsStation): string {
+  const facts = [
+    s.speedKmh != null && s.speedKmh > 0 ? `${Math.round(s.speedKmh)} km/h` : null,
+    s.courseDeg != null && (s.speedKmh ?? 0) > 0 ? `Kurs ${Math.round(s.courseDeg)}°` : null,
+    s.altitudeM != null ? `${Math.round(s.altitudeM)} m ü. NN` : null,
+  ].filter(Boolean);
+  const w = s.weather;
+  const wx = w
+    ? [
+        w.tempC != null ? `${w.tempC} °C` : null,
+        w.humidityPct != null ? `${w.humidityPct} % rF` : null,
+        w.windKmh != null ? `Wind ${Math.round(w.windKmh)} km/h${w.windGustKmh ? ` (Böen ${Math.round(w.windGustKmh)})` : ''}` : null,
+        w.pressureHpa != null ? `${w.pressureHpa} hPa` : null,
+        w.rain1hMm ? `Regen 1 h ${w.rain1hMm} mm` : null,
+      ].filter(Boolean)
+    : [];
+  const call = encodeURIComponent(s.name);
+  return (
+    `<div class="warn-popup">` +
+    `<b>${esc(s.showname ?? s.name)}</b>` +
+    `<div class="wp-region">${esc(APRS_KIND_DE[s.kind] ?? 'APRS')}${s.symbol ? ` · Symbol ${esc(s.symbol)}` : ''}</div>` +
+    (s.comment ? `<p class="wp-desc">${esc(s.comment)}</p>` : '') +
+    (facts.length ? `<p class="wp-desc">${esc(facts.join(' · '))}</p>` : '') +
+    (wx.length ? `<p class="wp-desc">${esc(wx.join(' · '))}</p>` : '') +
+    (s.status ? `<p class="wp-desc wp-instr">${esc(s.status)}</p>` : '') +
+    `<div class="wp-meta">Gehört ${esc(relativeTime(s.lastHeard))} · ` +
+    `<a href="https://aprs.fi/#!call=a%2F${call}" target="_blank" rel="noreferrer">aprs.fi</a></div>` +
+    `</div>`
+  );
+}
+
+function aprsToGeoJson(list: AprsStation[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: list.map((s) => ({
+      type: 'Feature',
+      properties: {
+        id: s.name,
+        label: s.showname ?? s.name,
+        rotate: s.courseDeg ?? 0,
+        icon:
+          s.kind === 'weather' ? 'aprs-wx' : (s.speedKmh ?? 0) > 1 && s.courseDeg != null ? 'aprs-move' : 'aprs-fix',
+      },
+      geometry: { type: 'Point', coordinates: [s.coordinates.lon, s.coordinates.lat] },
+    })),
+  };
+}
+
 function markerEl(color: string, size = 16, ring = false): HTMLDivElement {
   const el = document.createElement('div');
   el.className = ring ? 'mk mk-user' : 'mk';
@@ -224,9 +286,12 @@ interface Props {
   radarForecastPending: boolean;
   aircraft: Aircraft[];
   vessels: Vessel[];
+  aprs: AprsStation[];
   flowAvailable: boolean;
-  /** true, wenn der Server einen AIS-Stream hat (sonst kein Schiffs-Chip). */
+  /** true, wenn der Server einen AIS-Stream hat (sonst keine Schiffs-Ebene). */
   aisAvailable: boolean;
+  /** true, wenn ein aprs.fi-Key hinterlegt ist. */
+  aprsAvailable: boolean;
   /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt online. */
   offlineCode: string | null;
   onViewport: (b: Bbox) => void;
@@ -239,7 +304,36 @@ export interface ActiveLayers {
   radar: boolean;
   aircraft: boolean;
   vessels: boolean;
+  aprs: boolean;
+  /** Beobachtete APRS-Rufzeichen (aprs.fi kennt keine Umkreissuche). */
+  aprsTargets: string[];
 }
+
+/** Alle umschaltbaren Kartenebenen. */
+type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'night';
+
+/**
+ * Darstellung der Symbol-Ebenen. Flugzeuge erst ab Zoom 6, weil das ADS-B-Netz
+ * nur einen Umkreis um die Kartenmitte liefert; APRS ist eine kurze
+ * Beobachtungsliste und darf deshalb immer mit Beschriftung erscheinen.
+ */
+const SYMBOL_STYLE: Record<'aircraft' | 'vessels' | 'aprs', { size: number; minzoom: number; labelZoom: number }> = {
+  aircraft: { size: 0.62, minzoom: 6, labelZoom: 9 },
+  vessels: { size: 0.5, minzoom: 5, labelZoom: 9 },
+  aprs: { size: 0.55, minzoom: 0, labelZoom: 0 },
+};
+
+const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
+  warnings: false,
+  radar: false,
+  flow: false,
+  traffic: false,
+  pegel: false,
+  aircraft: false,
+  vessels: false,
+  aprs: false,
+  night: false,
+};
 
 export function LageMap({
   coords,
@@ -251,8 +345,10 @@ export function LageMap({
   radarForecastPending,
   aircraft,
   vessels,
+  aprs,
   flowAvailable,
   aisAvailable,
+  aprsAvailable,
   offlineCode,
   onViewport,
   onLayersChange,
@@ -270,17 +366,26 @@ export function LageMap({
   const [styleEpoch, setStyleEpoch] = useState(0);
   const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
   // Alle Fachebenen starten aus — der Nutzer schaltet gezielt zu.
-  const [showWarnings, setShowWarnings] = useState(false);
-  const [showTraffic, setShowTraffic] = useState(false);
-  const [showPegel, setShowPegel] = useState(false);
-  const [showRadar, setShowRadar] = useState(false);
+  const [on, setOn] = useState<Record<LayerId, boolean>>(() => ({ ...ALL_LAYERS_OFF }));
+  const toggleLayer = (id: LayerId) => setOn((prev) => ({ ...prev, [id]: !prev[id] }));
+  const {
+    warnings: showWarnings,
+    traffic: showTraffic,
+    pegel: showPegel,
+    radar: showRadar,
+    flow: showFlow,
+    night: showNight,
+    aircraft: showAircraft,
+    vessels: showVessels,
+    aprs: showAprs,
+  } = on;
+  const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
   const [radarPlaying, setRadarPlaying] = useState(false);
-  const [showFlow, setShowFlow] = useState(false);
-  const [showNight, setShowNight] = useState(false);
-  const [showAircraft, setShowAircraft] = useState(false);
-  const [showVessels, setShowVessels] = useState(false);
   const [iconEpoch, setIconEpoch] = useState(0);
+  const [aprsTargets, setAprsTargets] = useState<string[]>(() => loadTargets());
+  const [aprsOpen, setAprsOpen] = useState(false);
+  useEffect(() => saveTargets(aprsTargets), [aprsTargets]);
   const [drawFeatures, setDrawFeatures] = useState<DrawFeature[]>(() => loadDraw());
   const [drawMode, setDrawMode] = useState<DrawMode>('off');
   const [drawBarOpen, setDrawBarOpen] = useState(false);
@@ -296,21 +401,32 @@ export function LageMap({
   };
   useEffect(() => saveDraw(drawFeatures), [drawFeatures]);
 
-  // Live-Daten (Radar, Flüge, Schiffe) werden nur geladen, wenn ihre Ebene an ist.
+  // Live-Daten (Radar, Flüge, Schiffe, APRS) werden nur geladen, wenn ihre Ebene an ist.
   useEffect(
-    () => onLayersChange({ radar: showRadar, aircraft: showAircraft, vessels: showVessels }),
-    [showRadar, showAircraft, showVessels, onLayersChange],
+    () =>
+      onLayersChange({
+        radar: showRadar,
+        aircraft: showAircraft,
+        vessels: showVessels,
+        aprs: showAprs,
+        aprsTargets,
+      }),
+    [showRadar, showAircraft, showVessels, showAprs, aprsTargets, onLayersChange],
   );
 
   // Nachschlagetabellen für die Klick-Popups
   const aircraftById = useRef<Map<string, Aircraft>>(new Map());
   const vesselByMmsi = useRef<Map<number, Vessel>>(new Map());
+  const aprsByName = useRef<Map<string, AprsStation>>(new Map());
   useEffect(() => {
     aircraftById.current = new Map(aircraft.map((a) => [a.icao, a]));
   }, [aircraft]);
   useEffect(() => {
     vesselByMmsi.current = new Map(vessels.map((v) => [v.mmsi, v]));
   }, [vessels]);
+  useEffect(() => {
+    aprsByName.current = new Map(aprs.map((s) => [s.name, s]));
+  }, [aprs]);
 
   // Nachschlagetabelle id → Warnung (für Klick-Popup)
   useEffect(() => {
@@ -370,7 +486,14 @@ export function LageMap({
       if (vessel) warnPopup.current!.setLngLat(e.lngLat).setHTML(vesselPopupHtml(vessel)).addTo(map);
     });
 
-    for (const layer of ['warnings-fill', 'aircraft', 'vessels']) {
+    map.on('click', 'aprs', (e) => {
+      if (drawModeRef.current !== 'off') return;
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const station = id ? aprsByName.current.get(id) : undefined;
+      if (station) warnPopup.current!.setLngLat(e.lngLat).setHTML(aprsPopupHtml(station)).addTo(map);
+    });
+
+    for (const layer of ['warnings-fill', 'aircraft', 'vessels', 'aprs']) {
       map.on('mouseenter', layer, () => {
         map.getCanvas().style.cursor = 'pointer';
       });
@@ -718,11 +841,12 @@ export function LageMap({
     const map = mapRef.current;
     if (!map || !ready || iconEpoch === 0) return;
 
-    for (const [id, on, data] of [
+    for (const [id, visible, data] of [
       ['aircraft', showAircraft, aircraftToGeoJson(aircraft)],
       ['vessels', showVessels, vesselsToGeoJson(vessels)],
+      ['aprs', showAprs, aprsToGeoJson(aprs)],
     ] as const) {
-      if (!on) {
+      if (!visible) {
         if (map.getLayer(id)) map.removeLayer(id);
         if (map.getSource(id)) map.removeSource(id);
         continue;
@@ -732,22 +856,21 @@ export function LageMap({
         src.setData(data);
         continue;
       }
+      const style = SYMBOL_STYLE[id];
       map.addSource(id, { type: 'geojson', data });
       map.addLayer({
         id,
         type: 'symbol',
         source: id,
-        // Weit herausgezoomt zeigt das ADS-B-Netz nur einen Umkreis um die
-        // Kartenmitte — dann lieber gar nichts, statt ein schiefes Bild.
-        minzoom: 6,
+        minzoom: style.minzoom,
         layout: {
           'icon-image': ['get', 'icon'],
-          'icon-size': id === 'aircraft' ? 0.62 : 0.5,
+          'icon-size': style.size,
           'icon-rotate': ['get', 'rotate'],
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,
           // Beschriftung erst, wenn genug Platz ist — sonst wird es unruhig.
-          'text-field': ['step', ['zoom'], '', 9, ['get', 'label']],
+          'text-field': ['step', ['zoom'], '', style.labelZoom, ['get', 'label']],
           'text-font': ['Noto Sans Regular'],
           'text-size': 10,
           'text-offset': [0, 1.4],
@@ -761,7 +884,7 @@ export function LageMap({
         },
       });
     }
-  }, [showAircraft, showVessels, aircraft, vessels, ready, styleEpoch, iconEpoch]);
+  }, [showAircraft, showVessels, showAprs, aircraft, vessels, aprs, ready, styleEpoch, iconEpoch]);
 
   // Eigene Markierungen: Quelle + Layer anlegen (oberste Ebene)
   useEffect(() => {
@@ -858,72 +981,65 @@ export function LageMap({
   const curFrame = timeline[Math.min(radarIdx, timeline.length - 1)];
   const forecastStart = timeline.findIndex((f) => f.forecast);
 
+  // Inhalt des Ebenen-Menüs. Ebenen ohne Zugang (kein Key) tauchen gar nicht auf.
+  const layerOptions: LayerOption[] = [
+    { id: 'warnings', label: 'Warnungen', color: SEVERITY_COLOR.severe, group: 'Gefahren', active: showWarnings },
+    { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', active: showRadar },
+    { id: 'night', label: 'Tag/Nacht', color: '#0b1a33', group: 'Wetter', hint: 'Dämmerungsgrenze', active: showNight },
+    ...(flowAvailable
+      ? [
+          {
+            id: 'flow',
+            label: 'Verkehrsfluss',
+            color: 'linear-gradient(90deg,#2c9e5b,#e0a90b,#c0392b)',
+            group: 'Verkehr',
+            active: showFlow,
+          } satisfies LayerOption,
+        ]
+      : []),
+    { id: 'traffic', label: 'Verkehrsmeldungen', color: 'var(--sev3)', group: 'Verkehr', active: showTraffic },
+    { id: 'aircraft', label: 'Flugzeuge', color: '#1d4e73', group: 'Verkehr', hint: 'ADS-B, ab Zoom 6', active: showAircraft },
+    ...(aisAvailable
+      ? [{ id: 'vessels', label: 'Schiffe', color: '#2c7448', group: 'Verkehr', hint: 'AIS', active: showVessels } satisfies LayerOption]
+      : []),
+    ...(aprsAvailable
+      ? [
+          {
+            id: 'aprs',
+            label: 'Amateurfunk',
+            color: '#6b3fa0',
+            group: 'Verkehr',
+            hint: aprsTargets.length ? `${aprsTargets.length} Rufzeichen` : 'Rufzeichen eintragen',
+            active: showAprs,
+            onEdit: () => setAprsOpen(true),
+            editLabel: 'Rufzeichen verwalten',
+          } satisfies LayerOption,
+        ]
+      : []),
+    { id: 'pegel', label: 'Pegel', color: 'var(--accent)', group: 'Wasser', active: showPegel },
+  ];
+
   return (
     <>
       <div className="mapwrap">
         <div ref={containerRef} className="lagemap" />
         <div className="mapcontrols">
         <div className="maptools">
-          <button
-            type="button"
-            className="chip"
-            aria-pressed={showWarnings}
-            title="Amtliche Warngebiete (NINA/DWD) ein- oder ausblenden"
-            onClick={() => setShowWarnings((v) => !v)}
-          >
-            <span className="k" style={{ background: SEVERITY_COLOR.severe }} />
-            Warnungen
-          </button>
-          <button type="button" className="chip" aria-pressed={showRadar} onClick={() => setShowRadar((v) => !v)}>
-            <span className="k" style={{ background: '#3f83d4' }} />
-            Regenradar
-          </button>
-          {flowAvailable && (
-            <button type="button" className="chip" aria-pressed={showFlow} onClick={() => setShowFlow((v) => !v)}>
-              <span className="k" style={{ background: 'linear-gradient(90deg,#2c9e5b,#e0a90b,#c0392b)' }} />
-              Verkehrsfluss
-            </button>
-          )}
-          <button type="button" className="chip" aria-pressed={showTraffic} onClick={() => setShowTraffic((v) => !v)}>
-            <span className="k" style={{ background: 'var(--sev3)' }} />
-            Verkehr
-          </button>
-          <button type="button" className="chip" aria-pressed={showPegel} onClick={() => setShowPegel((v) => !v)}>
-            <span className="k" style={{ background: 'var(--accent)' }} />
-            Pegel
-          </button>
-          <button
-            type="button"
-            className="chip"
-            aria-pressed={showAircraft}
-            title="Flugverkehr aus dem offenen ADS-B-Netz"
-            onClick={() => setShowAircraft((v) => !v)}
-          >
-            <span className="k" style={{ background: '#1d4e73' }} />
-            Flugzeuge
-          </button>
-          {aisAvailable && (
-            <button
-              type="button"
-              className="chip"
-              aria-pressed={showVessels}
-              title="Schiffsverkehr aus dem AIS-Netz"
-              onClick={() => setShowVessels((v) => !v)}
-            >
-              <span className="k" style={{ background: '#2c7448' }} />
-              Schiffe
-            </button>
-          )}
-          <button
-            type="button"
-            className="chip"
-            aria-pressed={showNight}
-            title="Tag- und Nachtgrenze (Dämmerung schattiert)"
-            onClick={() => setShowNight((v) => !v)}
-          >
-            <span className="k" style={{ background: '#0b1a33' }} />
-            Tag/Nacht
-          </button>
+          <LayerMenu
+            options={layerOptions}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            onToggle={(id) => toggleLayer(id as LayerId)}
+            onAllOff={() => setOn({ ...ALL_LAYERS_OFF })}
+            footer={
+              <span className="lm-credit">
+                Flüge: adsb.lol · Schiffe: aisstream.io · Funk:{' '}
+                <a href="https://aprs.fi/" target="_blank" rel="noreferrer">
+                  aprs.fi
+                </a>
+              </span>
+            }
+          />
           <button
             type="button"
             className="chip"
@@ -1063,6 +1179,15 @@ export function LageMap({
             <span className="rsrc">{useDwd ? 'DWD · bis +2 h' : 'RainViewer'}</span>
           </div>
         </div>
+      )}
+
+      {aprsOpen && (
+        <AprsTargets
+          targets={aprsTargets}
+          stations={aprs}
+          onChange={setAprsTargets}
+          onClose={() => setAprsOpen(false)}
+        />
       )}
 
       {pending && (

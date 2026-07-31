@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
@@ -90,7 +90,13 @@ export function App() {
   const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords]);
   const radar = useApi('radar', () => fetchRadar());
   // Live-Ebenen laden nur, solange sie auf der Karte eingeschaltet sind.
-  const [layers, setLayers] = useState<ActiveLayers>({ radar: false, aircraft: false, vessels: false });
+  const [layers, setLayers] = useState<ActiveLayers>({
+    radar: false,
+    aircraft: false,
+    vessels: false,
+    aprs: false,
+    aprsTargets: [],
+  });
   const radarForecast = useApi(
     `radar-forecast:${geoKey}`,
     () => fetchRadarForecast(coords),
@@ -111,10 +117,19 @@ export function App() {
     refreshMs: 20000,
     cache: false,
   });
+  // APRS fragt gezielt Rufzeichen ab (kein Ausschnitt) — aprs.fi bittet um
+  // sparsame Abrufe, deshalb nur bei aktiver Ebene und im Minutentakt.
+  const aprsKey = layers.aprsTargets.join(',');
+  const aprs = useApi(`aprs:${aprsKey}`, () => fetchAprs(layers.aprsTargets), [aprsKey], {
+    enabled: layers.aprs && layers.aprsTargets.length > 0,
+    refreshMs: 60000,
+    cache: false,
+  });
   const news = useApi('news', () => fetchNews());
   const health = useApi('health', () => fetchHealth());
   const flowAvailable = health.data?.features?.flow ?? false;
   const aisAvailable = health.data?.features?.ais ?? false;
+  const aprsAvailable = health.data?.features?.aprs ?? false;
 
   const maps = useApi('maps', () => fetchMaps());
   const availableMap: Record<string, number> = Object.fromEntries(
@@ -232,8 +247,10 @@ export function App() {
             radarForecastPending={layers.radar && radarForecast.loading}
             aircraft={aircraft.data?.data ?? []}
             vessels={vessels.data?.data ?? []}
+            aprs={aprs.data?.data ?? []}
             flowAvailable={flowAvailable}
             aisAvailable={aisAvailable}
+            aprsAvailable={aprsAvailable}
             offlineCode={offlineCode}
             onViewport={setViewport}
             onLayersChange={setLayers}
