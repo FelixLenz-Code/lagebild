@@ -15,10 +15,12 @@ import type {
   RadarData,
   RadarForecast,
   Aircraft,
+  AircraftDetails,
+  Airport,
   Vessel,
   AprsStation,
 } from '@lagebild/shared';
-import type { Bbox } from './api.js';
+import { fetchAircraftDetails, type Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
 import { getOfflineFile } from './offlineMaps.js';
 import { DrawList } from './DrawList.js';
@@ -141,28 +143,83 @@ function warningPopupHtml(w: WarningFeature): string {
   );
 }
 
-function aircraftPopupHtml(a: Aircraft): string {
-  const alt = a.onGround ? 'am Boden' : a.altitudeFt != null ? `${a.altitudeFt.toLocaleString('de-DE')} ft` : '–';
+const EMERGENCY_DE: Record<string, string> = {
+  hijack: 'Entführung (7500)',
+  'radio-failure': 'Funkausfall (7600)',
+  general: 'Luftnotfall (7700)',
+};
+
+/** Flughafen kurz benennen: „Frankfurt (FRA)". */
+function airportLabel(a: Airport): string {
+  const place = a.municipality ?? a.name;
+  return a.iata ? `${place} (${a.iata})` : place;
+}
+
+/** Eine Zeile im Datenraster des Popups. */
+function row(label: string, value: string | null): string {
+  return value ? `<div class="ac-k">${esc(label)}</div><div class="ac-v">${esc(value)}</div>` : '';
+}
+
+/**
+ * Flugzeug-Popup. `details` kommt erst nach dem Antippen dazu (Halter und
+ * Flugroute werden einzeln nachgeladen) — bis dahin steht dort ein Hinweis.
+ */
+function aircraftPopupHtml(a: Aircraft, details?: AircraftDetails | null, loading = false): string {
+  const fl = a.altitudeFt != null ? `FL${Math.round(a.altitudeFt / 100)}` : null;
+  const altitude = a.onGround
+    ? 'am Boden'
+    : a.altitudeFt != null
+      ? `${a.altitudeFt.toLocaleString('de-DE')} ft (${fl})` +
+        (a.selectedAltitudeFt != null && Math.abs(a.selectedAltitudeFt - a.altitudeFt) > 200
+          ? ` → ${a.selectedAltitudeFt.toLocaleString('de-DE')} ft`
+          : '')
+      : null;
   const climb =
     a.verticalRateFpm != null && Math.abs(a.verticalRateFpm) >= 100
-      ? ` (${a.verticalRateFpm > 0 ? '↑' : '↓'} ${Math.abs(Math.round(a.verticalRateFpm))} ft/min)`
-      : '';
-  const emergency =
-    a.emergency === 'hijack'
-      ? 'Entführung (7500)'
-      : a.emergency === 'radio-failure'
-        ? 'Funkausfall (7600)'
-        : a.emergency === 'general'
-          ? 'Luftnotfall (7700)'
-          : null;
+      ? `${a.verticalRateFpm > 0 ? '↑ steigt' : '↓ sinkt'} ${Math.abs(Math.round(a.verticalRateFpm)).toLocaleString('de-DE')} ft/min`
+      : a.onGround
+        ? null
+        : 'hält die Höhe';
+  const speed = [
+    a.groundSpeedKt != null ? `${Math.round(a.groundSpeedKt)} kn über Grund` : null,
+    a.indicatedSpeedKt != null ? `IAS ${Math.round(a.indicatedSpeedKt)}` : null,
+    a.mach != null && a.mach > 0.3 ? `Mach ${a.mach.toFixed(2).replace('.', ',')}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const wind =
+    a.windDirDeg != null && a.windKt != null ? `${Math.round(a.windDirDeg)}° mit ${Math.round(a.windKt)} kn` : null;
+  const identity = [
+    details?.owner ?? details?.airline,
+    a.description ?? details?.type ?? a.type,
+    a.registration ?? details?.registration,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const route =
+    details?.origin && details.destination
+      ? `${airportLabel(details.origin)} → ${airportLabel(details.destination)}`
+      : null;
+
   return (
-    `<div class="warn-popup">` +
-    (emergency ? `<span class="wp-sev" style="background:#a92318">${esc(emergency)}</span>` : '') +
+    `<div class="warn-popup ac-popup">` +
+    (a.emergency ? `<span class="wp-sev" style="background:#a92318">${esc(EMERGENCY_DE[a.emergency]!)}</span>` : '') +
     `<b>${esc(a.callsign ?? a.registration ?? a.icao.toUpperCase())}</b>` +
-    `<div class="wp-region">${esc([a.description ?? a.type, a.registration].filter(Boolean).join(' · ') || 'Unbekanntes Muster')}</div>` +
-    `<p class="wp-desc">Höhe ${esc(alt)}${esc(climb)}<br>` +
-    `Tempo ${a.groundSpeedKt != null ? `${Math.round(a.groundSpeedKt)} kn` : '–'} · ` +
-    `Kurs ${a.trackDeg != null ? `${Math.round(a.trackDeg)}°` : '–'}</p>` +
+    `<div class="wp-region">${esc(identity || 'Unbekanntes Muster')}</div>` +
+    (route ? `<div class="ac-route">${esc(route)}</div>` : '') +
+    (loading ? `<div class="ac-route ac-loading">Route wird geladen …</div>` : '') +
+    `<div class="ac-grid">` +
+    row('Höhe', altitude) +
+    row('Steigen', climb) +
+    row('Tempo', speed || null) +
+    row('Kurs', a.trackDeg != null ? `${Math.round(a.trackDeg)}°` : null) +
+    row('Wind', wind) +
+    row('Außen', a.outsideTempC != null ? `${Math.round(a.outsideTempC)} °C` : null) +
+    row('Squawk', a.squawk) +
+    row('Muster', a.type && a.description ? `${a.type} (${a.category ?? '–'})` : null) +
+    row('Abstand', a.distanceKm != null ? `${a.distanceKm.toString().replace('.', ',')} km zur Kartenmitte` : null) +
+    `</div>` +
+    `<div class="wp-meta">Empfangen ${a.seenSec != null ? `vor ${Math.round(a.seenSec)} s` : 'gerade eben'} · ADS-B</div>` +
     `</div>`
   );
 }
@@ -193,7 +250,8 @@ function aircraftToGeoJson(list: Aircraft[]): GeoJSON.FeatureCollection {
         id: a.icao,
         label: a.callsign ?? a.registration ?? '',
         rotate: a.trackDeg ?? 0,
-        icon: a.emergency ? 'plane-alert' : a.onGround ? 'plane-ground' : 'plane-air',
+        // Symbol nach Musterklasse und Zustand, z. B. „ac-heavy-air".
+        icon: `ac-${a.aircraftClass}-${a.emergency ? 'alert' : a.onGround ? 'ground' : 'air'}`,
         ground: a.onGround,
       },
       geometry: { type: 'Point', coordinates: [a.coordinates.lon, a.coordinates.lat] },
@@ -418,6 +476,10 @@ export function LageMap({
   const aircraftById = useRef<Map<string, Aircraft>>(new Map());
   const vesselByMmsi = useRef<Map<number, Vessel>>(new Map());
   const aprsByName = useRef<Map<string, AprsStation>>(new Map());
+  /** Nachgeladene Flugdetails (Halter, Route) — je ICAO nur einmal holen. */
+  const aircraftDetails = useRef<Map<string, AircraftDetails>>(new Map());
+  /** Welches Flugzeug gerade im Popup steht (spätes Nachladen zuordnen). */
+  const openAircraft = useRef<string | null>(null);
   useEffect(() => {
     aircraftById.current = new Map(aircraft.map((a) => [a.icao, a]));
   }, [aircraft]);
@@ -477,7 +539,24 @@ export function LageMap({
       if (drawModeRef.current !== 'off') return;
       const id = e.features?.[0]?.properties?.id as string | undefined;
       const ac = id ? aircraftById.current.get(id) : undefined;
-      if (ac) warnPopup.current!.setLngLat(e.lngLat).setHTML(aircraftPopupHtml(ac)).addTo(map);
+      if (!ac) return;
+      const known = aircraftDetails.current.get(ac.icao);
+      openAircraft.current = ac.icao;
+      warnPopup.current!.setLngLat(e.lngLat).setHTML(aircraftPopupHtml(ac, known, !known)).addTo(map);
+      if (known) return;
+      // Halter und Flugroute stehen woanders — erst auf Zuruf nachladen.
+      fetchAircraftDetails(ac.icao, ac.callsign)
+        .then((res) => {
+          aircraftDetails.current.set(ac.icao, res.data);
+          if (openAircraft.current !== ac.icao || !warnPopup.current?.isOpen()) return;
+          const current = aircraftById.current.get(ac.icao) ?? ac;
+          warnPopup.current.setHTML(aircraftPopupHtml(current, res.data));
+        })
+        .catch(() => {
+          if (openAircraft.current === ac.icao && warnPopup.current?.isOpen()) {
+            warnPopup.current.setHTML(aircraftPopupHtml(ac, null));
+          }
+        });
     });
     map.on('click', 'vessels', (e) => {
       if (drawModeRef.current !== 'off') return;

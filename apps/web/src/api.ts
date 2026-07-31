@@ -12,6 +12,7 @@ import type {
   GeoResult,
   TransitStop,
   Aircraft,
+  AircraftDetails,
   Vessel,
   AprsStation,
   Coords,
@@ -85,6 +86,13 @@ export const fetchPegel = (b: Bbox): Promise<ApiEnvelope<WaterLevel[]>> =>
 
 export const fetchAircraft = (b: Bbox): Promise<ApiEnvelope<Aircraft[]>> =>
   getJson(`/api/aircraft?${bboxQ(b)}`);
+
+/** Halter, Muster und Flugroute eines einzelnen Flugzeugs (adsbdb.com). */
+export const fetchAircraftDetails = (
+  icao: string,
+  callsign?: string | null,
+): Promise<ApiEnvelope<AircraftDetails>> =>
+  getJson(`/api/aircraft/${encodeURIComponent(icao)}${callsign ? `?callsign=${encodeURIComponent(callsign)}` : ''}`);
 
 export const fetchVessels = (b: Bbox): Promise<ApiEnvelope<Vessel[]>> =>
   getJson(`/api/vessels?${bboxQ(b)}`);

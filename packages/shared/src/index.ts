@@ -193,6 +193,13 @@ export interface TransitStop {
   departures: TransitDeparture[];
 }
 
+/**
+ * Grobe Musterklasse aus der ADS-B-Kategorie — steuert das Kartensymbol.
+ * `light` = Kleinflugzeug, `jet` = Verkehrsflugzeug, `heavy` = Großraumflugzeug,
+ * `helicopter` = Drehflügler, `glider` = Segelflug/Ballon, `other` = Rest.
+ */
+export type AircraftClass = 'light' | 'jet' | 'heavy' | 'helicopter' | 'glider' | 'other';
+
 /** Flugzeug aus dem ADS-B-Netz (Position, Höhe, Kurs). */
 export interface Aircraft {
   /** ICAO-24-Adresse (hex) — eindeutige Kennung des Transponders. */
@@ -201,20 +208,63 @@ export interface Aircraft {
   registration: string | null;
   /** ICAO-Musterkürzel, z.B. „A320". */
   type: string | null;
+  /** Klartext-Muster, z.B. „AIRBUS A220-300". */
   description: string | null;
+  /** ADS-B-Kategorie (A1–A7, B1–B7, C1–C3). */
+  category: string | null;
+  aircraftClass: AircraftClass;
   coordinates: Coords;
   /** Barometrische Höhe in Fuß; null wenn am Boden gemeldet. */
   altitudeFt: number | null;
+  /** Vom Autopiloten eingestellte Zielhöhe in Fuß. */
+  selectedAltitudeFt: number | null;
   /** Steig-/Sinkrate in Fuß pro Minute. */
   verticalRateFpm: number | null;
   /** Geschwindigkeit über Grund in Knoten. */
   groundSpeedKt: number | null;
+  /** Angezeigte Eigengeschwindigkeit in Knoten. */
+  indicatedSpeedKt: number | null;
+  /** Machzahl (in Reiseflughöhe aussagekräftig). */
+  mach: number | null;
   /** Kurs über Grund in Grad (0 = Nord). */
   trackDeg: number | null;
+  /** Außentemperatur in der Flughöhe (°C). */
+  outsideTempC: number | null;
+  /** Wind in der Flughöhe: Richtung in Grad, Stärke in Knoten. */
+  windDirDeg: number | null;
+  windKt: number | null;
+  /** Entfernung zum Abfragemittelpunkt in Kilometern. */
+  distanceKm: number | null;
+  /** Sekunden seit der letzten empfangenen Meldung. */
+  seenSec: number | null;
   onGround: boolean;
   squawk: string | null;
   /** Notfall-Transpondercode: 7500 Entführung, 7600 Funkausfall, 7700 Notfall. */
   emergency: 'hijack' | 'radio-failure' | 'general' | null;
+}
+
+/** Ein Flughafen einer Flugroute. */
+export interface Airport {
+  name: string;
+  municipality: string | null;
+  iata: string | null;
+  icao: string | null;
+  countryName: string | null;
+}
+
+/** Nachschlagbare Zusatzdaten zu einem Flug (Halter, Muster, Route). */
+export interface AircraftDetails {
+  icao: string;
+  registration: string | null;
+  /** Klartext-Muster, z.B. „A320 271NSL". */
+  type: string | null;
+  manufacturer: string | null;
+  /** Eingetragener Halter, z.B. „Lufthansa". */
+  owner: string | null;
+  ownerCountry: string | null;
+  airline: string | null;
+  origin: Airport | null;
+  destination: Airport | null;
 }
 
 /** Navigationsstatus eines Schiffs (AIS-Feld, vereinfacht). */

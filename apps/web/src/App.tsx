@@ -9,12 +9,12 @@ import { opfsSupported, listOffline } from './offlineMaps.js';
 import { inStateBounds } from './stateBounds.js';
 import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
-import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail, TransitDetail } from './details.js';
+import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, TransitDetail } from './details.js';
 import { relativeTime, timeUntil, timeHM, hourLabel, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE, AIR_DE, AIR_COLOR } from './format.js';
 import { WeatherIcon } from './WeatherIcon.js';
 import { sunAltitude } from './sun.js';
 
-type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'air' | 'transit';
+type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'transit';
 
 /** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
 function boxAround(c: { lat: number; lon: number }): Bbox {
@@ -173,7 +173,6 @@ export function App() {
     warnings: { title: 'Amtliche Warnungen', source: warnings.data?.source, savedAt: warnings.savedAt },
     traffic: { title: 'Verkehr im Ausschnitt', source: traffic.data?.source, savedAt: traffic.savedAt },
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
-    air: { title: `Luftqualität — ${place}`, source: air.data?.source, savedAt: air.savedAt },
     transit: { title: 'Bahn / ÖPNV in der Nähe', source: transit.data?.source, savedAt: transit.savedAt },
     news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
   };
@@ -190,6 +189,10 @@ export function App() {
   const isNight = sunAltitude(new Date(), coords.lat, coords.lon) < -0.833;
   // Vorschau in der Kachel: die nächsten vier vollen Stunden.
   const nextHours = (fc?.hourly ?? []).filter((h) => new Date(h.time).getTime() > Date.now()).slice(0, 4);
+  const airNow = air.data?.data ?? null;
+  const rain24h = fc
+    ? Math.round(fc.hourly.slice(0, 24).reduce((sum, h) => sum + (h.precipitationMm ?? 0), 0) * 10) / 10
+    : null;
 
   return (
     <div className="app">
@@ -302,10 +305,29 @@ export function App() {
                   </span>
                 )}
                 <span>Wind <b>{w.windKmh != null ? `${Math.round(w.windKmh)} km/h` : '–'}</b></span>
-                {today?.precipitationProbabilityPct != null && (
-                  <span>Regen <b>{today.precipitationProbabilityPct} %</b></span>
-                )}
+                {rain24h != null && <span>Regen 24 h <b>{rain24h.toString().replace('.', ',')} mm</b></span>}
               </div>
+
+              {/* Luftqualität sitzt jetzt hier statt in einer eigenen Kachel. */}
+              {airNow && (
+                <div className="wx-air">
+                  <span className="lbl">Luft</span>
+                  <span className="val">{airNow.aqi ?? '–'}</span>
+                  <span className="u">EAQI</span>
+                  {airNow.category && (
+                    <span
+                      className="badge"
+                      style={{
+                        marginLeft: 'auto',
+                        background: `color-mix(in srgb, ${AIR_COLOR[airNow.category]} 16%, transparent)`,
+                        color: AIR_COLOR[airNow.category],
+                      }}
+                    >
+                      {AIR_DE[airNow.category]}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           )}
         </Tile>
@@ -408,38 +430,6 @@ export function App() {
           </Loader>
         </Tile>
 
-        <Tile
-          title="Luftqualität"
-          source={air.data?.source}
-          cached={air.fromCache}
-          onOpen={air.data ? () => setDetail('air') : undefined}
-        >
-          {!air.data && air.loading && <p className="muted">Lade …</p>}
-          {!air.data && air.error && <p className="err">{air.error}</p>}
-          {air.data && (
-            <>
-              <div className="metric">
-                <span className="big">{air.data.data.aqi ?? '–'}</span>
-                <span className="u">EAQI</span>
-                {air.data.data.category && (
-                  <span
-                    className="badge"
-                    style={{
-                      marginLeft: 'auto',
-                      background: `color-mix(in srgb, ${AIR_COLOR[air.data.data.category]} 16%, transparent)`,
-                      color: AIR_COLOR[air.data.data.category],
-                    }}
-                  >
-                    {AIR_DE[air.data.data.category]}
-                  </span>
-                )}
-              </div>
-              <div className="airbar">
-                <i style={{ left: `${Math.min(air.data.data.aqi ?? 0, 100)}%` }} />
-              </div>
-            </>
-          )}
-        </Tile>
         </section>
       </div>
 
@@ -470,11 +460,10 @@ export function App() {
 
       {detail && (
         <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>
-          {detail === 'weather' && w && <WeatherDetail w={w} forecast={fc} coords={coords} />}
+          {detail === 'weather' && w && <WeatherDetail w={w} forecast={fc} air={airNow} coords={coords} />}
           {detail === 'warnings' && <WarningsDetail list={uniqueWarnings} />}
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
-          {detail === 'air' && air.data && <AirDetail air={air.data.data} />}
           {detail === 'transit' && <TransitDetail stops={transitStops} />}
           {detail === 'news' && news.data && <NewsDetail list={news.data.data} />}
         </Sheet>

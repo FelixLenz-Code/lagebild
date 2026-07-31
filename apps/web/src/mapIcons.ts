@@ -7,9 +7,21 @@ import type { Map as MlMap } from 'maplibre-gl';
  * übernimmt später `icon-rotate` aus der Kurs-Eigenschaft.
  */
 
-/** Flugzeug von oben, Nase nach Norden. */
+/** Verkehrsflugzeug von oben (gepfeilte Flügel), Nase nach Norden. */
 const PLANE =
   'M16 2.6c1 0 1.7 1.2 1.7 2.6v5.1l10.7 6.1v2.7l-10.7-3.3v6.1l3.4 2.4v2.2L16 25.6l-5.1 1-.0-2.2 3.4-2.4v-6.1L3.6 19.1v-2.7l10.7-6.1V5.2c0-1.4.7-2.6 1.7-2.6Z';
+/** Kleinflugzeug: gerade Tragflächen, kurzer Rumpf. */
+const PLANE_LIGHT =
+  'M16 3.4c.9 0 1.5 1 1.5 2.2v4.8h11.2v2.8H17.5v6.6l3.1 2.2v2L16 22.8l-4.6 1.2v-2l3.1-2.2v-6.6H3.3v-2.8h11.2V5.6c0-1.2.6-2.2 1.5-2.2Z';
+/** Großraumflugzeug: breitere Flügel mit Triebwerksnasen. */
+const PLANE_HEAVY =
+  'M16 2c1.2 0 2 1.4 2 3v5l12 6.6v3l-12-3.6v6.4l3.8 2.8v2.4L16 26.4l-5.8.2v-2.4l3.8-2.8v-6.4L2 18.6v-3L14 9V5c0-1.6.8-3 2-3Z';
+/** Drehflügler: Rumpf mit Rotorkreuz. */
+const HELI =
+  'M15 8h2v13h-2Z M5.5 14.6h21v1.8h-21Z M9 7.7 24.3 23l-1.3 1.3L7.7 9Z M23 7.7 7.7 23 9 24.3 24.3 9Z M13.6 20.5h4.8v2.2h-4.8Z';
+/** Segelflugzeug/Ballon: sehr lange, schmale Flügel. */
+const GLIDER =
+  'M16 3.8c.7 0 1.2.9 1.2 2v4.9l13.4 2.6v1.8l-13.4-1.2v8.6l2.6 2v1.6L16 25.4l-3.8.7v-1.6l2.6-2v-8.6L1.4 15.1v-1.8l13.4-2.6V5.8c0-1.1.5-2 1.2-2Z';
 /** Schiffsrumpf von oben, Bug nach Norden. */
 const SHIP = 'M16 2.4c2.6 3 4.2 6.6 4.2 10.6v12.8c0 2.1-1.5 3.8-4.2 3.8s-4.2-1.7-4.2-3.8V13c0-4 1.6-7.6 4.2-10.6Z';
 /** Pfeilspitze für bewegte APRS-Ziele (Fahrtrichtung nach Norden). */
@@ -44,12 +56,32 @@ function draw(map: MlMap, id: string, path: string, fill: string, stroke: string
   });
 }
 
+/**
+ * Flugzeug-Silhouetten nach Musterklasse — ein Kleinflugzeug soll auf der Karte
+ * anders aussehen als ein Airliner oder ein Hubschrauber.
+ */
+const PLANE_SHAPES: Record<string, string> = {
+  jet: PLANE,
+  light: PLANE_LIGHT,
+  heavy: PLANE_HEAVY,
+  helicopter: HELI,
+  glider: GLIDER,
+  other: PLANE,
+};
+/** Zustandsfarben: in der Luft, am Boden, Notfall-Transpondercode. */
+const PLANE_STATES: Record<string, string> = {
+  air: '#1d4e73',
+  ground: '#8a8a8f',
+  alert: '#a92318',
+};
+
 /** Icon-Name → Füll-/Randfarbe. Die Namen tauchen so in den Layer-Ausdrücken auf. */
 const VARIANTS: Record<string, [string, string, string]> = {
-  // Flugzeuge: in der Luft, am Boden, mit Notfall-Transpondercode
-  'plane-air': [PLANE, '#1d4e73', '#ffffff'],
-  'plane-ground': [PLANE, '#8a8a8f', '#ffffff'],
-  'plane-alert': [PLANE, '#a92318', '#ffffff'],
+  ...Object.fromEntries(
+    Object.entries(PLANE_SHAPES).flatMap(([cls, path]) =>
+      Object.entries(PLANE_STATES).map(([state, color]) => [`ac-${cls}-${state}`, [path, color, '#ffffff']]),
+    ),
+  ),
   // Schiffe nach Art
   'ship-cargo': [SHIP, '#2c7448', '#ffffff'],
   'ship-tanker': [SHIP, '#a92318', '#ffffff'],

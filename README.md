@@ -47,7 +47,7 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Regenradar | DWD RADOLAN-RV / RainViewer | Zeitleiste bis +2 h |
 | Verkehrsfluss | TomTom | nur mit gültigem `TOMTOM_KEY` |
 | Verkehr / Pegel | Autobahn GmbH / PEGELONLINE | folgen dem Kartenausschnitt |
-| Flugzeuge | adsb.lol (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
+| Flugzeuge | adsb.fi (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
 | Schiffe | aisstream.io (AIS) | nur mit `AISSTREAM_KEY` |
 | Amateurfunk | aprs.fi (APRS) | nur mit `APRSFI_KEY`, feste Rufzeichenliste |
 | Tag/Nacht | selbst gerechnet | Dämmerungssaum, wandert minütlich mit |
@@ -56,12 +56,21 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 Flug- und Schiffspositionen werden nur geladen, solange ihre Ebene an ist, und
 bewusst **nicht** offline gespeichert — sie veralten in Sekunden.
 
+Flugzeuge tragen die Silhouette ihrer Musterklasse (Kleinflugzeug, Jet,
+Großraum, Hubschrauber, Segelflug — aus der ADS-B-Kategorie abgeleitet), gefärbt
+nach Zustand (in der Luft, am Boden, Notfall-Squawk). Das Popup zeigt Höhe samt
+eingestellter Zielhöhe, Steig-/Sinkrate, Geschwindigkeiten (über Grund, IAS,
+Mach), Kurs, Wind und Temperatur in Flughöhe, Squawk und Abstand. Halter und
+**Flugroute** (Start- und Zielflughafen) holt `/api/aircraft/<icao>` beim
+Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
+
 ## Wetter & Regenradar
 
 * **Vorhersage**: `/api/weather/forecast` liefert aus Bright Sky (DWD) den
   Stundenverlauf (48 h) und eine daraus aggregierte 7-Tage-Übersicht. Die
-  Detailansicht zeigt Symbole, eine Temperaturkurve, Regenbalken sowie
-  Sonnenauf- und -untergang (lokal aus dem Sonnenstand gerechnet).
+  Detailansicht zeigt Symbole und eine Temperaturkurve, darunter die
+  **24-Stunden-Regenvorhersage** (Balken = Menge in mm, Linie =
+  Regenwahrscheinlichkeit, dazu Summe und Beginn) sowie die Luftqualität.
 * **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
   (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von
   ~30 min Vergangenheit bis **+2 h**. Das Backend reicht die zlib-komprimierten
