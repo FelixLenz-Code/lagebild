@@ -193,6 +193,54 @@ export interface TransitStop {
   departures: TransitDeparture[];
 }
 
+/** Flugzeug aus dem ADS-B-Netz (Position, Höhe, Kurs). */
+export interface Aircraft {
+  /** ICAO-24-Adresse (hex) — eindeutige Kennung des Transponders. */
+  icao: string;
+  callsign: string | null;
+  registration: string | null;
+  /** ICAO-Musterkürzel, z.B. „A320". */
+  type: string | null;
+  description: string | null;
+  coordinates: Coords;
+  /** Barometrische Höhe in Fuß; null wenn am Boden gemeldet. */
+  altitudeFt: number | null;
+  /** Steig-/Sinkrate in Fuß pro Minute. */
+  verticalRateFpm: number | null;
+  /** Geschwindigkeit über Grund in Knoten. */
+  groundSpeedKt: number | null;
+  /** Kurs über Grund in Grad (0 = Nord). */
+  trackDeg: number | null;
+  onGround: boolean;
+  squawk: string | null;
+  /** Notfall-Transpondercode: 7500 Entführung, 7600 Funkausfall, 7700 Notfall. */
+  emergency: 'hijack' | 'radio-failure' | 'general' | null;
+}
+
+/** Navigationsstatus eines Schiffs (AIS-Feld, vereinfacht). */
+export type VesselStatus = 'under-way' | 'anchored' | 'moored' | 'not-under-command' | 'fishing' | 'aground' | 'other';
+
+/** Schiff aus dem AIS-Netz. */
+export interface Vessel {
+  /** Maritime Mobile Service Identity — eindeutige Schiffskennung. */
+  mmsi: number;
+  name: string | null;
+  /** Schiffsart aus der AIS-Typnummer, bereits eingedeutscht gruppiert. */
+  kind: 'cargo' | 'tanker' | 'passenger' | 'tug' | 'fishing' | 'sailing' | 'pleasure' | 'high-speed' | 'authority' | 'other';
+  coordinates: Coords;
+  /** Geschwindigkeit über Grund in Knoten. */
+  speedKt: number | null;
+  /** Kurs über Grund in Grad. */
+  courseDeg: number | null;
+  /** Anliegender Bug-Kurs in Grad (falls gemeldet). */
+  headingDeg: number | null;
+  status: VesselStatus | null;
+  destination: string | null;
+  /** Länge über alles in Metern, aus den AIS-Abmessungen. */
+  lengthM: number | null;
+  reportedAt: string;
+}
+
 /** Nachrichten-/Ereignismeldung (Tagesschau). */
 export interface NewsItem {
   id: string;

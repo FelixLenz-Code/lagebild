@@ -24,6 +24,17 @@ function loadEnvFile(path: string): void {
 loadEnvFile(join(process.cwd(), '.env'));
 loadEnvFile(join(here, '.env'));
 
+/** `süd,west,nord,ost` (Grad) → AIS-Ausschnitt in aisstream-Schreibweise. */
+function parseBbox(raw: string | undefined): [[number, number], [number, number]] | null {
+  if (!raw) return null;
+  const n = raw.split(',').map(Number);
+  if (n.length !== 4 || n.some((v) => !Number.isFinite(v))) return null;
+  return [
+    [n[0]!, n[1]!],
+    [n[2]!, n[3]!],
+  ];
+}
+
 /** Laufzeit-Konfiguration aus Umgebungsvariablen (siehe .env.example). */
 export const config = {
   port: Number(process.env.PORT ?? 8787),
@@ -36,5 +47,14 @@ export const config = {
   tomtomKey: process.env.TOMTOM_KEY ?? '',
   /** Verzeichnis mit den Offline-PMTiles pro Bundesland (z.B. 04.pmtiles). */
   mapsDir: process.env.MAPS_DIR ?? join(process.cwd(), 'maps'),
+  /** aisstream.io-Key für den Schiffsverkehr (kostenlos, aber Registrierung). */
+  aisKey: process.env.AISSTREAM_KEY ?? '',
+  /** AIS-Stream-Endpunkt (nur für Tests/eigene Quellen zu ändern). */
+  aisUrl: process.env.AISSTREAM_URL ?? 'wss://stream.aisstream.io/v0/stream',
+  /** Beobachteter AIS-Ausschnitt [[lat,lon],[lat,lon]] — Default: Deutschland + Küsten. */
+  aisBbox: parseBbox(process.env.AISSTREAM_BBOX) ?? [
+    [47.0, 5.5],
+    [56.0, 15.5],
+  ],
   isProd: process.env.NODE_ENV === 'production',
 };

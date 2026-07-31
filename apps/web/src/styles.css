@@ -90,7 +90,14 @@ svg { display: block; }
   }
   .tiles-col > .tile { width: auto; }
 }
-.maptools { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; z-index: 1; }
+/* Bedienleisten oben links; rechts bleibt Platz für die Zoom-Buttons. */
+.mapcontrols {
+  position: absolute; top: 10px; left: 10px; right: 52px; z-index: 1;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  pointer-events: none;
+}
+.mapcontrols > * { pointer-events: auto; }
+.maptools { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   cursor: pointer; user-select: none; min-height: 34px;
   display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border-radius: var(--r-sm);
@@ -180,12 +187,19 @@ svg { display: block; }
 .tile .head h3 { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
 .tile .head .src-tag { margin-left: auto; font-size: .62rem; color: var(--faint); }
 
-.wx-main { display: flex; align-items: baseline; gap: 10px; }
-.wx-temp { font-size: 2.1rem; font-weight: 650; letter-spacing: -.02em; }
+.wicon { color: var(--muted); flex: none; overflow: visible; }
+.wx-main { display: flex; align-items: center; gap: 10px; }
+.wx-main .wx-temp { font-size: 2.1rem; font-weight: 650; letter-spacing: -.02em; line-height: 1; }
 .wx-cond { font-size: .88rem; font-weight: 600; }
 .wx-sub { font-size: .74rem; color: var(--muted); }
-.wx-row { display: flex; gap: 16px; font-size: .8rem; color: var(--muted); margin-top: auto; }
+.wx-row { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; color: var(--muted); margin-top: auto; }
 .wx-row b { color: var(--ink); font-weight: 600; }
+
+/* Stundenvorschau in der Kachel */
+.wx-peek { display: flex; gap: 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 7px 0; }
+.wx-peek-h { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.wx-peek-h .hh { font-size: .62rem; color: var(--faint); white-space: nowrap; }
+.wx-peek-h .tt { font-size: .8rem; font-weight: 600; }
 
 .tile.tap { cursor: pointer; transition: border-color .12s ease, transform .12s ease; }
 .tile.tap:hover { border-color: var(--accent); transform: translateY(-1px); }
@@ -230,25 +244,38 @@ svg { display: block; }
 
 .wx-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .wx-temp-lg { font-size: 3rem; font-weight: 650; letter-spacing: -.02em; line-height: 1; }
+.wx-hero.big {
+  gap: 18px; padding: 16px 18px; border-radius: var(--r);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--surface));
+  border: 1px solid var(--line);
+}
+.wx-hero.big .wicon { color: var(--muted); }
+.wx-hero-main { min-width: 0; }
+.wx-hero.big .wx-cond { font-size: 1rem; margin-top: 2px; }
+.wx-hero.big .wx-sub { margin-top: 3px; }
 
 .sec-title { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 8px; }
 .sheet > .wx-hero + .sec-title { margin-top: 4px; }
 
-/* hourly forecast strip */
-.wx-hours { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 8px; }
-.wx-hour { flex: none; width: 52px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+/* hourly forecast: icons, temperature curve, rain bars */
+.wx-hours { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 4px 8px; }
+.wx-hours-inner { display: flex; flex-direction: column; }
+.wx-hourrow { display: flex; }
+.wx-hour { flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .wx-hour .hh { font-size: .66rem; color: var(--muted); white-space: nowrap; }
-.wx-hour .tt { font-size: .92rem; font-weight: 600; }
-.wx-hour .rainbar { width: 10px; height: 30px; border-radius: 2px; background: var(--surface-2); display: flex; align-items: flex-end; overflow: hidden; }
+.wx-hour .rainbar { width: 9px; height: 26px; border-radius: 2px; display: flex; align-items: flex-end; overflow: hidden; margin-top: 4px; }
 .wx-hour .rainbar i { display: block; width: 100%; background: var(--accent); border-radius: 2px; }
 .wx-hour .pp { font-size: .62rem; color: var(--faint); }
+.wx-hour .pp.wet { color: var(--accent); font-weight: 600; }
+.wx-curve { display: block; }
+.wx-curve-label { font-size: 11px; font-weight: 600; fill: var(--ink); }
 
 /* 7-day forecast */
 .wx-days { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); overflow: hidden; }
-.wx-day { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: .84rem; }
+.wx-day { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: .84rem; }
 .wx-day:last-child { border-bottom: none; }
 .wx-day .dow { width: 48px; flex: none; font-weight: 600; }
-.wx-day .cond { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wx-day .cond { flex: 1; min-width: 0; color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wx-day .prob { width: 42px; flex: none; text-align: right; font-size: .72rem; color: var(--accent); }
 .wx-day .lo, .wx-day .hi { width: 34px; flex: none; text-align: right; }
 .wx-day .lo { color: var(--muted); }
@@ -344,7 +371,7 @@ svg { display: block; }
 .rprog .pct { font-size: .68rem; color: var(--muted); margin-top: 3px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- draw tool ---------- */
-.drawbar { position: absolute; top: 52px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; z-index: 1; }
+.drawbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip.chip-ok { color: #fff; background: var(--ok); border-color: var(--ok); }
 .chip.chip-ok:disabled { opacity: .5; cursor: default; }
 .drawhint { font-size: .68rem; color: var(--ink); background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 3px 8px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }

@@ -15,9 +15,11 @@ Monorepo (pnpm workspaces):
 | `apps/api` | Hono-Proxy. Normalisiert externe Quellen, umgeht CORS/Rate-Limits, cached. |
 | `packages/shared` | Gemeinsame TypeScript-Datentypen. |
 
-Der Server ist **zustandslos** (nur Proxy + kurzer Cache) — die Offline-Daten
-liegen im Browser. Datenquellen sind überwiegend freie, offizielle APIs
-(Bright Sky/DWD, warnung.bund.de/NINA, Autobahn, PEGELONLINE, UBA, Tagesschau, DB).
+Der Server ist **zustandslos** (nur Proxy + kurzer Cache; einzige Ausnahme ist
+der kurzlebige AIS-Positionsspeicher) — die Offline-Daten liegen im Browser.
+Datenquellen sind überwiegend freie, offizielle APIs (Bright Sky/DWD,
+warnung.bund.de/NINA, Autobahn, PEGELONLINE, Open-Meteo, Tagesschau, DB,
+adsb.lol, aisstream.io).
 
 ## Entwicklung
 
@@ -36,21 +38,51 @@ pnpm typecheck  # Typprüfung über alle Pakete
 ## Kartenebenen
 
 Die Karte startet **ohne** Fachebenen — jede Ebene wird über einen eigenen Chip
-zugeschaltet: Warnungen (NINA/DWD-Warngebiete inkl. Warnstufen-Filter),
-Regenradar, Verkehrsfluss (nur mit gültigem TomTom-Key), Verkehr, Pegel und das
-Zeichenwerkzeug „Markieren". Neu gezeichnete Punkte und Flächen werden direkt
-beim Anlegen benannt.
+zugeschaltet:
+
+| Ebene | Quelle | Hinweis |
+| --- | --- | --- |
+| Warnungen | DWD-GeoServer (NINA-Skala) | mit Warnstufen-Filter |
+| Regenradar | DWD RADOLAN-RV / RainViewer | Zeitleiste bis +2 h |
+| Verkehrsfluss | TomTom | nur mit gültigem `TOMTOM_KEY` |
+| Verkehr / Pegel | Autobahn GmbH / PEGELONLINE | folgen dem Kartenausschnitt |
+| Flugzeuge | adsb.lol (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
+| Schiffe | aisstream.io (AIS) | nur mit `AISSTREAM_KEY` |
+| Tag/Nacht | selbst gerechnet | Dämmerungssaum, wandert minütlich mit |
+| Markieren | eigene Punkte/Flächen | Benennung direkt beim Anlegen |
+
+Flug- und Schiffspositionen werden nur geladen, solange ihre Ebene an ist, und
+bewusst **nicht** offline gespeichert — sie veralten in Sekunden.
 
 ## Wetter & Regenradar
 
 * **Vorhersage**: `/api/weather/forecast` liefert aus Bright Sky (DWD) den
-  Stundenverlauf (48 h) und eine daraus aggregierte 7-Tage-Übersicht.
+  Stundenverlauf (48 h) und eine daraus aggregierte 7-Tage-Übersicht. Die
+  Detailansicht zeigt Symbole, eine Temperaturkurve, Regenbalken sowie
+  Sonnenauf- und -untergang (lokal aus dem Sonnenstand gerechnet).
 * **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
   (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von
   ~30 min Vergangenheit bis **+2 h**. Das Backend reicht die zlib-komprimierten
   Gitter durch, der Browser packt sie aus (`DecompressionStream`) und malt daraus
   das Kartenbild. Außerhalb Deutschlands (oder ohne `DecompressionStream`) fällt
   die App automatisch auf die RainViewer-Kacheln zurück.
+
+## Schiffsverkehr (AIS) einrichten
+
+AIS gibt es nicht schlüssellos: Der Key von [aisstream.io](https://aisstream.io)
+ist kostenlos, erfordert aber eine Registrierung. Anschließend in
+`apps/api/.env` eintragen:
+
+```bash
+AISSTREAM_KEY=dein-key
+# optional: beobachteter Ausschnitt als sued,west,nord,ost (Standard: Deutschland)
+# AISSTREAM_BBOX=47.0,5.5,56.0,15.5
+```
+
+aisstream liefert per WebSocket — der Server hält die zuletzt gemeldeten
+Schiffe deshalb bis zu 20 Minuten im Speicher (gedeckelt, kein Datenbank-State)
+und beantwortet daraus die Ausschnitts-Abfragen. Ohne Key bleibt die Ebene
+unsichtbar; `/api/health` meldet das als `features.ais`.
 
 ## Offline-Karten (PMTiles pro Bundesland)
 

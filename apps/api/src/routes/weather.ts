@@ -39,6 +39,21 @@ function toEnvelope(now: WeatherNow): ApiEnvelope<WeatherNow> {
   return { data: now, source: 'Bright Sky (DWD)', fetchedAt: new Date().toISOString() };
 }
 
+/**
+ * Gefühlte Temperatur (Australian Apparent Temperature): berücksichtigt
+ * Luftfeuchte und Wind, gilt sowohl bei Hitze als auch bei Kälte.
+ */
+function apparentTempC(
+  tempC: number | null | undefined,
+  humidityPct: number | null | undefined,
+  windKmh: number | null | undefined,
+): number | null {
+  if (tempC == null || humidityPct == null) return null;
+  const vapourPressure = (humidityPct / 100) * 6.105 * Math.exp((17.27 * tempC) / (237.7 + tempC));
+  const windMs = ((windKmh ?? 0) * 1000) / 3600;
+  return Math.round((tempC + 0.33 * vapourPressure - 0.7 * windMs - 4) * 10) / 10;
+}
+
 weatherRoute.get('/', async (c) => {
   const coords = readCoords(c);
   if (!coords) return c.json({ error: 'lat und lon erforderlich' }, 400);
@@ -55,7 +70,7 @@ weatherRoute.get('/', async (c) => {
   const w = body.weather ?? {};
   const now: WeatherNow = {
     tempC: w.temperature ?? null,
-    feelsLikeC: null,
+    feelsLikeC: apparentTempC(w.temperature, w.relative_humidity, w.wind_speed),
     condition: (w.condition as WeatherCondition) ?? null,
     icon: w.icon ?? null,
     windKmh: w.wind_speed ?? null,
@@ -135,9 +150,16 @@ function toDay(date: string, hours: BrightSkyHour[]): WeatherDay {
   // Prägendes Wetter aus den Tagstunden (nachts ist „klar" wenig aussagekräftig).
   const daytime = hours.filter((h) => HOUR(h.timestamp) >= 6 && HOUR(h.timestamp) <= 20);
   const relevant = daytime.length ? daytime : hours;
-  const worst = relevant.reduce((a, b) =>
-    (CONDITION_RANK[b.condition ?? ''] ?? -1) > (CONDITION_RANK[a.condition ?? ''] ?? -1) ? b : a,
-  );
+  const rank = (h: BrightSkyHour) => CONDITION_RANK[h.condition ?? ''] ?? -1;
+  // Eine einzelne Nebel- oder Schauerstunde soll den Tag nicht umdeuten:
+  // gewertet wird das schwerste Wetter, das mindestens zwei Stunden anhält.
+  const hoursPerCondition = new Map<string, number>();
+  for (const h of relevant) {
+    const key = h.condition ?? '';
+    hoursPerCondition.set(key, (hoursPerCondition.get(key) ?? 0) + 1);
+  }
+  const lasting = relevant.filter((h) => (hoursPerCondition.get(h.condition ?? '') ?? 0) >= 2);
+  const worst = (lasting.length ? lasting : relevant).reduce((a, b) => (rank(b) > rank(a) ? b : a));
   // Bei Niederschlag passt das Symbol der schwersten Stunde, sonst das häufigste.
   const wet = (CONDITION_RANK[worst.condition ?? ''] ?? 0) >= CONDITION_RANK.rain!;
   const icon = (wet ? worst.icon : commonIcon(relevant)) ?? worst.icon ?? null;

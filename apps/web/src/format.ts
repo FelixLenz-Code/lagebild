@@ -83,6 +83,29 @@ export const SEVERITY_VAR: Record<Severity, string> = {
   extreme: 'var(--sev4)',
 };
 
+export const VESSEL_DE: Record<string, string> = {
+  cargo: 'Frachter',
+  tanker: 'Tanker',
+  passenger: 'Passagierschiff',
+  tug: 'Schlepper',
+  fishing: 'Fischerei',
+  sailing: 'Segelschiff',
+  pleasure: 'Sportboot',
+  'high-speed': 'Schnellboot',
+  authority: 'Behörde / Rettung',
+  other: 'Schiff',
+};
+
+export const VESSEL_STATUS_DE: Record<string, string> = {
+  'under-way': 'in Fahrt',
+  anchored: 'vor Anker',
+  moored: 'festgemacht',
+  'not-under-command': 'manövrierunfähig',
+  fishing: 'beim Fischen',
+  aground: 'auf Grund',
+  other: 'sonstiger Status',
+};
+
 export const TRAFFIC_DE: Record<string, string> = {
   closure: 'Sperrung',
   jam: 'Stau',

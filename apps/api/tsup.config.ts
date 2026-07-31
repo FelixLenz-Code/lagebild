@@ -9,5 +9,12 @@ export default defineConfig({
   platform: 'node',
   clean: true,
   minify: false,
-  noExternal: [/@lagebild\//, /^hono/, /@hono\//],
+  // `ws` muss mit ins Bundle: der AIS-Stream läuft über WebSockets, und
+  // Node 20 bringt noch keinen stabilen WebSocket-Client mit.
+  noExternal: [/@lagebild\//, /^hono/, /@hono\//, /^ws$/],
+  // `ws` ist CommonJS und lädt Node-Module per require — im ESM-Bundle gibt es
+  // das nicht. Der Banner stellt ein passendes `require` bereit.
+  banner: {
+    js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);",
+  },
 });

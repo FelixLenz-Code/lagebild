@@ -17,6 +17,8 @@ import { geocodeRoute } from './routes/geocode.js';
 import { transitRoute } from './routes/transit.js';
 import { flowRoute, flowUsable } from './routes/flow.js';
 import { mapsRoute } from './routes/maps.js';
+import { aircraftRoute } from './routes/aircraft.js';
+import { vesselsRoute, startAisCollector, aisUsable } from './routes/vessels.js';
 
 const app = new Hono();
 
@@ -29,7 +31,7 @@ app.get('/api/health', async (c) =>
     ok: true,
     service: 'lagebild-api',
     ts: new Date().toISOString(),
-    features: { flow: await flowUsable() },
+    features: { flow: await flowUsable(), ais: aisUsable() },
   }),
 );
 app.route('/api/weather', weatherRoute);
@@ -44,6 +46,8 @@ app.route('/api/geocode', geocodeRoute);
 app.route('/api/transit', transitRoute);
 app.route('/api/flow', flowRoute);
 app.route('/api/maps', mapsRoute);
+app.route('/api/aircraft', aircraftRoute);
+app.route('/api/vessels', vesselsRoute);
 // Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
 app.use(
   '/api/maps/*',
@@ -56,6 +60,9 @@ if (existsSync(config.webRoot)) {
   // SPA-Fallback: unbekannte Pfade auf index.html
   app.get('/*', serveStatic({ path: `${config.webRoot}/index.html` }));
 }
+
+// AIS kommt als Push-Stream — der Sammler läuft ab Start im Hintergrund.
+startAisCollector();
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   console.log(`lagebild-api läuft auf http://${config.host}:${info.port}`);

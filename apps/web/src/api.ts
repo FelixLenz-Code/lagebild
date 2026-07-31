@@ -11,6 +11,8 @@ import type {
   RadarData,
   GeoResult,
   TransitStop,
+  Aircraft,
+  Vessel,
   Coords,
 } from '@lagebild/shared';
 
@@ -61,7 +63,7 @@ export const fetchGeocode = (query: string): Promise<ApiEnvelope<GeoResult[]>> =
 
 export interface Health {
   ok: boolean;
-  features?: { flow?: boolean };
+  features?: { flow?: boolean; ais?: boolean };
 }
 export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
 
@@ -79,3 +81,9 @@ export const fetchTraffic = (b: Bbox): Promise<ApiEnvelope<TrafficIncident[]>> =
 
 export const fetchPegel = (b: Bbox): Promise<ApiEnvelope<WaterLevel[]>> =>
   getJson(`/api/pegel?${bboxQ(b)}`);
+
+export const fetchAircraft = (b: Bbox): Promise<ApiEnvelope<Aircraft[]>> =>
+  getJson(`/api/aircraft?${bboxQ(b)}`);
+
+export const fetchVessels = (b: Bbox): Promise<ApiEnvelope<Vessel[]>> =>
+  getJson(`/api/vessels?${bboxQ(b)}`);

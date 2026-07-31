@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
-import { LageMap } from './LageMap.js';
+import { LageMap, type ActiveLayers } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { opfsSupported, listOffline } from './offlineMaps.js';
@@ -10,7 +10,9 @@ import { inStateBounds } from './stateBounds.js';
 import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
 import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, AirDetail, TransitDetail } from './details.js';
-import { relativeTime, timeUntil, timeHM, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE, AIR_DE, AIR_COLOR } from './format.js';
+import { relativeTime, timeUntil, timeHM, hourLabel, CONDITION_DE, SEVERITY_DE, SEVERITY_VAR, TRAFFIC_DE, AIR_DE, AIR_COLOR } from './format.js';
+import { WeatherIcon } from './WeatherIcon.js';
+import { sunAltitude } from './sun.js';
 
 type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'air' | 'transit';
 
@@ -87,17 +89,32 @@ export function App() {
   const air = useApi(`air:${geoKey}`, () => fetchAir(coords), [coords]);
   const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords]);
   const radar = useApi('radar', () => fetchRadar());
-  // Die DWD-Vorhersage ist groß (~70 kB) — erst laden, wenn die Radarebene an ist.
-  const [radarOn, setRadarOn] = useState(false);
+  // Live-Ebenen laden nur, solange sie auf der Karte eingeschaltet sind.
+  const [layers, setLayers] = useState<ActiveLayers>({ radar: false, aircraft: false, vessels: false });
   const radarForecast = useApi(
     `radar-forecast:${geoKey}`,
     () => fetchRadarForecast(coords),
     [coords],
-    { enabled: radarOn },
+    { enabled: layers.radar },
   );
+  // Das ADS-B-Netz liefert nur einen Umkreis um die Kartenmitte — bei sehr
+  // weitem Ausschnitt wäre das Bild irreführend, also gar nicht erst abfragen.
+  const wideViewport = viewport.east - viewport.west > 8;
+  // Flug- und Schiffspositionen veralten in Sekunden — pollen, nicht cachen.
+  const aircraft = useApi(`aircraft:${viewKey}`, () => fetchAircraft(viewport), [viewKey], {
+    enabled: layers.aircraft && !wideViewport,
+    refreshMs: 15000,
+    cache: false,
+  });
+  const vessels = useApi(`vessels:${viewKey}`, () => fetchVessels(viewport), [viewKey], {
+    enabled: layers.vessels,
+    refreshMs: 20000,
+    cache: false,
+  });
   const news = useApi('news', () => fetchNews());
   const health = useApi('health', () => fetchHealth());
   const flowAvailable = health.data?.features?.flow ?? false;
+  const aisAvailable = health.data?.features?.ais ?? false;
 
   const maps = useApi('maps', () => fetchMaps());
   const availableMap: Record<string, number> = Object.fromEntries(
@@ -155,6 +172,9 @@ export function App() {
   const w = weather.data?.data;
   const fc = forecast.data?.data ?? null;
   const today = fc?.daily[0];
+  const isNight = sunAltitude(new Date(), coords.lat, coords.lon) < -0.833;
+  // Vorschau in der Kachel: die nächsten vier vollen Stunden.
+  const nextHours = (fc?.hourly ?? []).filter((h) => new Date(h.time).getTime() > Date.now()).slice(0, 4);
 
   return (
     <div className="app">
@@ -209,11 +229,14 @@ export function App() {
             pegel={pegel.data?.data ?? []}
             radar={radar.data?.data ?? null}
             radarForecast={radarForecast.data?.data ?? null}
-            radarForecastPending={radarOn && radarForecast.loading}
+            radarForecastPending={layers.radar && radarForecast.loading}
+            aircraft={aircraft.data?.data ?? []}
+            vessels={vessels.data?.data ?? []}
             flowAvailable={flowAvailable}
+            aisAvailable={aisAvailable}
             offlineCode={offlineCode}
             onViewport={setViewport}
-            onRadarChange={setRadarOn}
+            onLayersChange={setLayers}
           />
         </div>
 
@@ -224,18 +247,35 @@ export function App() {
           {w && (
             <>
               <div className="wx-main">
+                <WeatherIcon icon={w.icon ?? (isNight ? 'clear-night' : undefined)} condition={w.condition} size={46} />
                 <span className="wx-temp">{w.tempC != null ? `${Math.round(w.tempC)}°` : '–'}</span>
                 <div>
                   <div className="wx-cond">{w.condition ? (CONDITION_DE[w.condition] ?? w.condition) : 'Unbekannt'}</div>
-                  <div className="wx-sub">{w.observedAt ? `Messung ${relativeTime(w.observedAt)}` : ''}</div>
+                  <div className="wx-sub">
+                    {w.feelsLikeC != null
+                      ? `gefühlt ${Math.round(w.feelsLikeC)}°`
+                      : w.observedAt
+                        ? `Messung ${relativeTime(w.observedAt)}`
+                        : ''}
+                  </div>
                 </div>
               </div>
+
+              {/* Kompakte Vorschau: die nächsten Stunden auf einen Blick. */}
+              {nextHours.length > 0 && (
+                <div className="wx-peek">
+                  {nextHours.map((h) => (
+                    <div className="wx-peek-h" key={h.time}>
+                      <span className="hh">{hourLabel(h.time)}</span>
+                      <WeatherIcon icon={h.icon} condition={h.condition} size={22} />
+                      <span className="tt mono">{h.tempC != null ? `${Math.round(h.tempC)}°` : '–'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="wx-row">
-                <span>Wind <b>{w.windKmh != null ? `${Math.round(w.windKmh)} km/h` : '–'}</b></span>
-                <span>Luftf. <b>{w.humidityPct != null ? `${Math.round(w.humidityPct)} %` : '–'}</b></span>
-              </div>
-              {today && (
-                <div className="wx-row">
+                {today && (
                   <span>
                     Heute{' '}
                     <b>
@@ -243,11 +283,12 @@ export function App() {
                       {today.tempMinC != null ? `${Math.round(today.tempMinC)}°` : '–'}
                     </b>
                   </span>
-                  <span>
-                    Regen <b>{today.precipitationProbabilityPct != null ? `${today.precipitationProbabilityPct} %` : '–'}</b>
-                  </span>
-                </div>
-              )}
+                )}
+                <span>Wind <b>{w.windKmh != null ? `${Math.round(w.windKmh)} km/h` : '–'}</b></span>
+                {today?.precipitationProbabilityPct != null && (
+                  <span>Regen <b>{today.precipitationProbabilityPct} %</b></span>
+                )}
+              </div>
             </>
           )}
         </Tile>
@@ -412,7 +453,7 @@ export function App() {
 
       {detail && (
         <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>
-          {detail === 'weather' && w && <WeatherDetail w={w} forecast={fc} />}
+          {detail === 'weather' && w && <WeatherDetail w={w} forecast={fc} coords={coords} />}
           {detail === 'warnings' && <WarningsDetail list={uniqueWarnings} />}
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}

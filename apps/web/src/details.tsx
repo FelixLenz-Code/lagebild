@@ -1,4 +1,5 @@
 import type {
+  Coords,
   WeatherNow,
   WeatherForecast,
   WarningFeature,
@@ -23,6 +24,8 @@ import {
   AIR_DE,
   AIR_COLOR,
 } from './format.js';
+import { WeatherIcon } from './WeatherIcon.js';
+import { sunTimes, sunAltitude } from './sun.js';
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
@@ -33,27 +36,49 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function WeatherDetail({ w, forecast }: { w: WeatherNow; forecast?: WeatherForecast | null }) {
+export function WeatherDetail({
+  w,
+  forecast,
+  coords,
+}: {
+  w: WeatherNow;
+  forecast?: WeatherForecast | null;
+  coords: Coords;
+}) {
   const n = (v: number | null, unit = '') => (v != null ? `${Math.round(v)}${unit}` : '–');
+  const today = forecast?.daily[0];
+  const { sunrise, sunset } = sunTimes(new Date(), coords.lat, coords.lon);
+  const night = sunAltitude(new Date(), coords.lat, coords.lon) < -0.833;
   return (
     <>
-      <div className="wx-hero">
-        <span className="wx-temp-lg mono">{w.tempC != null ? `${Math.round(w.tempC)}°` : '–'}</span>
-        <div>
+      <div className="wx-hero big">
+        <WeatherIcon icon={w.icon ?? (night ? 'clear-night' : undefined)} condition={w.condition} size={72} />
+        <div className="wx-hero-main">
+          <span className="wx-temp-lg mono">{w.tempC != null ? `${Math.round(w.tempC)}°` : '–'}</span>
           <div className="wx-cond">{w.condition ? (CONDITION_DE[w.condition] ?? w.condition) : 'Unbekannt'}</div>
-          <div className="wx-sub">Messung {relativeTime(w.observedAt)}</div>
+          <div className="wx-sub">
+            {w.feelsLikeC != null && `gefühlt ${Math.round(w.feelsLikeC)}° · `}
+            {today?.tempMaxC != null && today.tempMinC != null && (
+              <>
+                heute {Math.round(today.tempMaxC)}° / {Math.round(today.tempMinC)}° ·{' '}
+              </>
+            )}
+            Messung {relativeTime(w.observedAt)}
+          </div>
         </div>
       </div>
 
-      {forecast && forecast.hourly.length > 0 && <HourlyStrip hourly={forecast.hourly} />}
+      {forecast && forecast.hourly.length > 0 && <HourlyChart hourly={forecast.hourly} />}
       {forecast && forecast.daily.length > 0 && <DailyList daily={forecast.daily} />}
 
-      <h4 className="sec-title">Aktuelle Messwerte</h4>
+      <h4 className="sec-title">Jetzt vor Ort</h4>
       <div className="details">
         <Detail label="Wind" value={`${n(w.windKmh)} km/h · ${compass(w.windDirDeg)}`} />
         <Detail label="Böen" value={w.windGustKmh != null ? `${n(w.windGustKmh)} km/h` : '–'} />
         <Detail label="Luftfeuchte" value={n(w.humidityPct, ' %')} />
         <Detail label="Luftdruck" value={w.pressureHpa != null ? `${Math.round(w.pressureHpa)} hPa` : '–'} />
+        <Detail label="Sonnenaufgang" value={sunrise ? timeHM(sunrise.toISOString()) : '–'} />
+        <Detail label="Sonnenuntergang" value={sunset ? timeHM(sunset.toISOString()) : '–'} />
         <Detail label="Niederschlag" value={w.precipitationMm != null ? `${w.precipitationMm} mm` : '–'} />
         <Detail label="Messzeit" value={formatDateTime(w.observedAt)} />
       </div>
@@ -61,40 +86,90 @@ export function WeatherDetail({ w, forecast }: { w: WeatherNow; forecast?: Weath
   );
 }
 
-/** Stundenverlauf der nächsten 24 Stunden (waagerecht scrollbar). */
-function HourlyStrip({ hourly }: { hourly: WeatherForecast['hourly'] }) {
+const CHART_H = 66;
+const COL_W = 54;
+
+/**
+ * Stundenverlauf als Temperaturkurve mit Symbolen und Regenbalken —
+ * waagerecht scrollbar, die Kurve wird als SVG über die Spalten gelegt.
+ */
+function HourlyChart({ hourly }: { hourly: WeatherForecast['hourly'] }) {
   const hours = hourly.slice(0, 24);
+  const temps = hours.map((h) => h.tempC).filter((v): v is number => v != null);
+  const lo = Math.min(...temps);
+  const hi = Math.max(...temps);
+  const span = hi - lo || 1;
   const maxRain = Math.max(...hours.map((h) => h.precipitationMm ?? 0));
+  const width = hours.length * COL_W;
+  // Oben bleibt Platz für die Wertebeschriftung, unten für den Kurvenfuß.
+  const y = (t: number) => CHART_H - 8 - ((t - lo) / span) * (CHART_H - 30);
+  const points = hours
+    .map((h, i) => (h.tempC != null ? `${i * COL_W + COL_W / 2},${y(h.tempC)}` : null))
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <>
-      <h4 className="sec-title">Nächste Stunden</h4>
+      <h4 className="sec-title">Nächste 24 Stunden</h4>
       <div className="wx-hours">
-        {hours.map((h) => (
-          <div className="wx-hour" key={h.time}>
-            <span className="hh">{hourLabel(h.time)}</span>
-            <span className="tt mono">{h.tempC != null ? `${Math.round(h.tempC)}°` : '–'}</span>
-            {/* Regenbalken nur, wenn im Zeitraum überhaupt Niederschlag erwartet wird */}
-            {maxRain > 0 && (
-              <span className="rainbar" title={`${h.precipitationMm ?? 0} mm`}>
-                <i style={{ height: `${Math.min(100, ((h.precipitationMm ?? 0) / maxRain) * 100)}%` }} />
-              </span>
-            )}
-            <span className="pp">
-              {h.precipitationProbabilityPct != null ? `${h.precipitationProbabilityPct} %` : '–'}
-            </span>
+        <div className="wx-hours-inner" style={{ width }}>
+          <div className="wx-hourrow">
+            {hours.map((h) => (
+              <div className="wx-hour" key={h.time} style={{ width: COL_W }}>
+                <span className="hh">{hourLabel(h.time)}</span>
+                <WeatherIcon icon={h.icon} condition={h.condition} size={26} />
+              </div>
+            ))}
           </div>
-        ))}
+
+          <svg className="wx-curve" width={width} height={CHART_H} aria-hidden="true">
+            <polyline points={points} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" />
+            {hours.map((h, i) =>
+              h.tempC != null ? (
+                <g key={h.time}>
+                  <circle cx={i * COL_W + COL_W / 2} cy={y(h.tempC)} r={2.4} fill="var(--accent)" />
+                  <text
+                    x={i * COL_W + COL_W / 2}
+                    y={y(h.tempC) - 8}
+                    textAnchor="middle"
+                    className="wx-curve-label"
+                  >
+                    {Math.round(h.tempC)}°
+                  </text>
+                </g>
+              ) : null,
+            )}
+          </svg>
+
+          <div className="wx-hourrow">
+            {hours.map((h) => (
+              <div className="wx-hour" key={h.time} style={{ width: COL_W }}>
+                {/* Balken nur für Stunden mit Niederschlag — sonst bleibt es ruhig. */}
+                {maxRain > 0 && (
+                  <span className="rainbar" title={`${h.precipitationMm ?? 0} mm`}>
+                    {(h.precipitationMm ?? 0) > 0 && (
+                      <i style={{ height: `${Math.max(8, ((h.precipitationMm ?? 0) / maxRain) * 100)}%` }} />
+                    )}
+                  </span>
+                )}
+                <span className={`pp${(h.precipitationProbabilityPct ?? 0) >= 30 ? ' wet' : ''}`}>
+                  {h.precipitationProbabilityPct != null ? `${h.precipitationProbabilityPct} %` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </>
   );
 }
 
-/** 7-Tage-Übersicht mit Temperaturspanne als Balken. */
+/** 7-Tage-Übersicht mit Symbol und Temperaturspanne als Balken. */
 function DailyList({ daily }: { daily: WeatherForecast['daily'] }) {
   const mins = daily.map((d) => d.tempMinC).filter((v): v is number => v != null);
   const maxs = daily.map((d) => d.tempMaxC).filter((v): v is number => v != null);
-  const lo = Math.min(...mins, Infinity);
-  const hi = Math.max(...maxs, -Infinity);
+  const lo = Math.min(...mins);
+  const hi = Math.max(...maxs);
   const span = hi - lo || 1;
   return (
     <>
@@ -103,9 +178,12 @@ function DailyList({ daily }: { daily: WeatherForecast['daily'] }) {
         {daily.map((d) => (
           <div className="wx-day" key={d.date}>
             <span className="dow">{dayLabel(d.date)}</span>
-            <span className="cond">{d.condition ? (CONDITION_DE[d.condition] ?? d.condition) : '–'}</span>
+            <WeatherIcon icon={d.icon} condition={d.condition} size={24} />
+            <span className="cond">{d.condition ? (CONDITION_DE[d.condition] ?? d.condition) : ''}</span>
             <span className="prob mono">
-              {d.precipitationProbabilityPct != null ? `${d.precipitationProbabilityPct} %` : ''}
+              {d.precipitationProbabilityPct != null && d.precipitationProbabilityPct >= 5
+                ? `${d.precipitationProbabilityPct} %`
+                : ''}
             </span>
             <span className="lo mono">{d.tempMinC != null ? `${Math.round(d.tempMinC)}°` : '–'}</span>
             <span className="tspan">

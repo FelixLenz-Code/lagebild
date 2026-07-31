@@ -14,6 +14,8 @@ import type {
   Severity,
   RadarData,
   RadarForecast,
+  Aircraft,
+  Vessel,
 } from '@lagebild/shared';
 import type { Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
@@ -22,7 +24,9 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
-import { SEVERITY_DE, TRAFFIC_DE, formatDateTime, radarTimeLabel } from './format.js';
+import { ensureMapIcons } from './mapIcons.js';
+import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
+import { SEVERITY_DE, TRAFFIC_DE, VESSEL_DE, VESSEL_STATUS_DE, formatDateTime, radarTimeLabel, timeHM } from './format.js';
 
 const DRAW_COLOR = '#0d9488';
 type DrawMode = 'off' | 'point' | 'area';
@@ -123,6 +127,82 @@ function warningPopupHtml(w: WarningFeature): string {
   );
 }
 
+function aircraftPopupHtml(a: Aircraft): string {
+  const alt = a.onGround ? 'am Boden' : a.altitudeFt != null ? `${a.altitudeFt.toLocaleString('de-DE')} ft` : '–';
+  const climb =
+    a.verticalRateFpm != null && Math.abs(a.verticalRateFpm) >= 100
+      ? ` (${a.verticalRateFpm > 0 ? '↑' : '↓'} ${Math.abs(Math.round(a.verticalRateFpm))} ft/min)`
+      : '';
+  const emergency =
+    a.emergency === 'hijack'
+      ? 'Entführung (7500)'
+      : a.emergency === 'radio-failure'
+        ? 'Funkausfall (7600)'
+        : a.emergency === 'general'
+          ? 'Luftnotfall (7700)'
+          : null;
+  return (
+    `<div class="warn-popup">` +
+    (emergency ? `<span class="wp-sev" style="background:#a92318">${esc(emergency)}</span>` : '') +
+    `<b>${esc(a.callsign ?? a.registration ?? a.icao.toUpperCase())}</b>` +
+    `<div class="wp-region">${esc([a.description ?? a.type, a.registration].filter(Boolean).join(' · ') || 'Unbekanntes Muster')}</div>` +
+    `<p class="wp-desc">Höhe ${esc(alt)}${esc(climb)}<br>` +
+    `Tempo ${a.groundSpeedKt != null ? `${Math.round(a.groundSpeedKt)} kn` : '–'} · ` +
+    `Kurs ${a.trackDeg != null ? `${Math.round(a.trackDeg)}°` : '–'}</p>` +
+    `</div>`
+  );
+}
+
+function vesselPopupHtml(v: Vessel): string {
+  const facts = [
+    v.speedKt != null ? `Tempo ${v.speedKt.toFixed(1)} kn` : null,
+    v.courseDeg != null ? `Kurs ${Math.round(v.courseDeg)}°` : null,
+    v.lengthM ? `Länge ${v.lengthM} m` : null,
+  ].filter(Boolean);
+  return (
+    `<div class="warn-popup">` +
+    `<b>${esc(v.name ?? `MMSI ${v.mmsi}`)}</b>` +
+    `<div class="wp-region">${esc(VESSEL_DE[v.kind] ?? 'Schiff')}${v.status ? ` · ${esc(VESSEL_STATUS_DE[v.status] ?? '')}` : ''}</div>` +
+    (facts.length ? `<p class="wp-desc">${esc(facts.join(' · '))}</p>` : '') +
+    (v.destination ? `<p class="wp-desc">Ziel: ${esc(v.destination)}</p>` : '') +
+    `<div class="wp-meta">Meldung ${esc(timeHM(v.reportedAt))} · MMSI ${v.mmsi}</div>` +
+    `</div>`
+  );
+}
+
+function aircraftToGeoJson(list: Aircraft[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: list.map((a) => ({
+      type: 'Feature',
+      properties: {
+        id: a.icao,
+        label: a.callsign ?? a.registration ?? '',
+        rotate: a.trackDeg ?? 0,
+        icon: a.emergency ? 'plane-alert' : a.onGround ? 'plane-ground' : 'plane-air',
+        ground: a.onGround,
+      },
+      geometry: { type: 'Point', coordinates: [a.coordinates.lon, a.coordinates.lat] },
+    })),
+  };
+}
+
+function vesselsToGeoJson(list: Vessel[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: list.map((v) => ({
+      type: 'Feature',
+      properties: {
+        id: v.mmsi,
+        label: v.name ?? '',
+        rotate: v.headingDeg ?? v.courseDeg ?? 0,
+        icon: `ship-${['cargo', 'tanker', 'passenger', 'tug', 'fishing'].includes(v.kind) ? v.kind : 'other'}`,
+      },
+      geometry: { type: 'Point', coordinates: [v.coordinates.lon, v.coordinates.lat] },
+    })),
+  };
+}
+
 function markerEl(color: string, size = 16, ring = false): HTMLDivElement {
   const el = document.createElement('div');
   el.className = ring ? 'mk mk-user' : 'mk';
@@ -142,12 +222,23 @@ interface Props {
   radarForecast: RadarForecast | null;
   /** true, solange die DWD-Vorhersage lädt — dann blitzt RainViewer nicht kurz auf. */
   radarForecastPending: boolean;
+  aircraft: Aircraft[];
+  vessels: Vessel[];
   flowAvailable: boolean;
+  /** true, wenn der Server einen AIS-Stream hat (sonst kein Schiffs-Chip). */
+  aisAvailable: boolean;
   /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt online. */
   offlineCode: string | null;
   onViewport: (b: Bbox) => void;
-  /** Meldet, ob die Radarebene an ist (die Vorhersage wird erst dann geladen). */
-  onRadarChange: (on: boolean) => void;
+  /** Meldet die aktiven Live-Ebenen — diese Daten werden erst dann geladen. */
+  onLayersChange: (active: ActiveLayers) => void;
+}
+
+/** Ebenen, deren Daten nur bei Bedarf geholt werden. */
+export interface ActiveLayers {
+  radar: boolean;
+  aircraft: boolean;
+  vessels: boolean;
 }
 
 export function LageMap({
@@ -158,10 +249,13 @@ export function LageMap({
   radar,
   radarForecast,
   radarForecastPending,
+  aircraft,
+  vessels,
   flowAvailable,
+  aisAvailable,
   offlineCode,
   onViewport,
-  onRadarChange,
+  onLayersChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -183,6 +277,10 @@ export function LageMap({
   const [radarIdx, setRadarIdx] = useState(0);
   const [radarPlaying, setRadarPlaying] = useState(false);
   const [showFlow, setShowFlow] = useState(false);
+  const [showNight, setShowNight] = useState(false);
+  const [showAircraft, setShowAircraft] = useState(false);
+  const [showVessels, setShowVessels] = useState(false);
+  const [iconEpoch, setIconEpoch] = useState(0);
   const [drawFeatures, setDrawFeatures] = useState<DrawFeature[]>(() => loadDraw());
   const [drawMode, setDrawMode] = useState<DrawMode>('off');
   const [drawBarOpen, setDrawBarOpen] = useState(false);
@@ -198,8 +296,21 @@ export function LageMap({
   };
   useEffect(() => saveDraw(drawFeatures), [drawFeatures]);
 
-  // Die Radarvorhersage wird nur geladen, wenn die Ebene wirklich an ist.
-  useEffect(() => onRadarChange(showRadar), [showRadar, onRadarChange]);
+  // Live-Daten (Radar, Flüge, Schiffe) werden nur geladen, wenn ihre Ebene an ist.
+  useEffect(
+    () => onLayersChange({ radar: showRadar, aircraft: showAircraft, vessels: showVessels }),
+    [showRadar, showAircraft, showVessels, onLayersChange],
+  );
+
+  // Nachschlagetabellen für die Klick-Popups
+  const aircraftById = useRef<Map<string, Aircraft>>(new Map());
+  const vesselByMmsi = useRef<Map<number, Vessel>>(new Map());
+  useEffect(() => {
+    aircraftById.current = new Map(aircraft.map((a) => [a.icao, a]));
+  }, [aircraft]);
+  useEffect(() => {
+    vesselByMmsi.current = new Map(vessels.map((v) => [v.mmsi, v]));
+  }, [vessels]);
 
   // Nachschlagetabelle id → Warnung (für Klick-Popup)
   useEffect(() => {
@@ -245,12 +356,28 @@ export function LageMap({
         setAreaVertices((prev) => [...prev, c]);
       }
     });
-    map.on('mouseenter', 'warnings-fill', () => {
-      map.getCanvas().style.cursor = 'pointer';
+    // Flug-/Schiffs-Popups (die Ebenen entstehen erst später — das ist ok).
+    map.on('click', 'aircraft', (e) => {
+      if (drawModeRef.current !== 'off') return;
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const ac = id ? aircraftById.current.get(id) : undefined;
+      if (ac) warnPopup.current!.setLngLat(e.lngLat).setHTML(aircraftPopupHtml(ac)).addTo(map);
     });
-    map.on('mouseleave', 'warnings-fill', () => {
-      map.getCanvas().style.cursor = '';
+    map.on('click', 'vessels', (e) => {
+      if (drawModeRef.current !== 'off') return;
+      const id = e.features?.[0]?.properties?.id as number | undefined;
+      const vessel = id != null ? vesselByMmsi.current.get(id) : undefined;
+      if (vessel) warnPopup.current!.setLngLat(e.lngLat).setHTML(vesselPopupHtml(vessel)).addTo(map);
     });
+
+    for (const layer of ['warnings-fill', 'aircraft', 'vessels']) {
+      map.on('mouseenter', layer, () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', layer, () => {
+        map.getCanvas().style.cursor = '';
+      });
+    }
     // Nach jedem (Neu-)Laden des Styles die Overlays neu auflegen.
     map.on('style.load', () => setStyleEpoch((n) => n + 1));
 
@@ -526,6 +653,116 @@ export function LageMap({
     }
   }, [showFlow, flowAvailable, ready, styleEpoch]);
 
+  // --- Tag/Nacht-Grenze ---------------------------------------------------
+
+  // Minütlich neu rechnen, damit die Grenze mitwandert.
+  const [nightTick, setNightTick] = useState(0);
+  useEffect(() => {
+    if (!showNight) return;
+    const t = setInterval(() => setNightTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, [showNight]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!showNight) {
+      for (const id of ['night-fill', 'twilight-fill']) if (map.getLayer(id)) map.removeLayer(id);
+      for (const id of ['night', 'twilight']) if (map.getSource(id)) map.removeSource(id);
+      return;
+    }
+    const now = new Date();
+    const twilight = shadowPolygon(now);
+    const night = shadowPolygon(now, CIVIL_TWILIGHT);
+    const beforeId = ['warnings-fill', 'radar', 'radar-dwd'].find((id) => map.getLayer(id));
+
+    for (const [id, data] of [
+      ['twilight', twilight],
+      ['night', night],
+    ] as const) {
+      const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      if (src) {
+        src.setData(data);
+        continue;
+      }
+      map.addSource(id, { type: 'geojson', data });
+      map.addLayer(
+        {
+          id: `${id}-fill`,
+          type: 'fill',
+          source: id,
+          // Zwei Schichten übereinander ergeben den weichen Dämmerungssaum.
+          paint: { 'fill-color': '#0b1a33', 'fill-opacity': id === 'night' ? 0.22 : 0.16 },
+        },
+        beforeId,
+      );
+    }
+  }, [showNight, nightTick, ready, styleEpoch]);
+
+  // --- Flugzeuge & Schiffe ------------------------------------------------
+
+  // Symbole müssen nach jedem Stilwechsel neu in die Karte geladen werden.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let cancelled = false;
+    void ensureMapIcons(map).then(() => {
+      if (!cancelled) setIconEpoch((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || iconEpoch === 0) return;
+
+    for (const [id, on, data] of [
+      ['aircraft', showAircraft, aircraftToGeoJson(aircraft)],
+      ['vessels', showVessels, vesselsToGeoJson(vessels)],
+    ] as const) {
+      if (!on) {
+        if (map.getLayer(id)) map.removeLayer(id);
+        if (map.getSource(id)) map.removeSource(id);
+        continue;
+      }
+      const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      if (src) {
+        src.setData(data);
+        continue;
+      }
+      map.addSource(id, { type: 'geojson', data });
+      map.addLayer({
+        id,
+        type: 'symbol',
+        source: id,
+        // Weit herausgezoomt zeigt das ADS-B-Netz nur einen Umkreis um die
+        // Kartenmitte — dann lieber gar nichts, statt ein schiefes Bild.
+        minzoom: 6,
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': id === 'aircraft' ? 0.62 : 0.5,
+          'icon-rotate': ['get', 'rotate'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          // Beschriftung erst, wenn genug Platz ist — sonst wird es unruhig.
+          'text-field': ['step', ['zoom'], '', 9, ['get', 'label']],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 10,
+          'text-offset': [0, 1.4],
+          'text-anchor': 'top',
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#1f2933',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.4,
+        },
+      });
+    }
+  }, [showAircraft, showVessels, aircraft, vessels, ready, styleEpoch, iconEpoch]);
+
   // Eigene Markierungen: Quelle + Layer anlegen (oberste Ebene)
   useEffect(() => {
     const map = mapRef.current;
@@ -625,6 +862,7 @@ export function LageMap({
     <>
       <div className="mapwrap">
         <div ref={containerRef} className="lagemap" />
+        <div className="mapcontrols">
         <div className="maptools">
           <button
             type="button"
@@ -653,6 +891,38 @@ export function LageMap({
           <button type="button" className="chip" aria-pressed={showPegel} onClick={() => setShowPegel((v) => !v)}>
             <span className="k" style={{ background: 'var(--accent)' }} />
             Pegel
+          </button>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={showAircraft}
+            title="Flugverkehr aus dem offenen ADS-B-Netz"
+            onClick={() => setShowAircraft((v) => !v)}
+          >
+            <span className="k" style={{ background: '#1d4e73' }} />
+            Flugzeuge
+          </button>
+          {aisAvailable && (
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={showVessels}
+              title="Schiffsverkehr aus dem AIS-Netz"
+              onClick={() => setShowVessels((v) => !v)}
+            >
+              <span className="k" style={{ background: '#2c7448' }} />
+              Schiffe
+            </button>
+          )}
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={showNight}
+            title="Tag- und Nachtgrenze (Dämmerung schattiert)"
+            onClick={() => setShowNight((v) => !v)}
+          >
+            <span className="k" style={{ background: '#0b1a33' }} />
+            Tag/Nacht
           </button>
           <button
             type="button"
@@ -699,6 +969,7 @@ export function LageMap({
             )}
           </div>
         )}
+        </div>
 
         <button
           type="button"
