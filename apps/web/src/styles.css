@@ -107,10 +107,13 @@ svg { display: block; }
 .mk-user { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
 .maplibregl-popup-content { font: 500 .8rem system-ui, sans-serif; color: #14181c; border-radius: 6px; padding: 10px 12px; }
 
-/* warning legend (severity filter) — compact, single row */
-.legend {
+/* map legends (severity filter, radar scale) — stacked, compact */
+.legends {
   position: absolute; bottom: 8px; left: 8px; z-index: 1;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: calc(100% - 56px);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: calc(100% - 56px);
+}
+.legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: 100%;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 3px 5px;
@@ -137,12 +140,21 @@ svg { display: block; }
 .loc-btn svg { width: 18px; height: 18px; }
 .loc-btn:hover { border-color: var(--accent); }
 
+/* radar colour scale (mm/h) */
+.radar-scale { display: flex; align-items: center; gap: 1px; }
+.rs-step { display: inline-flex; flex-direction: column; align-items: center; font-size: .5rem; color: var(--muted); width: 22px; }
+.rs-step i { display: block; width: 100%; height: 7px; border-radius: 1px; }
+
 /* radar timeline */
 .radarbar { display: flex; align-items: center; gap: 12px; padding: 9px 12px; background: var(--surface); border-top: 1px solid var(--line); flex: none; }
 .radarbar .play { width: 34px; height: 34px; flex: none; border-radius: var(--r-sm); border: 1px solid var(--accent-ink); background: var(--accent); color: #fff; cursor: pointer; display: grid; place-items: center; }
 .radarbar .play svg { width: 15px; height: 15px; }
-.radarbar input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; min-width: 60px; }
+.radarbar .rtrack { position: relative; flex: 1; min-width: 60px; display: flex; align-items: center; }
+.radarbar input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; min-width: 60px; margin: 0; }
+/* Trennstrich zwischen Messung und Vorhersage */
+.radarbar .rnow { position: absolute; top: 50%; width: 2px; height: 15px; margin-left: -1px; transform: translateY(-50%); background: var(--muted); opacity: .65; border-radius: 1px; pointer-events: none; }
 .radarbar .rtime { font-size: .78rem; color: var(--ink); min-width: 128px; text-align: right; font-variant-numeric: tabular-nums; }
+.radarbar .rsrc { display: block; font-size: .62rem; color: var(--faint); letter-spacing: .04em; }
 
 /* air quality bar */
 .airbar { height: 7px; border-radius: 2px; margin-top: 8px; position: relative;
@@ -218,6 +230,31 @@ svg { display: block; }
 
 .wx-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .wx-temp-lg { font-size: 3rem; font-weight: 650; letter-spacing: -.02em; line-height: 1; }
+
+.sec-title { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 8px; }
+.sheet > .wx-hero + .sec-title { margin-top: 4px; }
+
+/* hourly forecast strip */
+.wx-hours { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 8px; }
+.wx-hour { flex: none; width: 52px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.wx-hour .hh { font-size: .66rem; color: var(--muted); white-space: nowrap; }
+.wx-hour .tt { font-size: .92rem; font-weight: 600; }
+.wx-hour .rainbar { width: 10px; height: 30px; border-radius: 2px; background: var(--surface-2); display: flex; align-items: flex-end; overflow: hidden; }
+.wx-hour .rainbar i { display: block; width: 100%; background: var(--accent); border-radius: 2px; }
+.wx-hour .pp { font-size: .62rem; color: var(--faint); }
+
+/* 7-day forecast */
+.wx-days { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); overflow: hidden; }
+.wx-day { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: .84rem; }
+.wx-day:last-child { border-bottom: none; }
+.wx-day .dow { width: 48px; flex: none; font-weight: 600; }
+.wx-day .cond { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wx-day .prob { width: 42px; flex: none; text-align: right; font-size: .72rem; color: var(--accent); }
+.wx-day .lo, .wx-day .hi { width: 34px; flex: none; text-align: right; }
+.wx-day .lo { color: var(--muted); }
+.wx-day .hi { font-weight: 600; }
+.wx-day .tspan { position: relative; width: 74px; flex: none; height: 5px; border-radius: 3px; background: var(--surface-2); }
+.wx-day .tspan i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--sev2)); }
 
 .details { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; }
 .detail { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; }
@@ -313,3 +350,12 @@ svg { display: block; }
 .drawhint { font-size: .68rem; color: var(--ink); background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 3px 8px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .draw-kind { width: 20px; flex: none; color: #0d9488; display: grid; place-items: center; }
 .draw-kind svg { width: 16px; height: 16px; }
+
+/* naming dialog for a freshly drawn marker */
+.namebox { max-width: 380px; border-radius: var(--r); padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.namebox h2 { margin: 0; font-size: 1rem; }
+.nameinput { width: 100%; padding: 11px 12px; font-size: .95rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); outline: none; }
+.nameinput:focus { border-color: var(--accent); }
+.namebtns { display: flex; justify-content: flex-end; gap: 8px; }
+.rbtn.ghost { background: transparent; border-color: var(--line-strong); color: var(--muted); }
+.rbtn.ghost:hover { color: var(--ink); border-color: var(--ink); }

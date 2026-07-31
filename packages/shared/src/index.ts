@@ -44,15 +44,37 @@ export interface WeatherNow {
   observedAt: string | null;
 }
 
-/** Ein Vorhersage-Zeitschritt (stündlich oder täglich aggregiert). */
+/** Ein stündlicher Vorhersage-Zeitschritt. */
 export interface WeatherForecastStep {
   time: string;
   tempC: number | null;
-  tempMinC?: number | null;
-  tempMaxC?: number | null;
   condition: WeatherCondition;
+  icon: string | null;
   precipitationProbabilityPct: number | null;
+  precipitationMm: number | null;
   windKmh: number | null;
+  windGustKmh: number | null;
+}
+
+/** Ein Vorhersage-Tag (aus den Stundenwerten aggregiert). */
+export interface WeatherDay {
+  /** Kalendertag lokal, `YYYY-MM-DD`. */
+  date: string;
+  tempMinC: number | null;
+  tempMaxC: number | null;
+  /** Prägendes Wetter des Tages (schwerwiegendste Tagstunde). */
+  condition: WeatherCondition;
+  icon: string | null;
+  precipitationProbabilityPct: number | null;
+  precipitationMm: number | null;
+  windKmh: number | null;
+  windGustKmh: number | null;
+}
+
+/** Vorhersage für einen Standort: Stundenverlauf + Tagesübersicht. */
+export interface WeatherForecast {
+  hourly: WeatherForecastStep[];
+  daily: WeatherDay[];
 }
 
 /** Amtliche Warnung (DWD-Unwetter oder NINA/BBK). */
@@ -127,6 +149,26 @@ export interface RadarFrame {
 export interface RadarData {
   host: string;
   frames: RadarFrame[];
+}
+
+/**
+ * Radar-Vorhersage des DWD (RADOLAN-RV via Bright Sky): 5-Minuten-Raster von
+ * ~-30 min bis +2 h. Jeder Frame ist ein zlib-komprimiertes uint16-Gitter
+ * (Little Endian, zeilenweise von Nord nach Süd), base64-kodiert. Einheit:
+ * 0,01 mm Niederschlag pro 5 Minuten.
+ */
+export interface RadarForecastFrame {
+  time: string;
+  /** true = Vorhersage, false = bereits gemessen. */
+  forecast: boolean;
+  data: string;
+}
+export interface RadarForecast {
+  width: number;
+  height: number;
+  /** Bildecken im Uhrzeigersinn ab Nordwest: NW, NO, SO, SW. */
+  corners: [number, number][];
+  frames: RadarForecastFrame[];
 }
 
 /** Eine Abfahrt an einem Halt (DB/ÖPNV) mit Echtzeit-Verspätung. */

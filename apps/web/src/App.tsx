@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
@@ -80,12 +80,21 @@ export function App() {
   const geoKey = `${coords.lat.toFixed(3)},${coords.lon.toFixed(3)}`;
   const viewKey = bboxKey(viewport);
   const weather = useApi(`weather:${geoKey}`, () => fetchWeather(coords), [coords]);
+  const forecast = useApi(`forecast:${geoKey}`, () => fetchForecast(coords), [coords]);
   const warnings = useApi(`warnings:${viewKey}`, () => fetchWarnings(viewport), [viewKey]);
   const traffic = useApi(`traffic:${viewKey}`, () => fetchTraffic(viewport), [viewKey]);
   const pegel = useApi(`pegel:${viewKey}`, () => fetchPegel(viewport), [viewKey]);
   const air = useApi(`air:${geoKey}`, () => fetchAir(coords), [coords]);
   const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords]);
   const radar = useApi('radar', () => fetchRadar());
+  // Die DWD-Vorhersage ist groß (~70 kB) — erst laden, wenn die Radarebene an ist.
+  const [radarOn, setRadarOn] = useState(false);
+  const radarForecast = useApi(
+    `radar-forecast:${geoKey}`,
+    () => fetchRadarForecast(coords),
+    [coords],
+    { enabled: radarOn },
+  );
   const news = useApi('news', () => fetchNews());
   const health = useApi('health', () => fetchHealth());
   const flowAvailable = health.data?.features?.flow ?? false;
@@ -144,6 +153,8 @@ export function App() {
   };
 
   const w = weather.data?.data;
+  const fc = forecast.data?.data ?? null;
+  const today = fc?.daily[0];
 
   return (
     <div className="app">
@@ -197,9 +208,12 @@ export function App() {
             traffic={traffic.data?.data ?? []}
             pegel={pegel.data?.data ?? []}
             radar={radar.data?.data ?? null}
+            radarForecast={radarForecast.data?.data ?? null}
+            radarForecastPending={radarOn && radarForecast.loading}
             flowAvailable={flowAvailable}
             offlineCode={offlineCode}
             onViewport={setViewport}
+            onRadarChange={setRadarOn}
           />
         </div>
 
@@ -220,6 +234,20 @@ export function App() {
                 <span>Wind <b>{w.windKmh != null ? `${Math.round(w.windKmh)} km/h` : '–'}</b></span>
                 <span>Luftf. <b>{w.humidityPct != null ? `${Math.round(w.humidityPct)} %` : '–'}</b></span>
               </div>
+              {today && (
+                <div className="wx-row">
+                  <span>
+                    Heute{' '}
+                    <b>
+                      {today.tempMaxC != null ? `${Math.round(today.tempMaxC)}°` : '–'} /{' '}
+                      {today.tempMinC != null ? `${Math.round(today.tempMinC)}°` : '–'}
+                    </b>
+                  </span>
+                  <span>
+                    Regen <b>{today.precipitationProbabilityPct != null ? `${today.precipitationProbabilityPct} %` : '–'}</b>
+                  </span>
+                </div>
+              )}
             </>
           )}
         </Tile>
@@ -384,7 +412,7 @@ export function App() {
 
       {detail && (
         <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>
-          {detail === 'weather' && w && <WeatherDetail w={w} />}
+          {detail === 'weather' && w && <WeatherDetail w={w} forecast={fc} />}
           {detail === 'warnings' && <WarningsDetail list={uniqueWarnings} />}
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}

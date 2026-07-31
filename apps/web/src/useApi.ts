@@ -16,7 +16,14 @@ export interface ApiState<T> {
  * den zuletzt gespeicherten Stand. Bereits vorhandene Daten bleiben während
  * eines Refreshs sichtbar (kein Flackern).
  */
-export function useApi<T>(key: string, loader: () => Promise<T>, deps: unknown[] = []): ApiState<T> {
+export function useApi<T>(
+  key: string,
+  loader: () => Promise<T>,
+  deps: unknown[] = [],
+  /** `enabled: false` lädt (noch) nicht — für Daten, die erst auf Zuruf nötig sind. */
+  opts: { enabled?: boolean } = {},
+): ApiState<T> {
+  const enabled = opts.enabled ?? true;
   const [state, setState] = useState<ApiState<T>>({
     data: null,
     error: null,
@@ -26,6 +33,10 @@ export function useApi<T>(key: string, loader: () => Promise<T>, deps: unknown[]
   });
 
   useEffect(() => {
+    if (!enabled) {
+      setState((s) => ({ ...s, loading: false }));
+      return;
+    }
     let alive = true;
     setState((s) => ({ ...s, loading: true, error: null }));
     withCache(key, loader)
@@ -44,7 +55,7 @@ export function useApi<T>(key: string, loader: () => Promise<T>, deps: unknown[]
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, enabled]);
 
   return state;
 }

@@ -1,6 +1,8 @@
 import type {
   ApiEnvelope,
   WeatherNow,
+  WeatherForecast,
+  RadarForecast,
   WarningFeature,
   TrafficIncident,
   NewsItem,
@@ -37,6 +39,9 @@ const bboxQ = (b: Bbox) =>
 export const fetchWeather = (c: Coords): Promise<ApiEnvelope<WeatherNow>> =>
   getJson(`/api/weather?${q(c)}`);
 
+export const fetchForecast = (c: Coords): Promise<ApiEnvelope<WeatherForecast>> =>
+  getJson(`/api/weather/forecast?${q(c)}`);
+
 export const fetchNews = (): Promise<ApiEnvelope<NewsItem[]>> => getJson(`/api/news`);
 
 export const fetchAir = (c: Coords): Promise<ApiEnvelope<AirQuality>> =>
@@ -46,6 +51,10 @@ export const fetchTransit = (c: Coords): Promise<ApiEnvelope<TransitStop[]>> =>
   getJson(`/api/transit?${q(c)}`);
 
 export const fetchRadar = (): Promise<ApiEnvelope<RadarData>> => getJson(`/api/radar`);
+
+/** DWD-Radarvorhersage (5-Min-Schritte bis +2 h) rund um einen Punkt. */
+export const fetchRadarForecast = (c: Coords): Promise<ApiEnvelope<RadarForecast>> =>
+  getJson(`/api/radar/forecast?${q(c)}&distance=150000`);
 
 export const fetchGeocode = (query: string): Promise<ApiEnvelope<GeoResult[]>> =>
   getJson(`/api/geocode?q=${encodeURIComponent(query)}`);

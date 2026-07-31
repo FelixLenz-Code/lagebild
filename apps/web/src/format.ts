@@ -40,6 +40,20 @@ export function formatDateTime(iso: string | null): string {
   });
 }
 
+/** Kurzer Stundenstempel für die Vorhersage („14 Uhr"). */
+export function hourLabel(iso: string): string {
+  return `${new Date(iso).getHours()} Uhr`;
+}
+
+/** Wochentag eines Vorhersagetags — heute und morgen ausgeschrieben. */
+export function dayLabel(ymd: string): string {
+  const date = new Date(`${ymd}T12:00:00`);
+  const days = Math.round((date.getTime() - new Date().setHours(12, 0, 0, 0)) / 86400000);
+  if (days <= 0) return 'Heute';
+  if (days === 1) return 'Morgen';
+  return date.toLocaleDateString('de-DE', { weekday: 'short' });
+}
+
 export const CONDITION_DE: Record<string, string> = {
   dry: 'Trocken',
   fog: 'Nebel',

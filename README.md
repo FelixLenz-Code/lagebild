@@ -33,6 +33,25 @@ pnpm build      # baut alle Pakete
 pnpm typecheck  # Typprüfung über alle Pakete
 ```
 
+## Kartenebenen
+
+Die Karte startet **ohne** Fachebenen — jede Ebene wird über einen eigenen Chip
+zugeschaltet: Warnungen (NINA/DWD-Warngebiete inkl. Warnstufen-Filter),
+Regenradar, Verkehrsfluss (nur mit gültigem TomTom-Key), Verkehr, Pegel und das
+Zeichenwerkzeug „Markieren". Neu gezeichnete Punkte und Flächen werden direkt
+beim Anlegen benannt.
+
+## Wetter & Regenradar
+
+* **Vorhersage**: `/api/weather/forecast` liefert aus Bright Sky (DWD) den
+  Stundenverlauf (48 h) und eine daraus aggregierte 7-Tage-Übersicht.
+* **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
+  (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von
+  ~30 min Vergangenheit bis **+2 h**. Das Backend reicht die zlib-komprimierten
+  Gitter durch, der Browser packt sie aus (`DecompressionStream`) und malt daraus
+  das Kartenbild. Außerhalb Deutschlands (oder ohne `DecompressionStream`) fällt
+  die App automatisch auf die RainViewer-Kacheln zurück.
+
 ## Offline-Karten (PMTiles pro Bundesland)
 
 Die App kann die Hintergrundkarte pro Bundesland offline vorhalten (Vektor-Kacheln

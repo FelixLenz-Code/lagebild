@@ -1,8 +1,19 @@
-import type { WeatherNow, WarningFeature, TrafficIncident, WaterLevel, NewsItem, AirQuality, TransitStop } from '@lagebild/shared';
+import type {
+  WeatherNow,
+  WeatherForecast,
+  WarningFeature,
+  TrafficIncident,
+  WaterLevel,
+  NewsItem,
+  AirQuality,
+  TransitStop,
+} from '@lagebild/shared';
 import {
   relativeTime,
   timeUntil,
   timeHM,
+  hourLabel,
+  dayLabel,
   formatDateTime,
   compass,
   CONDITION_DE,
@@ -22,7 +33,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function WeatherDetail({ w }: { w: WeatherNow }) {
+export function WeatherDetail({ w, forecast }: { w: WeatherNow; forecast?: WeatherForecast | null }) {
   const n = (v: number | null, unit = '') => (v != null ? `${Math.round(v)}${unit}` : '–');
   return (
     <>
@@ -33,6 +44,11 @@ export function WeatherDetail({ w }: { w: WeatherNow }) {
           <div className="wx-sub">Messung {relativeTime(w.observedAt)}</div>
         </div>
       </div>
+
+      {forecast && forecast.hourly.length > 0 && <HourlyStrip hourly={forecast.hourly} />}
+      {forecast && forecast.daily.length > 0 && <DailyList daily={forecast.daily} />}
+
+      <h4 className="sec-title">Aktuelle Messwerte</h4>
       <div className="details">
         <Detail label="Wind" value={`${n(w.windKmh)} km/h · ${compass(w.windDirDeg)}`} />
         <Detail label="Böen" value={w.windGustKmh != null ? `${n(w.windGustKmh)} km/h` : '–'} />
@@ -40,6 +56,71 @@ export function WeatherDetail({ w }: { w: WeatherNow }) {
         <Detail label="Luftdruck" value={w.pressureHpa != null ? `${Math.round(w.pressureHpa)} hPa` : '–'} />
         <Detail label="Niederschlag" value={w.precipitationMm != null ? `${w.precipitationMm} mm` : '–'} />
         <Detail label="Messzeit" value={formatDateTime(w.observedAt)} />
+      </div>
+    </>
+  );
+}
+
+/** Stundenverlauf der nächsten 24 Stunden (waagerecht scrollbar). */
+function HourlyStrip({ hourly }: { hourly: WeatherForecast['hourly'] }) {
+  const hours = hourly.slice(0, 24);
+  const maxRain = Math.max(...hours.map((h) => h.precipitationMm ?? 0));
+  return (
+    <>
+      <h4 className="sec-title">Nächste Stunden</h4>
+      <div className="wx-hours">
+        {hours.map((h) => (
+          <div className="wx-hour" key={h.time}>
+            <span className="hh">{hourLabel(h.time)}</span>
+            <span className="tt mono">{h.tempC != null ? `${Math.round(h.tempC)}°` : '–'}</span>
+            {/* Regenbalken nur, wenn im Zeitraum überhaupt Niederschlag erwartet wird */}
+            {maxRain > 0 && (
+              <span className="rainbar" title={`${h.precipitationMm ?? 0} mm`}>
+                <i style={{ height: `${Math.min(100, ((h.precipitationMm ?? 0) / maxRain) * 100)}%` }} />
+              </span>
+            )}
+            <span className="pp">
+              {h.precipitationProbabilityPct != null ? `${h.precipitationProbabilityPct} %` : '–'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** 7-Tage-Übersicht mit Temperaturspanne als Balken. */
+function DailyList({ daily }: { daily: WeatherForecast['daily'] }) {
+  const mins = daily.map((d) => d.tempMinC).filter((v): v is number => v != null);
+  const maxs = daily.map((d) => d.tempMaxC).filter((v): v is number => v != null);
+  const lo = Math.min(...mins, Infinity);
+  const hi = Math.max(...maxs, -Infinity);
+  const span = hi - lo || 1;
+  return (
+    <>
+      <h4 className="sec-title">7 Tage</h4>
+      <div className="wx-days">
+        {daily.map((d) => (
+          <div className="wx-day" key={d.date}>
+            <span className="dow">{dayLabel(d.date)}</span>
+            <span className="cond">{d.condition ? (CONDITION_DE[d.condition] ?? d.condition) : '–'}</span>
+            <span className="prob mono">
+              {d.precipitationProbabilityPct != null ? `${d.precipitationProbabilityPct} %` : ''}
+            </span>
+            <span className="lo mono">{d.tempMinC != null ? `${Math.round(d.tempMinC)}°` : '–'}</span>
+            <span className="tspan">
+              {d.tempMinC != null && d.tempMaxC != null && (
+                <i
+                  style={{
+                    left: `${((d.tempMinC - lo) / span) * 100}%`,
+                    right: `${((hi - d.tempMaxC) / span) * 100}%`,
+                  }}
+                />
+              )}
+            </span>
+            <span className="hi mono">{d.tempMaxC != null ? `${Math.round(d.tempMaxC)}°` : '–'}</span>
+          </div>
+        ))}
       </div>
     </>
   );

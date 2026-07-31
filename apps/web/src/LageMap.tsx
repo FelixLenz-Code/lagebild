@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl, {
   type Map as MlMap,
   type Marker,
@@ -6,16 +6,39 @@ import maplibregl, {
   type FilterSpecification,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Coords, TrafficIncident, WaterLevel, WarningFeature, Severity, RadarData } from '@lagebild/shared';
+import type {
+  Coords,
+  TrafficIncident,
+  WaterLevel,
+  WarningFeature,
+  Severity,
+  RadarData,
+  RadarForecast,
+} from '@lagebild/shared';
 import type { Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
 import { getOfflineFile } from './offlineMaps.js';
 import { DrawList } from './DrawList.js';
-import { loadDraw, saveDraw, newId, type DrawFeature } from './drawStore.js';
+import { NamePrompt } from './NamePrompt.js';
+import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
+import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
 import { SEVERITY_DE, TRAFFIC_DE, formatDateTime, radarTimeLabel } from './format.js';
 
 const DRAW_COLOR = '#0d9488';
 type DrawMode = 'off' | 'point' | 'area';
+
+/** Frisch gezeichnete Markierung, die noch auf ihren Namen wartet. */
+interface PendingDraw {
+  kind: 'point' | 'area';
+  geometry: DrawGeometry;
+  defaultName: string;
+}
+
+/** Ein Zeitschritt der Radar-Zeitleiste (Quelle-unabhängig). */
+interface TimelineFrame {
+  timeSec: number;
+  forecast: boolean;
+}
 
 function drawToGeoJson(features: DrawFeature[], areaVertices: [number, number][]): GeoJSON.FeatureCollection {
   const out: GeoJSON.Feature[] = features.map((d) => ({
@@ -115,13 +138,31 @@ interface Props {
   traffic: TrafficIncident[];
   pegel: WaterLevel[];
   radar: RadarData | null;
+  /** DWD-Vorhersageradar; wenn vorhanden, hat es Vorrang vor RainViewer. */
+  radarForecast: RadarForecast | null;
+  /** true, solange die DWD-Vorhersage lädt — dann blitzt RainViewer nicht kurz auf. */
+  radarForecastPending: boolean;
   flowAvailable: boolean;
   /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt online. */
   offlineCode: string | null;
   onViewport: (b: Bbox) => void;
+  /** Meldet, ob die Radarebene an ist (die Vorhersage wird erst dann geladen). */
+  onRadarChange: (on: boolean) => void;
 }
 
-export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable, offlineCode, onViewport }: Props) {
+export function LageMap({
+  coords,
+  warnings,
+  traffic,
+  pegel,
+  radar,
+  radarForecast,
+  radarForecastPending,
+  flowAvailable,
+  offlineCode,
+  onViewport,
+  onRadarChange,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const userMarker = useRef<Marker | null>(null);
@@ -134,8 +175,10 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
   const [ready, setReady] = useState(false);
   const [styleEpoch, setStyleEpoch] = useState(0);
   const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
-  const [showTraffic, setShowTraffic] = useState(true);
-  const [showPegel, setShowPegel] = useState(true);
+  // Alle Fachebenen starten aus — der Nutzer schaltet gezielt zu.
+  const [showWarnings, setShowWarnings] = useState(false);
+  const [showTraffic, setShowTraffic] = useState(false);
+  const [showPegel, setShowPegel] = useState(false);
   const [showRadar, setShowRadar] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
   const [radarPlaying, setRadarPlaying] = useState(false);
@@ -145,9 +188,18 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
   const [drawBarOpen, setDrawBarOpen] = useState(false);
   const [areaVertices, setAreaVertices] = useState<[number, number][]>([]);
   const [listOpen, setListOpen] = useState(false);
+  const [pending, setPending] = useState<PendingDraw | null>(null);
   const drawModeRef = useRef<DrawMode>('off');
   drawModeRef.current = drawMode;
+  const drawCount = useRef({ point: 0, area: 0 });
+  drawCount.current = {
+    point: drawFeatures.filter((f) => f.kind === 'point').length,
+    area: drawFeatures.filter((f) => f.kind === 'area').length,
+  };
   useEffect(() => saveDraw(drawFeatures), [drawFeatures]);
+
+  // Die Radarvorhersage wird nur geladen, wenn die Ebene wirklich an ist.
+  useEffect(() => onRadarChange(showRadar), [showRadar, onRadarChange]);
 
   // Nachschlagetabelle id → Warnung (für Klick-Popup)
   useEffect(() => {
@@ -183,10 +235,12 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
       const mode = drawModeRef.current;
       const c: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       if (mode === 'point') {
-        setDrawFeatures((prev) => [
-          ...prev,
-          { id: newId(), name: `Ort ${prev.filter((f) => f.kind === 'point').length + 1}`, kind: 'point', geometry: { type: 'Point', coordinates: c } },
-        ]);
+        // Punkt sofort benennen lassen, statt ihn stumm anzulegen.
+        setPending({
+          kind: 'point',
+          geometry: { type: 'Point', coordinates: c },
+          defaultName: `Ort ${drawCount.current.point + 1}`,
+        });
       } else if (mode === 'area') {
         setAreaVertices((prev) => [...prev, c]);
       }
@@ -282,6 +336,17 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, styleEpoch]);
 
+  // Warnebene komplett ein-/ausblenden (eigener Schalter)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const visibility = showWarnings ? 'visible' : 'none';
+    for (const id of ['warnings-fill', 'warnings-line']) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility);
+    }
+    if (!showWarnings) warnPopup.current?.remove();
+  }, [showWarnings, ready, styleEpoch]);
+
   // Warn-Daten aktualisieren
   useEffect(() => {
     const map = mapRef.current;
@@ -299,21 +364,42 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     if (map.getLayer('warnings-line')) map.setFilter('warnings-line', filter);
   }, [activeSev, ready, styleEpoch]);
 
-  // Neue Radar-Daten → auf den aktuellsten Vergangenheits-Frame springen
-  useEffect(() => {
-    if (!radar || radar.frames.length === 0) return;
-    const lastPast = radar.frames.map((f) => f.forecast).lastIndexOf(false);
-    setRadarIdx(lastPast >= 0 ? lastPast : radar.frames.length - 1);
-  }, [radar]);
+  // --- Regenradar: DWD-Vorhersage, sonst RainViewer -----------------------
 
-  // Radar-Layer an-/abschalten (unter den Warnflächen)
+  /** Die DWD-Vorhersage deckt nur Deutschland ab (sonst leere Frame-Liste). */
+  const useDwd = (radarForecast?.frames.length ?? 0) > 0 && radarSupported();
+
+  const timeline: TimelineFrame[] = useMemo(() => {
+    if (useDwd && radarForecast) {
+      return radarForecast.frames.map((f) => ({
+        timeSec: Date.parse(f.time) / 1000,
+        forecast: f.forecast,
+      }));
+    }
+    if (radarForecastPending) return [];
+    return (radar?.frames ?? []).map((f) => ({ timeSec: f.time, forecast: f.forecast }));
+  }, [useDwd, radarForecast, radarForecastPending, radar]);
+
+  // Neue Radar-Daten → auf den aktuellsten gemessenen Frame springen
+  useEffect(() => {
+    if (timeline.length === 0) return;
+    const lastPast = timeline.map((f) => f.forecast).lastIndexOf(false);
+    setRadarIdx(lastPast >= 0 ? lastPast : timeline.length - 1);
+  }, [timeline]);
+
+  // Radarebene aus → auch die Wiedergabe stoppen
+  useEffect(() => {
+    if (!showRadar) setRadarPlaying(false);
+  }, [showRadar]);
+
+  // RainViewer-Kachel-Layer (nur ohne DWD-Vorhersage), unter den Warnflächen
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const frames = radar?.frames ?? [];
-    if (showRadar && radar && frames.length > 0) {
+    const rvFrames = radar?.frames ?? [];
+    if (showRadar && !useDwd && !radarForecastPending && radar && rvFrames.length > 0) {
       if (!map.getSource('radar')) {
-        const url = radarTileUrl(radar.host, frames[Math.min(radarIdx, frames.length - 1)]!.path);
+        const url = radarTileUrl(radar.host, rvFrames[Math.min(radarIdx, rvFrames.length - 1)]!.path);
         // RainViewer liefert Radar-Kacheln nur bis Zoom 7; ab z8 kommt eine
         // "zoom level not supported"-Platzhalterkachel. maxzoom: 7 lässt MapLibre
         // die z7-Kacheln überzoomen (geglättet), statt die Platzhalter zu laden.
@@ -324,26 +410,105 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     } else {
       if (map.getLayer('radar')) map.removeLayer('radar');
       if (map.getSource('radar')) map.removeSource('radar');
-      if (radarPlaying) setRadarPlaying(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRadar, radar, ready, styleEpoch]);
+  }, [showRadar, useDwd, radarForecastPending, radar, ready, styleEpoch]);
 
-  // Frame wechseln
+  // RainViewer: Frame wechseln
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !showRadar || !radar) return;
+    if (!map || !ready || !showRadar || useDwd || !radar) return;
     const src = map.getSource('radar') as maplibregl.RasterTileSource | undefined;
     const frame = radar.frames[Math.min(radarIdx, radar.frames.length - 1)];
     if (src && frame) src.setTiles([radarTileUrl(radar.host, frame.path)]);
-  }, [radarIdx, showRadar, radar, ready, styleEpoch]);
+  }, [radarIdx, showRadar, useDwd, radar, ready, styleEpoch]);
+
+  // DWD-Frames werden im Browser aus dem Gitter gemalt — einmal je Frame.
+  const dwdImages = useRef<Map<number, string>>(new Map());
+  useEffect(() => {
+    dwdImages.current = new Map();
+  }, [radarForecast]);
+
+  const dwdImageUrl = useCallback(
+    async (index: number): Promise<string | null> => {
+      const fc = radarForecast;
+      if (!fc) return null;
+      const done = dwdImages.current.get(index);
+      if (done) return done;
+      const frame = fc.frames[index];
+      if (!frame) return null;
+      const url = gridToDataUrl(await inflateGrid(frame.data), fc.width, fc.height);
+      dwdImages.current.set(index, url);
+      return url;
+    },
+    [radarForecast],
+  );
+
+  // DWD-Radarbild als Bildquelle über die vier Eckkoordinaten legen
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const fc = radarForecast;
+    if (!showRadar || !useDwd || !fc) {
+      if (map.getLayer('radar-dwd')) map.removeLayer('radar-dwd');
+      if (map.getSource('radar-dwd')) map.removeSource('radar-dwd');
+      return;
+    }
+    let cancelled = false;
+    const coordinates = fc.corners as [
+      [number, number],
+      [number, number],
+      [number, number],
+      [number, number],
+    ];
+    void dwdImageUrl(Math.min(radarIdx, fc.frames.length - 1))
+      .then((url) => {
+        if (!url || cancelled || mapRef.current !== map || !map.getStyle()) return;
+        const src = map.getSource('radar-dwd') as maplibregl.ImageSource | undefined;
+        if (src) {
+          src.updateImage({ url, coordinates });
+          return;
+        }
+        map.addSource('radar-dwd', { type: 'image', url, coordinates });
+        const beforeId = map.getLayer('warnings-fill') ? 'warnings-fill' : undefined;
+        map.addLayer(
+          {
+            id: 'radar-dwd',
+            type: 'raster',
+            source: 'radar-dwd',
+            paint: { 'raster-opacity': 0.75, 'raster-fade-duration': 0 },
+          },
+          beforeId,
+        );
+      })
+      .catch(() => {
+        /* Frame nicht dekodierbar — Karte bleibt ohne Radarbild */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showRadar, useDwd, radarForecast, radarIdx, ready, styleEpoch, dwdImageUrl]);
+
+  // Alle DWD-Frames im Hintergrund vorbereiten, damit die Animation flüssig läuft.
+  useEffect(() => {
+    if (!showRadar || !useDwd || !radarForecast) return;
+    let cancelled = false;
+    void (async () => {
+      for (let i = 0; i < radarForecast.frames.length && !cancelled; i++) {
+        await dwdImageUrl(i).catch(() => null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showRadar, useDwd, radarForecast, dwdImageUrl]);
 
   // Abspielen
   useEffect(() => {
-    if (!radarPlaying || !radar || radar.frames.length === 0) return;
-    const t = setInterval(() => setRadarIdx((i) => (i + 1) % radar.frames.length), 500);
+    if (!radarPlaying || timeline.length === 0) return;
+    const t = setInterval(() => setRadarIdx((i) => (i + 1) % timeline.length), useDwd ? 320 : 500);
     return () => clearInterval(t);
-  }, [radarPlaying, radar]);
+  }, [radarPlaying, timeline, useDwd]);
 
   // Verkehrsfluss-Layer (TomTom via Proxy) an-/abschalten, unter Radar/Warnungen
   useEffect(() => {
@@ -352,11 +517,7 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     if (showFlow && flowAvailable) {
       if (!map.getSource('flow')) {
         map.addSource('flow', { type: 'raster', tiles: ['/api/flow/{z}/{x}/{y}.png'], tileSize: 256 });
-        const beforeId = map.getLayer('radar')
-          ? 'radar'
-          : map.getLayer('warnings-fill')
-            ? 'warnings-fill'
-            : undefined;
+        const beforeId = ['radar', 'radar-dwd', 'warnings-fill'].find((id) => map.getLayer(id));
         map.addLayer({ id: 'flow', type: 'raster', source: 'flow', paint: { 'raster-opacity': 0.85 } }, beforeId);
       }
     } else {
@@ -427,10 +588,12 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
   const finishArea = () => {
     if (areaVertices.length >= 3) {
       const ring: [number, number][] = [...areaVertices, areaVertices[0]!];
-      setDrawFeatures((prev) => [
-        ...prev,
-        { id: newId(), name: `Fläche ${prev.filter((f) => f.kind === 'area').length + 1}`, kind: 'area', geometry: { type: 'Polygon', coordinates: [ring] } },
-      ]);
+      setPending({
+        kind: 'area',
+        geometry: { type: 'Polygon', coordinates: [ring] },
+        defaultName: `Fläche ${drawCount.current.area + 1}`,
+      });
+      return; // Ecken bleiben sichtbar, bis der Name steht.
     }
     setAreaVertices([]);
     setDrawMode('off');
@@ -440,14 +603,39 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
     setDrawMode('off');
   };
 
-  const frames = radar?.frames ?? [];
-  const curFrame = frames[Math.min(radarIdx, frames.length - 1)];
+  /** Benannte Markierung übernehmen (bzw. beim Verwerfen aufräumen). */
+  const resolvePending = (name: string | null) => {
+    if (name && pending) {
+      setDrawFeatures((prev) => [
+        ...prev,
+        { id: newId(), name, kind: pending.kind, geometry: pending.geometry },
+      ]);
+    }
+    if (pending?.kind === 'area') {
+      setAreaVertices([]);
+      setDrawMode('off');
+    }
+    setPending(null);
+  };
+
+  const curFrame = timeline[Math.min(radarIdx, timeline.length - 1)];
+  const forecastStart = timeline.findIndex((f) => f.forecast);
 
   return (
     <>
       <div className="mapwrap">
         <div ref={containerRef} className="lagemap" />
         <div className="maptools">
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={showWarnings}
+            title="Amtliche Warngebiete (NINA/DWD) ein- oder ausblenden"
+            onClick={() => setShowWarnings((v) => !v)}
+          >
+            <span className="k" style={{ background: SEVERITY_COLOR.severe }} />
+            Warnungen
+          </button>
           <button type="button" className="chip" aria-pressed={showRadar} onClick={() => setShowRadar((v) => !v)}>
             <span className="k" style={{ background: '#3f83d4' }} />
             Regenradar
@@ -526,32 +714,49 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
           </svg>
         </button>
 
-        <div className="legend" role="group" aria-label="Warnstufen filtern">
-          <span className="legend-title">Warnstufen</span>
-          {ALL_SEVERITIES.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className="legend-item"
-              aria-pressed={activeSev.has(s)}
-              title={SEVERITY_DE[s]}
-              onClick={() =>
-                setActiveSev((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(s)) next.delete(s);
-                  else next.add(s);
-                  return next;
-                })
-              }
-            >
-              <span className="k" style={{ background: SEVERITY_COLOR[s] }} />
-              {SEVERITY_DE[s]}
-            </button>
-          ))}
+        <div className="legends">
+          {showWarnings && (
+            <div className="legend" role="group" aria-label="Warnstufen filtern">
+              <span className="legend-title">Warnstufen</span>
+              {ALL_SEVERITIES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="legend-item"
+                  aria-pressed={activeSev.has(s)}
+                  title={SEVERITY_DE[s]}
+                  onClick={() =>
+                    setActiveSev((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(s)) next.delete(s);
+                      else next.add(s);
+                      return next;
+                    })
+                  }
+                >
+                  <span className="k" style={{ background: SEVERITY_COLOR[s] }} />
+                  {SEVERITY_DE[s]}
+                </button>
+              ))}
+            </div>
+          )}
+          {showRadar && useDwd && (
+            <div className="legend" aria-label="Regenmenge in Millimeter pro Stunde">
+              <span className="legend-title">Regen mm/h</span>
+              <div className="radar-scale">
+                {RADAR_LEGEND.map((step) => (
+                  <span key={step.label} className="rs-step">
+                    <i style={{ background: step.color }} />
+                    {step.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {showRadar && frames.length > 0 && (
+      {showRadar && timeline.length > 0 && (
         <div className="radarbar" role="group" aria-label="Regenradar-Zeitleiste">
           <button
             type="button"
@@ -565,19 +770,37 @@ export function LageMap({ coords, warnings, traffic, pegel, radar, flowAvailable
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
             )}
           </button>
-          <input
-            type="range"
-            min={0}
-            max={frames.length - 1}
-            value={Math.min(radarIdx, frames.length - 1)}
-            onChange={(e) => {
-              setRadarPlaying(false);
-              setRadarIdx(Number(e.target.value));
-            }}
-            aria-label="Zeitpunkt"
-          />
-          <div className="rtime">{curFrame ? radarTimeLabel(curFrame.time, curFrame.forecast) : ''}</div>
+          <div className="rtrack">
+            <input
+              type="range"
+              min={0}
+              max={timeline.length - 1}
+              value={Math.min(radarIdx, timeline.length - 1)}
+              onChange={(e) => {
+                setRadarPlaying(false);
+                setRadarIdx(Number(e.target.value));
+              }}
+              aria-label="Zeitpunkt"
+            />
+            {/* Ab hier ist alles Vorhersage. */}
+            {forecastStart > 0 && (
+              <span className="rnow" style={{ left: `${(forecastStart / (timeline.length - 1)) * 100}%` }} />
+            )}
+          </div>
+          <div className="rtime">
+            {curFrame ? radarTimeLabel(curFrame.timeSec, curFrame.forecast) : ''}
+            <span className="rsrc">{useDwd ? 'DWD · bis +2 h' : 'RainViewer'}</span>
+          </div>
         </div>
+      )}
+
+      {pending && (
+        <NamePrompt
+          title={pending.kind === 'point' ? 'Neuer Punkt' : 'Neue Fläche'}
+          defaultName={pending.defaultName}
+          onSave={(name) => resolvePending(name)}
+          onCancel={() => resolvePending(null)}
+        />
       )}
 
       {listOpen && (
