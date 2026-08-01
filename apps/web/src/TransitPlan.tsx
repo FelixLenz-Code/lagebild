@@ -32,30 +32,45 @@ function toLocalInput(iso: string | null): string {
  * Offline-Navigation übergeben.
  */
 export function TransitPlan(props: Props) {
-  const [showTime, setShowTime] = useState(false);
+  // Zuletzt gewählter Zeitpunkt — beim Hin- und Herschalten geht er nicht verloren.
+  const [remembered, setRemembered] = useState<string | null>(props.time);
   const chosen = props.itineraries[props.index];
+  const mode: 'now' | 'at' = props.time ? 'at' : 'now';
+
+  /** Vorschlag beim Umschalten: nächste volle fünf Minuten. */
+  const roundedNow = (): string => {
+    const d = new Date();
+    d.setSeconds(0, 0);
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5);
+    return d.toISOString();
+  };
 
   return (
     <>
       <div className="tp-time">
-        <button
-          type="button"
-          className={`rp-chip${props.time ? '' : ' is-on'}`}
-          onClick={() => {
-            props.onTime(null, false);
-            setShowTime(false);
-          }}
-        >
-          Jetzt
-        </button>
-        <button type="button" className={`rp-chip${props.time ? ' is-on' : ''}`} onClick={() => setShowTime((v) => !v)}>
-          {props.time ? `${props.arriveBy ? 'Ankunft' : 'Abfahrt'} ${hhmm(props.time)}` : 'Zeit wählen'}
-        </button>
-        {showTime && (
+        <div className="rp-profiles" role="group" aria-label="Abfahrtszeit">
+          <button
+            type="button"
+            className={`rp-profile${mode === 'now' ? ' is-on' : ''}`}
+            aria-pressed={mode === 'now'}
+            onClick={() => props.onTime(null, props.arriveBy)}
+          >
+            Jetzt
+          </button>
+          <button
+            type="button"
+            className={`rp-profile${mode === 'at' ? ' is-on' : ''}`}
+            aria-pressed={mode === 'at'}
+            onClick={() => props.onTime(remembered ?? roundedNow(), props.arriveBy)}
+          >
+            Zeitpunkt
+          </button>
+        </div>
+        {mode === 'at' && (
           <div className="tp-timebox">
             <select
               value={props.arriveBy ? 'arrive' : 'depart'}
-              onChange={(e) => props.onTime(props.time ?? new Date().toISOString(), e.target.value === 'arrive')}
+              onChange={(e) => props.onTime(props.time, e.target.value === 'arrive')}
               aria-label="Abfahrt oder Ankunft"
             >
               <option value="depart">Abfahrt um</option>
@@ -65,7 +80,9 @@ export function TransitPlan(props: Props) {
               type="datetime-local"
               value={toLocalInput(props.time)}
               onChange={(e) => {
-                const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+                if (!e.target.value) return;
+                const value = new Date(e.target.value).toISOString();
+                setRemembered(value);
                 props.onTime(value, props.arriveBy);
               }}
               aria-label="Zeitpunkt"
