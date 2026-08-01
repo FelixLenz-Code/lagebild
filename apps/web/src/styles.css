@@ -686,3 +686,19 @@ svg { display: block; }
 .ts-time { color: var(--muted); font-size: .78rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ts-time.late { color: var(--sev2); font-weight: 600; }
 .ts-time.cancelled { color: var(--sev3); font-weight: 600; }
+
+/* ÖPNV-Verbindungen */
+.tp-time { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tp-time .rp-chip.is-on { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.tp-timebox { display: flex; gap: 6px; width: 100%; }
+.tp-timebox select, .tp-timebox input { flex: 1; min-width: 0; padding: 6px 8px; font-size: .8rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
+.tp-legs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tp-legs li { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.tp-legs li:first-child { border-top: none; }
+.tp-when { width: 44px; flex: none; font-size: .82rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tp-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; align-items: flex-start; }
+.tp-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.tp-dir { font-size: .82rem; font-weight: 600; }
+.tp-detail { font-size: .76rem; color: var(--muted); }
+.tp-legs li.is-walk .tp-when { color: var(--muted); font-weight: 600; }
+.tp-legs li.tp-end .tp-head b { font-size: .86rem; }

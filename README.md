@@ -186,6 +186,23 @@ Hintergrund. Grundlage ist der Routing-Graph der heruntergeladenen Region:
   Sprachansagen (SpeechSynthesis des Geräts, abschaltbar) und automatischer
   Neuberechnung, wenn man von der Route abkommt.
 
+### ÖPNV-Verbindungen
+
+Neben Auto, Rad und Fuß gibt es den Reiter **ÖPNV**. Er fragt bei
+transitous.org (`/api/transit/plan` → MOTIS `/plan`) drei Verbindungen ab und
+zeigt Abfahrt, Ankunft, Dauer und Umstiege sowie den vollständigen Ablauf:
+Fußwege, Linien mit Verkehrsmittel im Klartext, Zielbeschilderung und Anzahl der
+Zwischenhalte. Die gewählte Verbindung liegt auf der Karte — Fahrten in der
+Farbe des Verkehrsmittels, Fußwege gestrichelt.
+
+Zeitpunkt wählbar als **„Abfahrt um …" oder „Ankunft bis …"** (Datum und
+Uhrzeit), sonst ab jetzt. Jeder längere **Fußweg lässt sich an die
+Offline-Navigation übergeben** („Fußweg navigieren") — der Weg zur Haltestelle
+wird dann auf dem gespeicherten Graphen gerechnet und ganz normal angesagt.
+
+Anders als die anderen Profile braucht der ÖPNV **eine Verbindung ins Netz**:
+Fahrpläne und Echtzeit liegen nicht im Gerät. Ohne Netz sagt der Reiter das.
+
 ### Über Landesgrenzen hinweg
 
 Die Graphen liegen zwar je Bundesland als Datei vor, das Routing kennt diese

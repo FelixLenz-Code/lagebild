@@ -14,6 +14,7 @@ import type {
   TransitStopPoint,
   TransitDeparture,
   TransitTrip,
+  TransitItinerary,
   Aircraft,
   AircraftDetails,
   Vessel,
@@ -61,6 +62,21 @@ export const fetchTransit = (c: Coords): Promise<ApiEnvelope<TransitStop[]>> =>
 /** Haltestellen im Ausschnitt — aus den Fahrplandaten, nicht aus OSM. */
 export const fetchStops = (b: Bbox): Promise<ApiEnvelope<TransitStopPoint[]>> =>
   getJson(`/api/stops?${bboxQ(b)}`);
+
+/**
+ * ÖPNV-Verbindungen zwischen zwei Punkten. Braucht Netz — Fahrpläne und
+ * Echtzeit liegen nicht im Gerät.
+ */
+export const fetchPlan = (
+  from: Coords,
+  to: Coords,
+  time?: string | null,
+  arriveBy = false,
+): Promise<ApiEnvelope<TransitItinerary[]>> =>
+  getJson(
+    `/api/transit/plan?from=${from.lat},${from.lon}&to=${to.lat},${to.lon}` +
+      `${time ? `&time=${encodeURIComponent(time)}` : ''}${arriveBy ? '&arriveBy=1' : ''}`,
+  );
 
 /** Laufweg einer Fahrt (alle Halte mit Zeiten). */
 export const fetchTrip = (tripId: string): Promise<ApiEnvelope<TransitTrip | null>> =>

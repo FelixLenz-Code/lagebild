@@ -1,12 +1,33 @@
 import { useState } from 'react';
-import type { ManeuverModifier, ManeuverType, RouteProfile, RouteResult, RouteStep } from '@lagebild/shared';
+import type {
+  ManeuverModifier,
+  ManeuverType,
+  RouteProfile,
+  RouteResult,
+  RouteStep,
+  TransitItinerary,
+  TransitLeg,
+} from '@lagebild/shared';
+import { TransitPlan } from './TransitPlan.js';
+
+/** Fortbewegungsart inklusive ÖPNV (der nicht über den Offline-Graphen läuft). */
+export type PlanMode = RouteProfile | 'transit';
 import type { RouteProgress } from './offline/follow.js';
 import type { Place } from './places.js';
 
 interface Props {
   origin: Place | null;
   destination: Place;
-  profile: RouteProfile;
+  profile: PlanMode;
+  /** ÖPNV: gefundene Verbindungen und Auswahl. */
+  itineraries: TransitItinerary[];
+  itineraryIndex: number;
+  onSelectItinerary: (index: number) => void;
+  planTime: string | null;
+  planArriveBy: boolean;
+  onPlanTime: (time: string | null, arriveBy: boolean) => void;
+  onWalkLeg: (leg: TransitLeg) => void;
+  online: boolean;
   /** Gewählte Route. */
   route: RouteResult | null;
   /** Alle gefundenen Varianten, die schnellste zuerst. */
@@ -22,7 +43,7 @@ interface Props {
   navigating: boolean;
   progress: RouteProgress | null;
   muted: boolean;
-  onProfile: (p: RouteProfile) => void;
+  onProfile: (p: PlanMode) => void;
   onSwap: () => void;
   /** Start wieder auf den eigenen Standort legen. */
   onResetOrigin: () => void;
@@ -32,7 +53,12 @@ interface Props {
   onClose: () => void;
 }
 
-const PROFILE_LABEL: Record<RouteProfile, string> = { car: 'Auto', bike: 'Rad', foot: 'Zu Fuß' };
+const PROFILE_LABEL: Record<PlanMode, string> = {
+  car: 'Auto',
+  bike: 'Rad',
+  foot: 'Zu Fuß',
+  transit: 'ÖPNV',
+};
 
 export const formatDistance = (m: number): string =>
   m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0).replace('.', ',')} km`;
@@ -144,7 +170,7 @@ export function RoutePanel(props: Props) {
       <div className="rp-head">
         <h3>Route</h3>
         <div className="rp-profiles" role="group" aria-label="Fortbewegungsart">
-          {(['car', 'bike', 'foot'] as RouteProfile[]).map((p) => (
+          {(['car', 'bike', 'foot', 'transit'] as PlanMode[]).map((p) => (
             <button
               key={p}
               type="button"
@@ -201,6 +227,20 @@ export function RoutePanel(props: Props) {
         </div>
       </div>
 
+      {props.profile === 'transit' ? (
+        <TransitPlan
+          itineraries={props.itineraries}
+          index={props.itineraryIndex}
+          loading={props.loading}
+          online={props.online}
+          time={props.planTime}
+          arriveBy={props.planArriveBy}
+          onSelect={props.onSelectItinerary}
+          onTime={props.onPlanTime}
+          onWalk={props.onWalkLeg}
+        />
+      ) : (
+        <>
       {!props.regionReady && (
         <p className="rp-hint err">
           Für diese Gegend ist kein Routing-Paket gespeichert. Lade die Region unter „Offline" —
@@ -265,6 +305,8 @@ export function RoutePanel(props: Props) {
               ))}
             </ol>
           )}
+        </>
+      )}
         </>
       )}
     </section>

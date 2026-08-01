@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Coords, RouteProfile, RouteResult, Severity, TransitStopPoint, WarningFeature } from '@lagebild/shared';
+import type {
+  Coords,
+  RouteProfile,
+  RouteResult,
+  Severity,
+  TransitItinerary,
+  TransitLeg,
+  TransitStopPoint,
+  WarningFeature,
+} from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchPlan, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { SearchSheet } from './SearchSheet.js';
 import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
-import { RoutePanel } from './RoutePanel.js';
+import { RoutePanel, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
 import { routeOffline, stopsOffline } from './offline/client.js';
@@ -255,7 +264,12 @@ export function App() {
   const [destination, setDestination] = useState<(Place & { category?: string }) | null>(null);
   const [routeOrigin, setRouteOrigin] = useState<Place | null>(null);
   const [pin, setPin] = useState<(Place & { category?: string }) | null>(null);
-  const [profile, setProfile] = useState<RouteProfile>('car');
+  const [profile, setProfile] = useState<PlanMode>('car');
+  /** ÖPNV-Verbindungen (nur online) samt Auswahl und Wunschzeit. */
+  const [itineraries, setItineraries] = useState<TransitItinerary[]>([]);
+  const [itineraryIndex, setItineraryIndex] = useState(0);
+  const [planTime, setPlanTime] = useState<string | null>(null);
+  const [planArriveBy, setPlanArriveBy] = useState(false);
   const [routes, setRoutes] = useState<RouteResult[]>([]);
   const [routeIndex, setRouteIndex] = useState(0);
   const [avoidMotorways, setAvoidMotorways] = useState(false);
@@ -306,7 +320,7 @@ export function App() {
       setRouteError(null);
       return;
     }
-    if (!routeCodes.length) {
+    if (profile === 'transit' || !routeCodes.length) {
       setRoutes([]);
       setRouteError(null);
       return;
@@ -316,7 +330,7 @@ export function App() {
     setRouteError(null);
     const target = { lat: destination.lat, lon: destination.lon };
     // Während der Zielführung zählt Tempo, nicht Auswahl — dann nur ein Weg.
-    routeOffline(routeCodes, startPoint, target, profile, {
+    routeOffline(routeCodes, startPoint, target, profile as RouteProfile, {
       alternatives: navigatingRef.current ? 1 : 3,
       avoidMotorways,
     })
@@ -350,11 +364,43 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destKey, startKey, profile, routeCodesKey, avoidMotorways]);
 
+  // ÖPNV läuft nicht über den Offline-Graphen — Fahrpläne kommen aus dem Netz.
+  const [planLoading, setPlanLoading] = useState(false);
+  useEffect(() => {
+    if (profile !== 'transit' || !destination || !online) {
+      setItineraries([]);
+      return;
+    }
+    let cancelled = false;
+    setPlanLoading(true);
+    fetchPlan(startPoint, { lat: destination.lat, lon: destination.lon }, planTime, planArriveBy)
+      .then((r) => {
+        if (cancelled) return;
+        setItineraries(r.data);
+        setItineraryIndex(0);
+      })
+      .catch(() => !cancelled && setItineraries([]))
+      .finally(() => !cancelled && setPlanLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, destKey, startKey, planTime, planArriveBy, online]);
+
+  /** Fußweg einer Verbindung an die Offline-Navigation übergeben. */
+  const walkLeg = (leg: TransitLeg) => {
+    setRouteOrigin({ name: leg.from.name || 'Mein Standort', lat: leg.from.lat, lon: leg.from.lon });
+    setDestination({ name: leg.to.name || destination?.name || 'Ziel', lat: leg.to.lat, lon: leg.to.lon });
+    setProfile('foot');
+  };
+
   /** Bei Abweichung von der Route: ab der aktuellen Position neu rechnen. */
   const handleOffRoute = useCallback((position: Coords) => {
     setRouteOrigin({ name: 'Aktuelle Position', lat: position.lat, lon: position.lon });
   }, []);
-  const nav = useNavigation(route, navigating, profile, muted, handleOffRoute);
+  // Zielführung gibt es nur für die selbst gerechneten Profile.
+  const navProfile: RouteProfile = profile === 'transit' ? 'foot' : profile;
+  const nav = useNavigation(route, navigating, navProfile, muted, handleOffRoute);
 
   /** Ziel setzen und die Karte auf Planung umstellen. */
   const startRouteTo = (place: Place, category?: string) => {
@@ -566,6 +612,7 @@ export function App() {
             aprsAvailable={aprsAvailable}
             offlineCode={offlineCode}
             route={route}
+            itinerary={profile === 'transit' ? (itineraries[itineraryIndex] ?? null) : null}
             stops={stopPoints}
             stopsAvailable={online || !!stopsCode}
             onStopClick={setStopDetail}
@@ -595,13 +642,24 @@ export function App() {
               origin={routeOrigin}
               destination={destination}
               profile={profile}
+              itineraries={itineraries}
+              itineraryIndex={itineraryIndex}
+              onSelectItinerary={setItineraryIndex}
+              planTime={planTime}
+              planArriveBy={planArriveBy}
+              onPlanTime={(t, arriveBy) => {
+                setPlanTime(t);
+                setPlanArriveBy(arriveBy);
+              }}
+              onWalkLeg={walkLeg}
+              online={online}
               route={route}
               routes={routes}
               routeIndex={routeIndex}
               onSelectRoute={setRouteIndex}
               avoidMotorways={avoidMotorways}
               onToggleMotorways={() => setAvoidMotorways((v) => !v)}
-              loading={routeLoading}
+              loading={profile === 'transit' ? planLoading : routeLoading}
               error={routeError}
               regionReady={routeCodes.length > 0}
               navigating={navigating}

@@ -24,6 +24,7 @@ import type {
   WindPoint,
   WindField,
   RouteResult,
+  TransitItinerary,
   TransitStopPoint,
 } from '@lagebild/shared';
 import { fetchAircraftDetails, type Bbox } from './api.js';
@@ -33,13 +34,14 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
-import { ensureMapIcons, STOP_ICON, WIND_CLASSES } from './mapIcons.js';
+import { ensureMapIcons, STOP_COLOR, STOP_ICON, WIND_CLASSES } from './mapIcons.js';
 import { WindAnimation } from './windField.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
 import { AprsTargets } from './AprsTargets.js';
 import { loadTargets, saveTargets } from './aprsStore.js';
 import { LayerMenu, type LayerOption } from './LayerMenu.js';
 import {
+  kindOfProduct,
   SEVERITY_DE,
   TRAFFIC_DE,
   VESSEL_DE,
@@ -382,6 +384,8 @@ interface Props {
   offlineCode: string | null;
   /** Berechnete Route (offline) — Linie, Start- und Zielmarke. */
   route: RouteResult | null;
+  /** Gewählte ÖPNV-Verbindung (Fußwege gestrichelt, Fahrten in Linienfarbe). */
+  itinerary: TransitItinerary | null;
   /** Haltestellen im Ausschnitt. */
   stops: TransitStopPoint[];
   /** Antippen einer Haltestelle öffnet ihre Abfahrten. */
@@ -471,6 +475,7 @@ export function LageMap({
   aprsAvailable,
   offlineCode,
   route,
+  itinerary,
   stops,
   stopsAvailable,
   onStopClick,
@@ -1290,6 +1295,84 @@ export function LageMap({
       map.off('mouseleave', 'stops', leave);
     };
   }, [ready, styleEpoch]);
+
+  /* ---------- ÖPNV-Verbindung ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('plan')) return;
+    map.addSource('plan', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'plan-walk',
+      type: 'line',
+      source: 'plan',
+      filter: ['==', ['get', 'walk'], true],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#5b5b60',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3, 16, 6],
+        'line-dasharray': [1.6, 1.4],
+      },
+    });
+    map.addLayer({
+      id: 'plan-ride',
+      type: 'line',
+      source: 'plan',
+      filter: ['==', ['get', 'walk'], false],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 16, 9],
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('plan') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (itinerary?.legs ?? [])
+        .filter((leg) => leg.geometry.length > 1)
+        .map((leg) => ({
+          type: 'Feature',
+          properties: {
+            walk: leg.mode === 'WALK',
+            color: STOP_COLOR[kindOfProduct(leg.product)] ?? '#1d4e73',
+          },
+          geometry: { type: 'LineString', coordinates: leg.geometry },
+        })),
+    });
+  }, [itinerary, ready, styleEpoch]);
+
+  // Verbindung ins Bild rücken.
+  const planKey = itinerary ? `${itinerary.startTime}:${itinerary.legs.length}` : '';
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !itinerary) return;
+    let west = 180;
+    let south = 90;
+    let east = -180;
+    let north = -90;
+    for (const leg of itinerary.legs) {
+      for (const [lon, lat] of leg.geometry) {
+        if (lon < west) west = lon;
+        if (lon > east) east = lon;
+        if (lat < south) south = lat;
+        if (lat > north) north = lat;
+      }
+    }
+    if (west > east) return;
+    map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding: { top: 60, bottom: 200, left: 50, right: 50 }, duration: 800, maxZoom: 15 },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planKey, ready]);
 
   /* ---------- Route: Linie, Marken, Kamera ---------- */
 

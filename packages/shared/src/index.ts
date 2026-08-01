@@ -192,6 +192,39 @@ export interface TransitTrip {
   stops: TransitTripStop[];
 }
 
+/** Ein Abschnitt einer ÖPNV-Verbindung: Fußweg oder Fahrt. */
+export interface TransitLeg {
+  /** 'WALK' oder ein Verkehrsmittel (BUS, TRAM, …). */
+  mode: string;
+  /** Deutsche Bezeichnung des Verkehrsmittels (null beim Fußweg). */
+  product: string | null;
+  line: string | null;
+  headsign: string | null;
+  from: { name: string; lat: number; lon: number };
+  to: { name: string; lat: number; lon: number };
+  departure: string | null;
+  plannedDeparture: string | null;
+  arrival: string | null;
+  plannedArrival: string | null;
+  delayMin: number | null;
+  durationS: number;
+  distanceM: number | null;
+  cancelled: boolean;
+  /** Halte zwischen Ein- und Ausstieg. */
+  intermediateStops: TransitTripStop[];
+  /** Linienzug [lon, lat] für die Karte. */
+  geometry: [number, number][];
+}
+
+/** Eine Reisemöglichkeit von A nach B. */
+export interface TransitItinerary {
+  startTime: string;
+  endTime: string;
+  durationS: number;
+  transfers: number;
+  legs: TransitLeg[];
+}
+
 /** Eine Abfahrt an einem Halt (DB/ÖPNV) mit Echtzeit-Verspätung. */
 export interface TransitDeparture {
   line: string;
