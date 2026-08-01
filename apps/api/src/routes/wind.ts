@@ -73,7 +73,7 @@ windRoute.get('/', async (c) => {
       directionDeg: Math.round(e.current!.wind_direction_10m!),
     }));
 
-  const data: WindField = { points, time: entries[0]?.current?.time ?? null };
+  const data: WindField = { points, cols: COLS, rows: ROWS, time: entries[0]?.current?.time ?? null };
   cache.set(data);
   return c.json(envelope(data, 'Open-Meteo'));
 });

@@ -302,9 +302,15 @@ export interface WindPoint {
   directionDeg: number;
 }
 
-/** Windfeld über dem Kartenausschnitt. */
+/**
+ * Windfeld über dem Kartenausschnitt. Die Punkte liegen als regelmäßiges
+ * Gitter vor (zeilenweise von Süd nach Nord, je Zeile von West nach Ost) —
+ * damit lässt sich zwischen ihnen sauber interpolieren.
+ */
 export interface WindField {
   points: WindPoint[];
+  cols: number;
+  rows: number;
   /** Gültigkeitszeitpunkt des Modells. */
   time: string | null;
 }

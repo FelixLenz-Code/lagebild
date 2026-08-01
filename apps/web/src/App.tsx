@@ -20,6 +20,9 @@ type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'transi
 function boxAround(c: { lat: number; lon: number }): Bbox {
   return { west: c.lon - 0.2, south: c.lat - 0.12, east: c.lon + 0.2, north: c.lat + 0.12 };
 }
+/** Leeres Windfeld, solange die Ebene aus ist oder noch nichts geladen wurde. */
+const EMPTY_WIND = { points: [], cols: 0, rows: 0, time: null };
+
 const bboxKey = (b: Bbox) =>
   `${b.west.toFixed(2)},${b.south.toFixed(2)},${b.east.toFixed(2)},${b.north.toFixed(2)}`;
 
@@ -258,7 +261,7 @@ export function App() {
             aircraft={aircraft.data?.data ?? []}
             vessels={vessels.data?.data ?? []}
             aprs={aprs.data?.data ?? []}
-            wind={wind.data?.data.points ?? []}
+            wind={wind.data?.data ?? EMPTY_WIND}
             flowAvailable={flowAvailable}
             aisAvailable={aisAvailable}
             aprsAvailable={aprsAvailable}

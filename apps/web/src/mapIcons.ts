@@ -26,8 +26,6 @@ const GLIDER =
 const SHIP = 'M16 2.4c2.6 3 4.2 6.6 4.2 10.6v12.8c0 2.1-1.5 3.8-4.2 3.8s-4.2-1.7-4.2-3.8V13c0-4 1.6-7.6 4.2-10.6Z';
 /** Pfeilspitze für bewegte APRS-Ziele (Fahrtrichtung nach Norden). */
 const ARROW = 'M16 3.5 25 27l-9-5.4L7 27 16 3.5Z';
-/** Windpfeil mit Schaft — zeigt in die Richtung, in die der Wind weht. */
-const WIND_ARROW = 'M16 3 23 14h-4.4v15h-5.2V14H9L16 3Z';
 /** Ortsfeste APRS-Station: Antennenmast. */
 const MAST = 'M16 6a4 4 0 0 1 4 4c0 1.6-1 3-2.4 3.6L20 27h-3l-1-8-1 8h-3l2.4-13.4A4 4 0 0 1 16 6Z';
 
@@ -36,7 +34,8 @@ const RATIO = 2;
 
 /**
  * Windstärken-Stufen (km/h in 10 m Höhe), angelehnt an die Beaufort-Skala:
- * schwach, mäßig, frisch, stark, Sturm. Farben und Namen nutzt auch die Legende.
+ * schwach, mäßig, frisch, stark, Sturm. Die Farben nutzen Strömungsbild und
+ * Legende gemeinsam.
  */
 export const WIND_CLASSES = [
   { id: 'calm', max: 12, color: '#7fb4e6', label: 'schwach' },
@@ -46,10 +45,6 @@ export const WIND_CLASSES = [
   { id: 'storm', max: Infinity, color: '#a92318', label: 'Sturm' },
 ] as const;
 
-/** Stufen-Kennung zu einer Windgeschwindigkeit (für `icon-image`). */
-export function windClass(speedKmh: number): string {
-  return (WIND_CLASSES.find((c) => speedKmh < c.max) ?? WIND_CLASSES[WIND_CLASSES.length - 1]).id;
-}
 
 function draw(map: MlMap, id: string, path: string, fill: string, stroke: string): Promise<void> {
   return new Promise((resolve) => {
@@ -108,10 +103,6 @@ const VARIANTS: Record<string, [string, string, string]> = {
   'ship-tug': [SHIP, '#c96f0f', '#ffffff'],
   'ship-fishing': [SHIP, '#6c2790', '#ffffff'],
   'ship-other': [SHIP, '#5b5b60', '#ffffff'],
-  // Wind: Pfeilfarbe nach Stärke (siehe WIND_CLASSES)
-  ...Object.fromEntries(
-    WIND_CLASSES.map((c) => [`wind-${c.id}`, [WIND_ARROW, c.color, '#ffffff'] as [string, string, string]]),
-  ),
   // Amateurfunk (APRS): bewegt, ortsfest, Wetterstation
   'aprs-move': [ARROW, '#6b3fa0', '#ffffff'],
   'aprs-fix': [MAST, '#6b3fa0', '#ffffff'],

@@ -20,6 +20,7 @@ import type {
   Vessel,
   AprsStation,
   WindPoint,
+  WindField,
 } from '@lagebild/shared';
 import { fetchAircraftDetails, type Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
@@ -28,7 +29,8 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
-import { ensureMapIcons, windClass, WIND_CLASSES } from './mapIcons.js';
+import { ensureMapIcons, WIND_CLASSES } from './mapIcons.js';
+import { WindAnimation } from './windField.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
 import { AprsTargets } from './AprsTargets.js';
 import { loadTargets, saveTargets } from './aprsStore.js';
@@ -324,24 +326,14 @@ function aprsToGeoJson(list: AprsStation[]): GeoJSON.FeatureCollection {
   };
 }
 
-/**
- * Windpfeile. Die Richtung ist meteorologisch (woher der Wind weht) — das
- * Symbol zeigt aber dorthin, wohin er weht, deshalb + 180°.
- */
-function windToGeoJson(points: WindPoint[]): GeoJSON.FeatureCollection {
+/** Beschriftung des Windfelds: Geschwindigkeit an den Gitterpunkten. */
+function windLabelsToGeoJson(points: WindPoint[]): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: points.map((p, i) => ({
       type: 'Feature',
       id: i,
-      properties: {
-        icon: `wind-${windClass(p.speedKmh)}`,
-        rotate: (p.directionDeg + 180) % 360,
-        label: `${p.speedKmh}`,
-        speed: p.speedKmh,
-        // Schwacher Wind bekommt einen kleineren Pfeil.
-        size: p.speedKmh < 12 ? 0.5 : p.speedKmh < 29 ? 0.62 : 0.74,
-      },
+      properties: { label: `${p.speedKmh}`, color: WIND_CLASSES.find((c) => p.speedKmh < c.max)?.color ?? '#1f2933' },
       geometry: { type: 'Point', coordinates: [p.coordinates.lon, p.coordinates.lat] },
     })),
   };
@@ -369,7 +361,7 @@ interface Props {
   aircraft: Aircraft[];
   vessels: Vessel[];
   aprs: AprsStation[];
-  wind: WindPoint[];
+  wind: WindField;
   flowAvailable: boolean;
   /** true, wenn der Server einen AIS-Stream hat (sonst keine Schiffs-Ebene). */
   aisAvailable: boolean;
@@ -402,14 +394,12 @@ type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' 
  * Beobachtungsliste und darf deshalb immer mit Beschriftung erscheinen.
  */
 const SYMBOL_STYLE: Record<
-  'aircraft' | 'vessels' | 'aprs' | 'wind',
-  { size: number | ['get', string]; minzoom: number; labelZoom: number }
+  'aircraft' | 'vessels' | 'aprs',
+  { size: number; minzoom: number; labelZoom: number }
 > = {
   aircraft: { size: 0.62, minzoom: 6, labelZoom: 9 },
   vessels: { size: 0.5, minzoom: 5, labelZoom: 9 },
   aprs: { size: 0.55, minzoom: 0, labelZoom: 0 },
-  // Pfeilgröße steckt in den Daten (schwacher Wind = kleinerer Pfeil).
-  wind: { size: ['get', 'size'], minzoom: 0, labelZoom: 7 },
 };
 
 const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
@@ -436,7 +426,7 @@ export function LageMap({
   aircraft,
   vessels,
   aprs,
-  wind,
+  wind: windField,
   flowAvailable,
   aisAvailable,
   aprsAvailable,
@@ -959,7 +949,6 @@ export function LageMap({
       ['aircraft', showAircraft, aircraftToGeoJson(aircraft)],
       ['vessels', showVessels, vesselsToGeoJson(vessels)],
       ['aprs', showAprs, aprsToGeoJson(aprs)],
-      ['wind', showWind, windToGeoJson(wind)],
     ] as const) {
       if (!visible) {
         if (map.getLayer(id)) map.removeLayer(id);
@@ -999,38 +988,84 @@ export function LageMap({
         },
       });
     }
-  }, [showAircraft, showVessels, showAprs, showWind, aircraft, vessels, aprs, wind, ready, styleEpoch, iconEpoch]);
+  }, [showAircraft, showVessels, showAprs, aircraft, vessels, aprs, ready, styleEpoch, iconEpoch]);
 
-  // Windpfeile driften in ihre eigene Richtung und blenden dabei auf und ab.
-  // `icon-offset` wirkt im gedrehten Symbolraster, deshalb genügt ein einziger
-  // Wert für alle Pfeile — jeder wandert entlang seiner Windrichtung.
+  // --- Windfeld: Strömungsbild + Beschriftung -----------------------------
+
+  const windAnim = useRef<WindAnimation | null>(null);
+
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !showWind || wind.length === 0) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const container = map?.getContainer();
+    if (!map || !ready || !container) return;
+    if (!showWind || windField.points.length === 0) {
+      windAnim.current?.stop();
+      windAnim.current = null;
+      container.querySelector('.wind-canvas')?.remove();
+      return;
+    }
 
-    let frame = 0;
-    const CYCLE_MS = 2200;
-    const step = () => {
-      frame = requestAnimationFrame(step);
-      if (!map.getLayer('wind')) return;
-      const phase = (performance.now() % CYCLE_MS) / CYCLE_MS;
-      // Kräftigerer Wind treibt den Pfeil weiter — Stufen wie bei der Farbe.
-      const shift = (factor: number) => ['literal', [0, -phase * 26 * factor]] as const;
-      map.setLayoutProperty('wind', 'icon-offset', [
-        'case',
-        ['<', ['get', 'speed'], 12],
-        shift(0.55),
-        ['<', ['get', 'speed'], 29],
-        shift(0.85),
-        shift(1.2),
-      ]);
-      // Am Anfang aufblenden, am Ende ausblenden — das ergibt den Flusseindruck.
-      map.setPaintProperty('wind', 'icon-opacity', Math.min(1, Math.sin(Math.PI * phase) * 1.6 + 0.25));
+    // Canvas zwischen Kartenbild und Bedienelemente hängen.
+    let canvas = container.querySelector<HTMLCanvasElement>('.wind-canvas');
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.className = 'wind-canvas';
+      container.insertBefore(canvas, container.querySelector('.maplibregl-control-container'));
+    }
+    const anim =
+      windAnim.current ??
+      new WindAnimation(canvas, map, (speed) => WIND_CLASSES.find((c) => speed < c.max)?.color ?? '#a92318');
+    windAnim.current = anim;
+    anim.setField(windField);
+    anim.resize();
+
+    // Beim Schwenken bleiben die Spuren sonst als Schlieren stehen.
+    const redraw = () => anim.reset();
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map.on('move', redraw);
+    map.on('resize', () => anim.resize());
+    if (!still) anim.start();
+
+    return () => {
+      map.off('move', redraw);
+      anim.stop();
     };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [showWind, wind, ready, styleEpoch, iconEpoch]);
+  }, [showWind, windField, ready, styleEpoch]);
+
+  // Windgeschwindigkeit als Zahl an den Gitterpunkten
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!showWind || windField.points.length === 0) {
+      if (map.getLayer('wind-labels')) map.removeLayer('wind-labels');
+      if (map.getSource('wind-labels')) map.removeSource('wind-labels');
+      return;
+    }
+    const data = windLabelsToGeoJson(windField.points);
+    const src = map.getSource('wind-labels') as maplibregl.GeoJSONSource | undefined;
+    if (src) {
+      src.setData(data);
+      return;
+    }
+    map.addSource('wind-labels', { type: 'geojson', data });
+    map.addLayer({
+      id: 'wind-labels',
+      type: 'symbol',
+      source: 'wind-labels',
+      minzoom: 6,
+      layout: {
+        'text-field': ['concat', ['get', 'label'], ' km/h'],
+        'text-font': ['Noto Sans Medium'],
+        'text-size': 11,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': ['get', 'color'],
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.6,
+      },
+    });
+  }, [showWind, windField, ready, styleEpoch]);
 
   // Eigene Markierungen: Quelle + Layer anlegen (oberste Ebene)
   useEffect(() => {

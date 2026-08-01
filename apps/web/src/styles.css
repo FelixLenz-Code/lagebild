@@ -169,6 +169,9 @@ svg { display: block; }
 .lm-credit { font-size: .62rem; color: var(--faint); line-height: 1.4; }
 .lm-credit a { color: var(--muted); }
 
+/* Strömungsbild des Windes — liegt über der Karte, fängt keine Klicks ab. */
+.wind-canvas { position: absolute; inset: 0; pointer-events: none; }
+
 .mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); cursor: pointer; }
 .mk-user { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
 .maplibregl-popup-content { font: 500 .8rem system-ui, sans-serif; color: #14181c; border-radius: 6px; padding: 10px 12px; }

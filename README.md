@@ -45,7 +45,7 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | --- | --- | --- |
 | Warnungen | DWD-GeoServer (NINA-Skala) | mit Warnstufen-Filter |
 | Regenradar | DWD RADOLAN-RV / RainViewer | Zeitleiste bis +2 h |
-| Wind | Open-Meteo | Pfeilfeld (10 m über Grund), 8×6-Gitter im Ausschnitt |
+| Wind | Open-Meteo | animiertes Strömungsbild (10 m über Grund) |
 | Verkehrsfluss | TomTom | nur mit gültigem `TOMTOM_KEY` |
 | Verkehr / Pegel | Autobahn GmbH / PEGELONLINE | folgen dem Kartenausschnitt |
 | Flugzeuge | adsb.fi (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
@@ -80,11 +80,12 @@ Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
   gesamt · Spitze 4,6 mm/h"). Darunter folgen 7 Tage und die Luftqualität.
 * **Wind**: `/api/wind` legt ein Gitter über den Ausschnitt und holt die
   Punkte in **einer** Open-Meteo-Anfrage (frei, ohne Key). Auf der Karte wird
-  daraus ein Pfeilfeld: Richtung = wohin der Wind weht, Farbe = Stärke
-  (Beaufort-nah), Beschriftung = km/h. Die Pfeile driften animiert in ihre
-  Windrichtung (stärkerer Wind treibt weiter); bei `prefers-reduced-motion`
-  bleibt das Feld ruhig. Freie Wind-Kacheldienste gibt es nicht,
-  das Gitter ist der praktikable Weg.
+  daraus ein **Strömungsbild**: Hunderte Teilchen treiben über ein eigenes
+  Canvas mit dem Wind und ziehen verblassende Spuren; zwischen den
+  Gitterpunkten wird bilinear interpoliert, die Farbe zeigt die Stärke
+  (Beaufort-nah). An den Gitterpunkten steht zusätzlich der Zahlenwert in
+  km/h. Bei `prefers-reduced-motion` bleibt das Bild stehen. Freie
+  Wind-Kacheldienste gibt es nicht, das Gitter ist der praktikable Weg.
 * **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
   (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von
   ~30 min Vergangenheit bis **+2 h**. Das Backend reicht die zlib-komprimierten
