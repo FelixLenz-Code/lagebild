@@ -69,95 +69,9 @@ export function WeatherDetail({
         </div>
       </div>
 
-      {forecast && forecast.hourly.length > 0 && <HourlyChart hourly={forecast.hourly} />}
-      {forecast && forecast.hourly.length > 0 && <RainOutlook hourly={forecast.hourly} />}
+      {forecast && forecast.hourly.length > 0 && <HourlyForecast hourly={forecast.hourly} />}
       {forecast && forecast.daily.length > 0 && <DailyList daily={forecast.daily} />}
       {air && <AirSection air={air} />}
-    </>
-  );
-}
-
-const RAIN_H = 92;
-const RAIN_COL = 27;
-
-/**
- * Regen der nächsten 24 Stunden: Balken zeigen die Menge je Stunde, die Linie
- * die Regenwahrscheinlichkeit. Beides zusammen beantwortet die eigentliche
- * Frage — wann und wie stark wird es nass.
- */
-function RainOutlook({ hourly }: { hourly: WeatherForecast['hourly'] }) {
-  const hours = hourly.slice(0, 24);
-  const amounts = hours.map((h) => h.precipitationMm ?? 0);
-  const total = Math.round(amounts.reduce((a, b) => a + b, 0) * 10) / 10;
-  const peak = Math.max(...amounts);
-  // Maßstab: mindestens 1 mm, damit Nieselregen nicht wie Starkregen aussieht.
-  const scale = Math.max(1, peak);
-  const first = hours.find((h) => (h.precipitationMm ?? 0) >= 0.1);
-  const maxProb = Math.max(0, ...hours.map((h) => h.precipitationProbabilityPct ?? 0));
-
-  const width = hours.length * RAIN_COL;
-  const barBase = RAIN_H - 16;
-  const barTop = 34;
-  const probY = (p: number) => 30 - (p / 100) * 22;
-  const probLine = hours
-    .map((h, i) => `${i * RAIN_COL + RAIN_COL / 2},${probY(h.precipitationProbabilityPct ?? 0)}`)
-    .join(' ');
-
-  return (
-    <>
-      <h4 className="sec-title">Regen in den nächsten 24 Stunden</h4>
-      <div className="rain-sum">
-        {total > 0 ? (
-          <>
-            <b>{total.toString().replace('.', ',')} mm</b> erwartet
-            {first && <> · ab {hourLabel(first.time)}</>}
-            {peak > 0 && <> · Spitze {peak.toString().replace('.', ',')} mm/h</>}
-          </>
-        ) : (
-          <>
-            <b>Kein Regen erwartet</b>
-            {maxProb > 0 && <> · höchste Wahrscheinlichkeit {maxProb} %</>}
-          </>
-        )}
-      </div>
-      <div className="wx-hours">
-        <svg className="rain-chart" width={width} height={RAIN_H} role="img" aria-label="Regenmenge und Regenwahrscheinlichkeit je Stunde">
-          {/* Grundlinie und 50-%-Hilfslinie für die Wahrscheinlichkeit */}
-          <line x1={0} y1={barBase} x2={width} y2={barBase} stroke="var(--line)" strokeWidth={1} />
-          <line x1={0} y1={probY(50)} x2={width} y2={probY(50)} stroke="var(--line)" strokeWidth={1} strokeDasharray="3 3" />
-          <text x={2} y={probY(50) - 3} className="rain-tick">50 %</text>
-          <polygon
-            points={`0,${probY(0)} ${probLine} ${width},${probY(0)}`}
-            fill="var(--sev1)"
-            opacity={0.12}
-          />
-          {hours.map((h, i) => {
-            const mm = h.precipitationMm ?? 0;
-            const height = mm > 0 ? Math.max(3, (mm / scale) * (barBase - barTop)) : 0;
-            const x = i * RAIN_COL + 5;
-            return (
-              <g key={h.time}>
-                {height > 0 && (
-                  <rect x={x} y={barBase - height} width={RAIN_COL - 10} height={height} rx={2} fill="var(--accent)">
-                    <title>{`${hourLabel(h.time)}: ${mm} mm`}</title>
-                  </rect>
-                )}
-                {i % 3 === 0 && (
-                  <text x={i * RAIN_COL + RAIN_COL / 2} y={RAIN_H - 3} textAnchor="middle" className="rain-tick">
-                    {new Date(h.time).getHours()}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-          {/* Regenwahrscheinlichkeit */}
-          <polyline points={probLine} fill="none" stroke="var(--sev1)" strokeWidth={1.8} strokeLinejoin="round" />
-        </svg>
-      </div>
-      <div className="rain-legend">
-        <span><i className="bar" /> Menge in mm{peak > 0 && ` (max. ${scale.toString().replace('.', ',')})`}</span>
-        <span><i className="line" /> Regenwahrscheinlichkeit 0–100 %</span>
-      </div>
     </>
   );
 }
@@ -190,32 +104,79 @@ function AirSection({ air }: { air: AirQuality }) {
   );
 }
 
-const CHART_H = 66;
 const COL_W = 54;
+/** Höhe des Temperaturbands (inkl. Platz für die Wertebeschriftung). */
+const TEMP_H = 62;
+/** Höhe des Regenbands: oben die Wahrscheinlichkeit, unten die Menge. */
+const RAIN_H = 94;
+const PROB_TOP = 4;
+// Genug Höhe, damit sich 10 % und 50 % deutlich unterscheiden.
+const PROB_H = 26;
+const RAIN_BASE = RAIN_H - 14;
+/** Platz, der den Mengenbalken bleibt (Beschriftung eingerechnet). */
+const BAR_MAX = RAIN_BASE - (PROB_TOP + PROB_H) - 10;
 
 /**
- * Stundenverlauf als Temperaturkurve mit Symbolen und Regenbalken —
- * waagerecht scrollbar, die Kurve wird als SVG über die Spalten gelegt.
+ * Die nächsten 24 Stunden in einem Bild: Symbol, Temperaturkurve und Regen
+ * teilen sich dieselbe Zeitachse und scrollen gemeinsam. So ist auf einen
+ * Blick zu sehen, ob der Regen in die kühle Nacht oder in den warmen
+ * Nachmittag fällt.
  */
-function HourlyChart({ hourly }: { hourly: WeatherForecast['hourly'] }) {
+function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
   const hours = hourly.slice(0, 24);
+  const width = hours.length * COL_W;
+  const mid = (i: number) => i * COL_W + COL_W / 2;
+
+  // --- Temperatur ---
   const temps = hours.map((h) => h.tempC).filter((v): v is number => v != null);
   const lo = Math.min(...temps);
   const hi = Math.max(...temps);
   const span = hi - lo || 1;
-  const width = hours.length * COL_W;
-  // Oben bleibt Platz für die Wertebeschriftung, unten für den Kurvenfuß.
-  const y = (t: number) => CHART_H - 8 - ((t - lo) / span) * (CHART_H - 30);
-  const points = hours
-    .map((h, i) => (h.tempC != null ? `${i * COL_W + COL_W / 2},${y(h.tempC)}` : null))
+  const tempY = (t: number) => TEMP_H - 8 - ((t - lo) / span) * (TEMP_H - 30);
+  const tempLine = hours
+    .map((h, i) => (h.tempC != null ? `${mid(i)},${tempY(h.tempC)}` : null))
     .filter(Boolean)
     .join(' ');
+
+  // --- Regen ---
+  const amounts = hours.map((h) => h.precipitationMm ?? 0);
+  const total = Math.round(amounts.reduce((a, b) => a + b, 0) * 10) / 10;
+  const peak = Math.max(...amounts);
+  // Maßstab mindestens 1 mm, damit Nieselregen nicht wie Starkregen aussieht.
+  const scale = Math.max(1, peak);
+  const firstWet = hours.find((h) => (h.precipitationMm ?? 0) >= 0.1);
+  const maxProb = Math.max(0, ...hours.map((h) => h.precipitationProbabilityPct ?? 0));
+  const probY = (p: number) => PROB_TOP + PROB_H - (p / 100) * PROB_H;
+  const probLine = hours.map((h, i) => `${mid(i)},${probY(h.precipitationProbabilityPct ?? 0)}`).join(' ');
+  const num = (v: number) => v.toString().replace('.', ',');
 
   return (
     <>
       <h4 className="sec-title">Nächste 24 Stunden</h4>
+      <div className="rain-sum">
+        {total > 0 ? (
+          <>
+            <b>{num(total)} mm Regen</b> erwartet
+            {firstWet && <> · ab {hourLabel(firstWet.time)}</>}
+            {peak > 0 && <> · Spitze {num(peak)} mm/h</>}
+          </>
+        ) : (
+          <>
+            <b>Kein Regen erwartet</b>
+            {maxProb > 0 && <> · höchste Wahrscheinlichkeit {maxProb} %</>}
+          </>
+        )}
+        {temps.length > 0 && (
+          <>
+            {' '}
+            · {Math.round(hi)}° bis {Math.round(lo)}°
+          </>
+        )}
+      </div>
+
       <div className="wx-hours">
         <div className="wx-hours-inner" style={{ width }}>
+          {/* Stunde + Wettersymbol */}
           <div className="wx-hourrow">
             {hours.map((h) => (
               <div className="wx-hour" key={h.time} style={{ width: COL_W }}>
@@ -225,25 +186,66 @@ function HourlyChart({ hourly }: { hourly: WeatherForecast['hourly'] }) {
             ))}
           </div>
 
-          <svg className="wx-curve" width={width} height={CHART_H} aria-hidden="true">
-            <polyline points={points} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" />
+          {/* Temperaturkurve */}
+          <svg width={width} height={TEMP_H} className="wx-curve" role="img" aria-label="Temperaturverlauf">
+            <polyline points={tempLine} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" />
             {hours.map((h, i) =>
               h.tempC != null ? (
                 <g key={h.time}>
-                  <circle cx={i * COL_W + COL_W / 2} cy={y(h.tempC)} r={2.4} fill="var(--accent)" />
-                  <text
-                    x={i * COL_W + COL_W / 2}
-                    y={y(h.tempC) - 8}
-                    textAnchor="middle"
-                    className="wx-curve-label"
-                  >
+                  <circle cx={mid(i)} cy={tempY(h.tempC)} r={2.4} fill="var(--accent)" />
+                  <text x={mid(i)} y={tempY(h.tempC) - 8} textAnchor="middle" className="wx-curve-label">
                     {Math.round(h.tempC)}°
                   </text>
                 </g>
               ) : null,
             )}
           </svg>
+
+          {/* Regen: Wahrscheinlichkeit als Linie, Menge als Balken */}
+          <svg width={width} height={RAIN_H} className="rain-chart" role="img" aria-label="Regenmenge und Regenwahrscheinlichkeit">
+            <line x1={0} y1={probY(50)} x2={width} y2={probY(50)} stroke="var(--line)" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={0} y1={RAIN_BASE} x2={width} y2={RAIN_BASE} stroke="var(--line)" strokeWidth={1} />
+            <polygon points={`0,${probY(0)} ${probLine} ${width},${probY(0)}`} fill="var(--sev1)" opacity={0.12} />
+            <polyline points={probLine} fill="none" stroke="var(--sev1)" strokeWidth={1.8} strokeLinejoin="round" />
+            {hours.map((h, i) => {
+              const mm = h.precipitationMm ?? 0;
+              const prob = h.precipitationProbabilityPct;
+              const height = mm > 0 ? Math.max(3, (mm / scale) * BAR_MAX) : 0;
+              return (
+                <g key={h.time}>
+                  {height > 0 && (
+                    <>
+                      <rect x={mid(i) - 7} y={RAIN_BASE - height} width={14} height={height} rx={2} fill="var(--accent)" />
+                      {/* Menge nur beschriften, wenn sie ins Gewicht fällt. */}
+                      {mm >= scale / 3 && (
+                        <text x={mid(i)} y={RAIN_BASE - height - 3} textAnchor="middle" className="rain-mm">
+                          {num(Math.round(mm * 10) / 10)}
+                        </text>
+                      )}
+                    </>
+                  )}
+                  {prob != null && i % 3 === 0 && (
+                    <text x={mid(i)} y={RAIN_H - 3} textAnchor="middle" className="rain-tick">
+                      {prob} %
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
         </div>
+      </div>
+
+      <div className="rain-legend">
+        <span>
+          <i className="line acc" /> Temperatur ({Math.round(lo)}–{Math.round(hi)} °C)
+        </span>
+        <span>
+          <i className="bar" /> Regenmenge in mm{peak > 0 && ` (max. ${num(scale)})`}
+        </span>
+        <span>
+          <i className="line" /> Regenwahrscheinlichkeit, gestrichelt = 50 %
+        </span>
       </div>
     </>
   );

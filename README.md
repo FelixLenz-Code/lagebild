@@ -68,9 +68,11 @@ Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
 
 * **Vorhersage**: `/api/weather/forecast` liefert aus Bright Sky (DWD) den
   Stundenverlauf (48 h) und eine daraus aggregierte 7-Tage-Übersicht. Die
-  Detailansicht zeigt Symbole und eine Temperaturkurve, darunter die
-  **24-Stunden-Regenvorhersage** (Balken = Menge in mm, Linie =
-  Regenwahrscheinlichkeit, dazu Summe und Beginn) sowie die Luftqualität.
+  Detailansicht fasst die **nächsten 24 Stunden** in einem Diagramm mit
+  gemeinsamer Zeitachse zusammen: Symbol, Temperaturkurve und darunter der
+  Regen (Balken = Menge in mm, Linie = Wahrscheinlichkeit), dazu eine
+  Klartext-Zeile („8,7 mm Regen erwartet · ab 13 Uhr · Spitze 3,1 mm/h").
+  Darunter folgen die 7-Tage-Übersicht und die Luftqualität.
 * **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
   (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von
   ~30 min Vergangenheit bis **+2 h**. Das Backend reicht die zlib-komprimierten

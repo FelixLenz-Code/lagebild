@@ -337,15 +337,17 @@ svg { display: block; }
 .wx-curve { display: block; }
 .wx-curve-label { font-size: 11px; font-weight: 600; fill: var(--ink); }
 
-/* 24h rain outlook */
+/* combined 24h outlook (temperature + rain on one time axis) */
 .rain-sum { font-size: .84rem; color: var(--muted); margin: -2px 0 8px; }
 .rain-sum b { color: var(--ink); font-weight: 650; }
 .rain-chart { display: block; }
 .rain-tick { font-size: 9px; fill: var(--faint); }
+.rain-mm { font-size: 9px; font-weight: 600; fill: var(--accent); }
 .rain-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: .68rem; color: var(--faint); }
 .rain-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .rain-legend i.bar { width: 9px; height: 9px; border-radius: 2px; background: var(--accent); }
 .rain-legend i.line { width: 14px; height: 2px; border-radius: 1px; background: var(--sev1); }
+.rain-legend i.line.acc { background: var(--accent); height: 2.5px; }
 
 /* air quality inside the weather views */
 .wx-air { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
