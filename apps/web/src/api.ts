@@ -15,6 +15,7 @@ import type {
   AircraftDetails,
   Vessel,
   AprsStation,
+  WindField,
   Coords,
 } from '@lagebild/shared';
 
@@ -96,6 +97,10 @@ export const fetchAircraftDetails = (
 
 export const fetchVessels = (b: Bbox): Promise<ApiEnvelope<Vessel[]>> =>
   getJson(`/api/vessels?${bboxQ(b)}`);
+
+/** Windfeld (Gitter aus Open-Meteo) über dem Kartenausschnitt. */
+export const fetchWind = (b: Bbox): Promise<ApiEnvelope<WindField>> =>
+  getJson(`/api/wind?${bboxQ(b)}`);
 
 /** APRS: aprs.fi beantwortet nur gezielte Rufzeichen-Abfragen (max. 20). */
 export const fetchAprs = (targets: string[]): Promise<ApiEnvelope<AprsStation[]>> =>

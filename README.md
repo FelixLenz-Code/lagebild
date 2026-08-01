@@ -19,7 +19,7 @@ Der Server ist **zustandslos** (nur Proxy + kurzer Cache; einzige Ausnahme ist
 der kurzlebige AIS-Positionsspeicher) — die Offline-Daten liegen im Browser.
 Datenquellen sind überwiegend freie, offizielle APIs (Bright Sky/DWD,
 warnung.bund.de/NINA, Autobahn, PEGELONLINE, Open-Meteo, Tagesschau, DB,
-adsb.lol, aisstream.io).
+adsb.fi, adsbdb.com, aisstream.io, aprs.fi).
 
 ## Entwicklung
 
@@ -45,6 +45,7 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | --- | --- | --- |
 | Warnungen | DWD-GeoServer (NINA-Skala) | mit Warnstufen-Filter |
 | Regenradar | DWD RADOLAN-RV / RainViewer | Zeitleiste bis +2 h |
+| Wind | Open-Meteo | Pfeilfeld (10 m über Grund), 8×6-Gitter im Ausschnitt |
 | Verkehrsfluss | TomTom | nur mit gültigem `TOMTOM_KEY` |
 | Verkehr / Pegel | Autobahn GmbH / PEGELONLINE | folgen dem Kartenausschnitt |
 | Flugzeuge | adsb.fi (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
@@ -69,10 +70,18 @@ Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
 * **Vorhersage**: `/api/weather/forecast` liefert aus Bright Sky (DWD) den
   Stundenverlauf (48 h) und eine daraus aggregierte 7-Tage-Übersicht. Die
   Detailansicht fasst die **nächsten 24 Stunden** in einem Diagramm mit
-  gemeinsamer Zeitachse zusammen: Symbol, Temperaturkurve und darunter der
-  Regen (Balken = Menge in mm, Linie = Wahrscheinlichkeit), dazu eine
-  Klartext-Zeile („8,7 mm Regen erwartet · ab 13 Uhr · Spitze 3,1 mm/h").
-  Darunter folgen die 7-Tage-Übersicht und die Luftqualität.
+  gemeinsamer Zeitachse zusammen: Wettersymbol, Temperaturkurve und darunter
+  der Regen — Balken nach Stärke gefärbt (leicht/mäßig/stark, Schwellen wie in
+  der Radar-Legende), Linie = Regenwahrscheinlichkeit. Nachtstunden sind
+  hinterlegt, eine Marke zeigt „jetzt", und beim Antippen einer Stunde stehen
+  Temperatur, Menge, Wahrscheinlichkeit und Wind im Klartext darüber. Die
+  Kopfzeile nennt die Regenphasen („Regen 13–19 Uhr, 0–3 Uhr · 13,6 mm
+  gesamt · Spitze 4,6 mm/h"). Darunter folgen 7 Tage und die Luftqualität.
+* **Wind**: `/api/wind` legt ein Gitter über den Ausschnitt und holt die
+  Punkte in **einer** Open-Meteo-Anfrage (frei, ohne Key). Auf der Karte wird
+  daraus ein Pfeilfeld: Richtung = wohin der Wind weht, Farbe = Stärke
+  (Beaufort-nah), Beschriftung = km/h. Freie Wind-Kacheldienste gibt es nicht,
+  das Gitter ist der praktikable Weg.
 * **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
   (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von
   ~30 min Vergangenheit bis **+2 h**. Das Backend reicht die zlib-komprimierten

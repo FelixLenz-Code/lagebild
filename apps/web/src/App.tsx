@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Coords, WarningFeature } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { PlacePicker } from './PlacePicker.js';
@@ -95,6 +95,7 @@ export function App() {
     aircraft: false,
     vessels: false,
     aprs: false,
+    wind: false,
     aprsTargets: [],
   });
   const radarForecast = useApi(
@@ -123,6 +124,12 @@ export function App() {
   const aprs = useApi(`aprs:${aprsKey}`, () => fetchAprs(layers.aprsTargets), [aprsKey], {
     enabled: layers.aprs && layers.aprsTargets.length > 0,
     refreshMs: 60000,
+    cache: false,
+  });
+  // Windfeld folgt dem Ausschnitt; das Modell rechnet stündlich, 10 min reichen.
+  const wind = useApi(`wind:${viewKey}`, () => fetchWind(viewport), [viewKey], {
+    enabled: layers.wind,
+    refreshMs: 600000,
     cache: false,
   });
   const news = useApi('news', () => fetchNews());
@@ -251,6 +258,7 @@ export function App() {
             aircraft={aircraft.data?.data ?? []}
             vessels={vessels.data?.data ?? []}
             aprs={aprs.data?.data ?? []}
+            wind={wind.data?.data.points ?? []}
             flowAvailable={flowAvailable}
             aisAvailable={aisAvailable}
             aprsAvailable={aprsAvailable}

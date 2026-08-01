@@ -291,6 +291,24 @@ export interface Vessel {
   reportedAt: string;
 }
 
+/**
+ * Ein Windpunkt des Vorhersagegitters (10 m über Grund). Die Richtung ist
+ * meteorologisch: Grad, aus denen der Wind weht (0 = aus Nord).
+ */
+export interface WindPoint {
+  coordinates: Coords;
+  speedKmh: number;
+  gustKmh: number | null;
+  directionDeg: number;
+}
+
+/** Windfeld über dem Kartenausschnitt. */
+export interface WindField {
+  points: WindPoint[];
+  /** Gültigkeitszeitpunkt des Modells. */
+  time: string | null;
+}
+
 /** Wetterwerte einer APRS-Wetterstation (aprs.fi liefert metrisch). */
 export interface AprsWeather {
   tempC: number | null;

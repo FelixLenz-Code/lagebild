@@ -338,8 +338,28 @@ svg { display: block; }
 .wx-curve-label { font-size: 11px; font-weight: 600; fill: var(--ink); }
 
 /* combined 24h outlook (temperature + rain on one time axis) */
-.rain-sum { font-size: .84rem; color: var(--muted); margin: -2px 0 8px; }
+.rain-sum { font-size: .84rem; color: var(--muted); margin: -2px 0 6px; }
 .rain-sum b { color: var(--ink); font-weight: 650; }
+
+/* readout for the picked hour */
+.wx-readout {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px;
+  min-height: 30px; padding: 6px 10px; margin-bottom: 8px;
+  background: var(--surface-2); border-radius: var(--r-sm);
+  font-size: .8rem; color: var(--ink);
+}
+.wx-readout b { font-weight: 650; }
+.wx-readout .muted-note { color: var(--muted); font-size: .76rem; }
+
+/* night hours, picked column and the "now" marker */
+.wx-night { fill: var(--ink); opacity: .075; }
+.wx-pick { fill: var(--accent); opacity: .1; }
+.wx-guide { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.wx-now { stroke: var(--sev3); stroke-width: 1.5; stroke-dasharray: 4 2; }
+.wx-now-label { font-size: 9px; font-weight: 700; fill: var(--sev3); }
+.wx-hour.is-night { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.wx-hour.is-picked { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.wx-hours-inner { touch-action: pan-x; cursor: crosshair; }
 .rain-chart { display: block; }
 .rain-tick { font-size: 9px; fill: var(--faint); }
 .rain-mm { font-size: 9px; font-weight: 600; fill: var(--accent); }

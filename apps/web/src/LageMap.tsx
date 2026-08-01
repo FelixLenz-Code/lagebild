@@ -19,6 +19,7 @@ import type {
   Airport,
   Vessel,
   AprsStation,
+  WindPoint,
 } from '@lagebild/shared';
 import { fetchAircraftDetails, type Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
@@ -27,7 +28,7 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
-import { ensureMapIcons } from './mapIcons.js';
+import { ensureMapIcons, windClass, WIND_CLASSES } from './mapIcons.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
 import { AprsTargets } from './AprsTargets.js';
 import { loadTargets, saveTargets } from './aprsStore.js';
@@ -323,6 +324,28 @@ function aprsToGeoJson(list: AprsStation[]): GeoJSON.FeatureCollection {
   };
 }
 
+/**
+ * Windpfeile. Die Richtung ist meteorologisch (woher der Wind weht) — das
+ * Symbol zeigt aber dorthin, wohin er weht, deshalb + 180°.
+ */
+function windToGeoJson(points: WindPoint[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: points.map((p, i) => ({
+      type: 'Feature',
+      id: i,
+      properties: {
+        icon: `wind-${windClass(p.speedKmh)}`,
+        rotate: (p.directionDeg + 180) % 360,
+        label: `${p.speedKmh}`,
+        // Schwacher Wind bekommt einen kleineren Pfeil.
+        size: p.speedKmh < 12 ? 0.5 : p.speedKmh < 29 ? 0.62 : 0.74,
+      },
+      geometry: { type: 'Point', coordinates: [p.coordinates.lon, p.coordinates.lat] },
+    })),
+  };
+}
+
 function markerEl(color: string, size = 16, ring = false): HTMLDivElement {
   const el = document.createElement('div');
   el.className = ring ? 'mk mk-user' : 'mk';
@@ -345,6 +368,7 @@ interface Props {
   aircraft: Aircraft[];
   vessels: Vessel[];
   aprs: AprsStation[];
+  wind: WindPoint[];
   flowAvailable: boolean;
   /** true, wenn der Server einen AIS-Stream hat (sonst keine Schiffs-Ebene). */
   aisAvailable: boolean;
@@ -363,22 +387,28 @@ export interface ActiveLayers {
   aircraft: boolean;
   vessels: boolean;
   aprs: boolean;
+  wind: boolean;
   /** Beobachtete APRS-Rufzeichen (aprs.fi kennt keine Umkreissuche). */
   aprsTargets: string[];
 }
 
 /** Alle umschaltbaren Kartenebenen. */
-type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'night';
+type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night';
 
 /**
  * Darstellung der Symbol-Ebenen. Flugzeuge erst ab Zoom 6, weil das ADS-B-Netz
  * nur einen Umkreis um die Kartenmitte liefert; APRS ist eine kurze
  * Beobachtungsliste und darf deshalb immer mit Beschriftung erscheinen.
  */
-const SYMBOL_STYLE: Record<'aircraft' | 'vessels' | 'aprs', { size: number; minzoom: number; labelZoom: number }> = {
+const SYMBOL_STYLE: Record<
+  'aircraft' | 'vessels' | 'aprs' | 'wind',
+  { size: number | ['get', string]; minzoom: number; labelZoom: number }
+> = {
   aircraft: { size: 0.62, minzoom: 6, labelZoom: 9 },
   vessels: { size: 0.5, minzoom: 5, labelZoom: 9 },
   aprs: { size: 0.55, minzoom: 0, labelZoom: 0 },
+  // Pfeilgröße steckt in den Daten (schwacher Wind = kleinerer Pfeil).
+  wind: { size: ['get', 'size'], minzoom: 0, labelZoom: 7 },
 };
 
 const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
@@ -390,6 +420,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   aircraft: false,
   vessels: false,
   aprs: false,
+  wind: false,
   night: false,
 };
 
@@ -404,6 +435,7 @@ export function LageMap({
   aircraft,
   vessels,
   aprs,
+  wind,
   flowAvailable,
   aisAvailable,
   aprsAvailable,
@@ -436,6 +468,7 @@ export function LageMap({
     aircraft: showAircraft,
     vessels: showVessels,
     aprs: showAprs,
+    wind: showWind,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -467,9 +500,10 @@ export function LageMap({
         aircraft: showAircraft,
         vessels: showVessels,
         aprs: showAprs,
+        wind: showWind,
         aprsTargets,
       }),
-    [showRadar, showAircraft, showVessels, showAprs, aprsTargets, onLayersChange],
+    [showRadar, showAircraft, showVessels, showAprs, showWind, aprsTargets, onLayersChange],
   );
 
   // Nachschlagetabellen für die Klick-Popups
@@ -924,6 +958,7 @@ export function LageMap({
       ['aircraft', showAircraft, aircraftToGeoJson(aircraft)],
       ['vessels', showVessels, vesselsToGeoJson(vessels)],
       ['aprs', showAprs, aprsToGeoJson(aprs)],
+      ['wind', showWind, windToGeoJson(wind)],
     ] as const) {
       if (!visible) {
         if (map.getLayer(id)) map.removeLayer(id);
@@ -963,7 +998,7 @@ export function LageMap({
         },
       });
     }
-  }, [showAircraft, showVessels, showAprs, aircraft, vessels, aprs, ready, styleEpoch, iconEpoch]);
+  }, [showAircraft, showVessels, showAprs, showWind, aircraft, vessels, aprs, wind, ready, styleEpoch, iconEpoch]);
 
   // Eigene Markierungen: Quelle + Layer anlegen (oberste Ebene)
   useEffect(() => {
@@ -1064,6 +1099,7 @@ export function LageMap({
   const layerOptions: LayerOption[] = [
     { id: 'warnings', label: 'Warnungen', color: SEVERITY_COLOR.severe, group: 'Gefahren', active: showWarnings },
     { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', active: showRadar },
+    { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Pfeilfeld, 10 m über Grund', active: showWind },
     { id: 'night', label: 'Tag/Nacht', color: '#0b1a33', group: 'Wetter', hint: 'Dämmerungsgrenze', active: showNight },
     ...(flowAvailable
       ? [
@@ -1204,6 +1240,19 @@ export function LageMap({
                   {SEVERITY_DE[s]}
                 </button>
               ))}
+            </div>
+          )}
+          {showWind && (
+            <div className="legend" aria-label="Windstärke">
+              <span className="legend-title">Wind km/h</span>
+              <div className="radar-scale">
+                {WIND_CLASSES.map((c, i) => (
+                  <span key={c.id} className="rs-step" title={c.label}>
+                    <i style={{ background: c.color }} />
+                    {c.max === Infinity ? `>${WIND_CLASSES[i - 1]!.max}` : `<${c.max}`}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
           {showRadar && useDwd && (

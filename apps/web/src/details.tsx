@@ -1,3 +1,4 @@
+import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type {
   Coords,
   WeatherNow,
@@ -69,7 +70,7 @@ export function WeatherDetail({
         </div>
       </div>
 
-      {forecast && forecast.hourly.length > 0 && <HourlyForecast hourly={forecast.hourly} />}
+      {forecast && forecast.hourly.length > 0 && <HourlyForecast hourly={forecast.hourly} coords={coords} />}
       {forecast && forecast.daily.length > 0 && <DailyList daily={forecast.daily} />}
       {air && <AirSection air={air} />}
     </>
@@ -105,25 +106,61 @@ function AirSection({ air }: { air: AirQuality }) {
 }
 
 const COL_W = 54;
-/** Höhe des Temperaturbands (inkl. Platz für die Wertebeschriftung). */
-const TEMP_H = 62;
-/** Höhe des Regenbands: oben die Wahrscheinlichkeit, unten die Menge. */
-const RAIN_H = 94;
+/** Bänder des Diagramms (gemeinsame Zeitachse, deshalb feste Höhen). */
+const TEMP_H = 60;
+const RAIN_H = 98;
 const PROB_TOP = 4;
-// Genug Höhe, damit sich 10 % und 50 % deutlich unterscheiden.
 const PROB_H = 26;
-const RAIN_BASE = RAIN_H - 14;
-/** Platz, der den Mengenbalken bleibt (Beschriftung eingerechnet). */
+const RAIN_BASE = RAIN_H - 16;
+/** Platz für die Mengenbalken samt Beschriftung. */
 const BAR_MAX = RAIN_BASE - (PROB_TOP + PROB_H) - 10;
 
 /**
- * Die nächsten 24 Stunden in einem Bild: Symbol, Temperaturkurve und Regen
- * teilen sich dieselbe Zeitachse und scrollen gemeinsam. So ist auf einen
- * Blick zu sehen, ob der Regen in die kühle Nacht oder in den warmen
- * Nachmittag fällt.
+ * Regenstärke in Stufen — Farben und Schwellen wie in der Radar-Legende,
+ * damit Vorhersage und Radarbild dieselbe Sprache sprechen (mm pro Stunde).
  */
-function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
+const RAIN_STEPS: { max: number; color: string; label: string }[] = [
+  { max: 0.5, color: '#96c8ff', label: 'leicht' },
+  { max: 2.5, color: '#5aa0f0', label: 'mäßig' },
+  { max: 10, color: '#2873d2', label: 'stark' },
+  { max: Infinity, color: '#cd2d23', label: 'sehr stark' },
+];
+const rainStep = (mm: number) => RAIN_STEPS.find((s) => mm < s.max) ?? RAIN_STEPS[RAIN_STEPS.length - 1]!;
+/** Ab diesem Wert gilt eine Stunde als „nass". */
+const WET_MM = 0.1;
+
+const num = (v: number) => v.toString().replace('.', ',');
+const hourOf = (iso: string) => new Date(iso).getHours();
+
+/** Zusammenhängende Regenphasen für die Klartext-Zusammenfassung. */
+function rainWindows(hours: WeatherForecast['hourly']): { from: string; to: string; mm: number }[] {
+  const windows: { from: string; to: string; mm: number }[] = [];
+  let current: { from: string; to: string; mm: number } | null = null;
+  for (const h of hours) {
+    const mm = h.precipitationMm ?? 0;
+    if (mm >= WET_MM) {
+      if (current) {
+        current.to = h.time;
+        current.mm += mm;
+      } else current = { from: h.time, to: h.time, mm };
+    } else if (current) {
+      windows.push(current);
+      current = null;
+    }
+  }
+  if (current) windows.push(current);
+  return windows;
+}
+
+/**
+ * Die nächsten 24 Stunden in einem Bild: Wettersymbol, Temperaturkurve und
+ * Regen teilen sich eine Zeitachse. Nachtstunden sind hinterlegt, eine Marke
+ * zeigt „jetzt", und beim Antippen einer Stunde stehen alle Werte im Klartext
+ * darüber — so wie man es von Wetter-Apps kennt.
+ */
+function HourlyForecast({ hourly, coords }: { hourly: WeatherForecast['hourly']; coords: Coords }) {
   const hours = hourly.slice(0, 24);
+  const [picked, setPicked] = useState<number | null>(null);
   const width = hours.length * COL_W;
   const mid = (i: number) => i * COL_W + COL_W / 2;
 
@@ -132,7 +169,7 @@ function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
   const lo = Math.min(...temps);
   const hi = Math.max(...temps);
   const span = hi - lo || 1;
-  const tempY = (t: number) => TEMP_H - 8 - ((t - lo) / span) * (TEMP_H - 30);
+  const tempY = (t: number) => TEMP_H - 8 - ((t - lo) / span) * (TEMP_H - 28);
   const tempLine = hours
     .map((h, i) => (h.tempC != null ? `${mid(i)},${tempY(h.tempC)}` : null))
     .filter(Boolean)
@@ -144,21 +181,50 @@ function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
   const peak = Math.max(...amounts);
   // Maßstab mindestens 1 mm, damit Nieselregen nicht wie Starkregen aussieht.
   const scale = Math.max(1, peak);
-  const firstWet = hours.find((h) => (h.precipitationMm ?? 0) >= 0.1);
   const maxProb = Math.max(0, ...hours.map((h) => h.precipitationProbabilityPct ?? 0));
   const probY = (p: number) => PROB_TOP + PROB_H - (p / 100) * PROB_H;
   const probLine = hours.map((h, i) => `${mid(i)},${probY(h.precipitationProbabilityPct ?? 0)}`).join(' ');
-  const num = (v: number) => v.toString().replace('.', ',');
+  const windows = rainWindows(hours);
+
+  // --- Nachtstunden und Jetzt-Marke ---
+  const night = hours.map((h) => sunAltitude(new Date(h.time), coords.lat, coords.lon) < -0.833);
+  const firstTime = hours[0] ? new Date(hours[0].time).getTime() : Date.now();
+  const nowX = ((Date.now() - firstTime) / 3600000) * COL_W + COL_W / 2;
+  const nowVisible = nowX >= 0 && nowX <= width;
+
+  const shown = picked != null ? hours[picked] : null;
+
+  /** Spalte unter dem Zeiger bestimmen (Maus wie Touch). */
+  const pick = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const i = Math.floor((e.clientX - box.left) / COL_W);
+    setPicked(i >= 0 && i < hours.length ? i : null);
+  };
+
+  const nightBands = (height: number) =>
+    hours.map((h, i) =>
+      night[i] ? <rect key={h.time} x={i * COL_W} y={0} width={COL_W} height={height} className="wx-night" /> : null,
+    );
 
   return (
     <>
       <h4 className="sec-title">Nächste 24 Stunden</h4>
+
       <div className="rain-sum">
         {total > 0 ? (
           <>
-            <b>{num(total)} mm Regen</b> erwartet
-            {firstWet && <> · ab {hourLabel(firstWet.time)}</>}
-            {peak > 0 && <> · Spitze {num(peak)} mm/h</>}
+            <b>
+              {windows
+                .slice(0, 2)
+                .map((wnd) =>
+                  hourOf(wnd.from) === hourOf(wnd.to)
+                    ? `Regen um ${hourOf(wnd.from)} Uhr`
+                    : `Regen ${hourOf(wnd.from)}–${hourOf(wnd.to) + 1} Uhr`,
+                )
+                .join(', ')}
+              {windows.length > 2 && ' u. a.'}
+            </b>{' '}
+            · {num(total)} mm gesamt · Spitze {num(peak)} mm/h ({rainStep(peak).label})
           </>
         ) : (
           <>
@@ -166,20 +232,47 @@ function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
             {maxProb > 0 && <> · höchste Wahrscheinlichkeit {maxProb} %</>}
           </>
         )}
-        {temps.length > 0 && (
+      </div>
+
+      {/* Werte der angetippten Stunde — sonst die Spanne des Zeitraums. */}
+      <div className="wx-readout" aria-live="polite">
+        {shown ? (
           <>
-            {' '}
-            · {Math.round(hi)}° bis {Math.round(lo)}°
+            <b>{hourLabel(shown.time)}</b>
+            <span>{shown.tempC != null ? `${Math.round(shown.tempC)}°` : '–'}</span>
+            <span>
+              {(shown.precipitationMm ?? 0) > 0 ? `${num(shown.precipitationMm ?? 0)} mm` : 'trocken'}
+              {shown.precipitationProbabilityPct != null && ` · ${shown.precipitationProbabilityPct} %`}
+            </span>
+            <span>
+              Wind {shown.windKmh != null ? `${Math.round(shown.windKmh)} km/h` : '–'}
+              {shown.windGustKmh != null && ` (Böen ${Math.round(shown.windGustKmh)})`}
+            </span>
+            <span className="muted-note">{shown.condition ? (CONDITION_DE[shown.condition] ?? '') : ''}</span>
           </>
+        ) : (
+          <span className="muted-note">
+            Stunde antippen für Details · Temperatur {Math.round(lo)}° bis {Math.round(hi)}°
+          </span>
         )}
       </div>
 
       <div className="wx-hours">
-        <div className="wx-hours-inner" style={{ width }}>
+        <div
+          className="wx-hours-inner"
+          style={{ width }}
+          onPointerMove={pick}
+          onPointerDown={pick}
+          onPointerLeave={() => setPicked(null)}
+        >
           {/* Stunde + Wettersymbol */}
           <div className="wx-hourrow">
-            {hours.map((h) => (
-              <div className="wx-hour" key={h.time} style={{ width: COL_W }}>
+            {hours.map((h, i) => (
+              <div
+                className={`wx-hour${night[i] ? ' is-night' : ''}${picked === i ? ' is-picked' : ''}`}
+                key={h.time}
+                style={{ width: COL_W }}
+              >
                 <span className="hh">{hourLabel(h.time)}</span>
                 <WeatherIcon icon={h.icon} condition={h.condition} size={26} />
               </div>
@@ -188,6 +281,8 @@ function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
 
           {/* Temperaturkurve */}
           <svg width={width} height={TEMP_H} className="wx-curve" role="img" aria-label="Temperaturverlauf">
+            {nightBands(TEMP_H)}
+            {picked != null && <rect x={picked * COL_W} y={0} width={COL_W} height={TEMP_H} className="wx-pick" />}
             <polyline points={tempLine} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" />
             {hours.map((h, i) =>
               h.tempC != null ? (
@@ -199,12 +294,15 @@ function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
                 </g>
               ) : null,
             )}
+            {nowVisible && <line x1={nowX} y1={0} x2={nowX} y2={TEMP_H} className="wx-now" />}
           </svg>
 
-          {/* Regen: Wahrscheinlichkeit als Linie, Menge als Balken */}
+          {/* Regen: Wahrscheinlichkeit als Linie, Menge als Balken nach Stärke gefärbt */}
           <svg width={width} height={RAIN_H} className="rain-chart" role="img" aria-label="Regenmenge und Regenwahrscheinlichkeit">
-            <line x1={0} y1={probY(50)} x2={width} y2={probY(50)} stroke="var(--line)" strokeWidth={1} strokeDasharray="3 3" />
-            <line x1={0} y1={RAIN_BASE} x2={width} y2={RAIN_BASE} stroke="var(--line)" strokeWidth={1} />
+            {nightBands(RAIN_BASE)}
+            {picked != null && <rect x={picked * COL_W} y={0} width={COL_W} height={RAIN_BASE} className="wx-pick" />}
+            <line x1={0} y1={probY(50)} x2={width} y2={probY(50)} className="wx-guide" />
+            <line x1={0} y1={RAIN_BASE} x2={width} y2={RAIN_BASE} stroke="var(--line-strong)" strokeWidth={1} />
             <polygon points={`0,${probY(0)} ${probLine} ${width},${probY(0)}`} fill="var(--sev1)" opacity={0.12} />
             <polyline points={probLine} fill="none" stroke="var(--sev1)" strokeWidth={1.8} strokeLinejoin="round" />
             {hours.map((h, i) => {
@@ -215,8 +313,14 @@ function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
                 <g key={h.time}>
                   {height > 0 && (
                     <>
-                      <rect x={mid(i) - 7} y={RAIN_BASE - height} width={14} height={height} rx={2} fill="var(--accent)" />
-                      {/* Menge nur beschriften, wenn sie ins Gewicht fällt. */}
+                      <rect
+                        x={mid(i) - 8}
+                        y={RAIN_BASE - height}
+                        width={16}
+                        height={height}
+                        rx={2}
+                        fill={rainStep(mm).color}
+                      />
                       {mm >= scale / 3 && (
                         <text x={mid(i)} y={RAIN_BASE - height - 3} textAnchor="middle" className="rain-mm">
                           {num(Math.round(mm * 10) / 10)}
@@ -225,26 +329,38 @@ function HourlyForecast({ hourly }: { hourly: WeatherForecast['hourly'] }) {
                     </>
                   )}
                   {prob != null && i % 3 === 0 && (
-                    <text x={mid(i)} y={RAIN_H - 3} textAnchor="middle" className="rain-tick">
+                    <text x={mid(i)} y={RAIN_H - 4} textAnchor="middle" className="rain-tick">
                       {prob} %
                     </text>
                   )}
                 </g>
               );
             })}
+            {nowVisible && (
+              <>
+                <line x1={nowX} y1={0} x2={nowX} y2={RAIN_BASE} className="wx-now" />
+                <text x={nowX + 4} y={11} className="wx-now-label">
+                  jetzt
+                </text>
+              </>
+            )}
           </svg>
         </div>
       </div>
 
       <div className="rain-legend">
         <span>
-          <i className="line acc" /> Temperatur ({Math.round(lo)}–{Math.round(hi)} °C)
+          <i className="line acc" /> Temperatur
         </span>
+        {RAIN_STEPS.map((s, i) => (
+          <span key={s.label}>
+            <i className="bar" style={{ background: s.color }} />
+            {s.label}
+            {s.max === Infinity ? ` (> ${num(RAIN_STEPS[i - 1]!.max)} mm/h)` : ` (< ${num(s.max)} mm/h)`}
+          </span>
+        ))}
         <span>
-          <i className="bar" /> Regenmenge in mm{peak > 0 && ` (max. ${num(scale)})`}
-        </span>
-        <span>
-          <i className="line" /> Regenwahrscheinlichkeit, gestrichelt = 50 %
+          <i className="line" /> Regenwahrscheinlichkeit (gestrichelt = 50 %)
         </span>
       </div>
     </>
