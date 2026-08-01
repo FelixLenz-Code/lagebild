@@ -703,11 +703,18 @@ svg { display: block; }
 .tp-legs li.is-walk .tp-when { color: var(--muted); font-weight: 600; }
 .tp-legs li.tp-end .tp-head b { font-size: .86rem; }
 
-/* Pegel-Popup mit Verlaufskurve */
+/* Pegel-Popup mit Verlaufskurve.
+   Popups sind in beiden Themen hell — deshalb feste Farben statt der
+   Theme-Variablen, die im Dunkelmodus hell würden. */
+.pegel-popup .wp-rows { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin-top: 6px; font-size: .78rem; }
+.pegel-popup .ac-k { color: #6a7580; }
+.pegel-popup .ac-v { color: #14181c; font-weight: 600; }
 .pegel-popup .pg-spark { display: block; margin: 8px 0 2px; }
-.pegel-popup .pg-axis { display: flex; justify-content: space-between; gap: 8px; font-size: .64rem; color: var(--faint); }
-.pegel-popup .pg-trend { font-size: .74rem; font-weight: 600; margin-top: 4px; }
-.pegel-popup .pg-trend.rising { color: var(--sev2); }
-.pegel-popup .pg-trend.falling { color: var(--ok); }
-.pegel-popup .pg-trend.steady { color: var(--muted); }
-.pegel-popup .pg-note { font-size: .74rem; color: var(--muted); margin: 8px 0 2px; }
+.pegel-popup .pg-axis { display: flex; justify-content: space-between; gap: 12px; font-size: .66rem; color: #6a7580; white-space: nowrap; }
+.pegel-popup .pg-range { font-size: .66rem; color: #6a7580; margin-top: 1px; }
+.pegel-popup .pg-trend { font-size: .75rem; font-weight: 650; margin-top: 5px; }
+.pegel-popup .pg-trend.rising { color: #b45309; }
+.pegel-popup .pg-trend.falling { color: #2c7448; }
+.pegel-popup .pg-trend.steady { color: #6a7580; }
+.pegel-popup .pg-note { font-size: .74rem; color: #6a7580; margin: 8px 0 2px; }
+.pegel-popup .wp-time { font-size: .7rem; color: #6a7580; margin-top: 4px; }

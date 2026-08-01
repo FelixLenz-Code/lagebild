@@ -144,9 +144,9 @@ function pegelSparkline(h: WaterLevelHistory): string {
   const lastY = y(pts[pts.length - 1]!.v).toFixed(1);
   return (
     `<svg class="pg-spark" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" aria-hidden="true">` +
-    `<path d="${area}" fill="color-mix(in srgb, var(--accent) 16%, transparent)"/>` +
-    `<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>` +
-    `<circle cx="${lastX}" cy="${lastY}" r="3" fill="var(--accent)"/>` +
+    `<path d="${area}" fill="rgba(29,78,115,.14)"/>` +
+    `<path d="${line}" fill="none" stroke="#1d4e73" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>` +
+    `<circle cx="${lastX}" cy="${lastY}" r="3" fill="#1d4e73"/>` +
     `</svg>`
   );
 }
@@ -173,11 +173,11 @@ function pegelPopupHtml(p: WaterLevel, history?: WaterLevelHistory | null, loadi
   } else if (history && history.points.length > 1) {
     const first = history.points[0]!;
     const last = history.points[history.points.length - 1]!;
+    // Zeitachse und Spannweite in eigene Zeilen — nebeneinander wird es zu eng.
     chart =
       pegelSparkline(history) +
-      `<div class="pg-axis"><span>${formatDateTime(first.t)}</span>` +
-      `<span>min ${Math.round(history.minCm)} · max ${Math.round(history.maxCm)} cm</span>` +
-      `<span>${timeHM(last.t)}</span></div>`;
+      `<div class="pg-axis"><span>${formatDateTime(first.t)}</span><span>${timeHM(last.t)}</span></div>` +
+      `<div class="pg-range">Spanne ${Math.round(history.minCm)}–${Math.round(history.maxCm)} cm</div>`;
   } else if (history) {
     chart = '<div class="pg-note">Kein Verlauf verfügbar.</div>';
   }
