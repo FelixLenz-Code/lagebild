@@ -8,6 +8,8 @@ export interface LayerOption {
   group: string;
   hint?: string;
   active: boolean;
+  /** Eingerückte Unteroption, die zu der Ebene darüber gehört. */
+  sub?: boolean;
   /** Zusätzlicher Knopf in der Zeile (z. B. „Rufzeichen verwalten"). */
   onEdit?: () => void;
   editLabel?: string;
@@ -76,7 +78,7 @@ export function LayerMenu(props: {
               {props.options
                 .filter((o) => o.group === group)
                 .map((o) => (
-                  <div className="lm-row" key={o.id}>
+                  <div className={`lm-row${o.sub ? ' is-sub' : ''}`} key={o.id}>
                     <button
                       type="button"
                       className="lm-item"

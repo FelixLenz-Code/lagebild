@@ -82,16 +82,19 @@ export function App() {
     };
   }, []);
 
+  // Hochzählen löst jede Abfrage neu aus — der Aktualisieren-Knopf steckt darin.
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const geoKey = `${coords.lat.toFixed(3)},${coords.lon.toFixed(3)}`;
   const viewKey = bboxKey(viewport);
-  const weather = useApi(`weather:${geoKey}`, () => fetchWeather(coords), [coords]);
-  const forecast = useApi(`forecast:${geoKey}`, () => fetchForecast(coords), [coords]);
-  const warnings = useApi(`warnings:${viewKey}`, () => fetchWarnings(viewport), [viewKey]);
-  const traffic = useApi(`traffic:${viewKey}`, () => fetchTraffic(viewport), [viewKey]);
-  const pegel = useApi(`pegel:${viewKey}`, () => fetchPegel(viewport), [viewKey]);
-  const air = useApi(`air:${geoKey}`, () => fetchAir(coords), [coords]);
-  const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords]);
-  const radar = useApi('radar', () => fetchRadar());
+  const weather = useApi(`weather:${geoKey}`, () => fetchWeather(coords), [coords, refreshTick]);
+  const forecast = useApi(`forecast:${geoKey}`, () => fetchForecast(coords), [coords, refreshTick]);
+  const warnings = useApi(`warnings:${viewKey}`, () => fetchWarnings(viewport), [viewKey, refreshTick]);
+  const traffic = useApi(`traffic:${viewKey}`, () => fetchTraffic(viewport), [viewKey, refreshTick]);
+  const pegel = useApi(`pegel:${viewKey}`, () => fetchPegel(viewport), [viewKey, refreshTick]);
+  const air = useApi(`air:${geoKey}`, () => fetchAir(coords), [coords, refreshTick]);
+  const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords, refreshTick]);
+  const radar = useApi('radar', () => fetchRadar(), [refreshTick]);
   // Live-Ebenen laden nur, solange sie auf der Karte eingeschaltet sind.
   const [layers, setLayers] = useState<ActiveLayers>({
     radar: false,
@@ -104,19 +107,19 @@ export function App() {
   const radarForecast = useApi(
     `radar-forecast:${geoKey}`,
     () => fetchRadarForecast(coords),
-    [coords],
+    [coords, refreshTick],
     { enabled: layers.radar },
   );
   // Das ADS-B-Netz liefert nur einen Umkreis um die Kartenmitte — bei sehr
   // weitem Ausschnitt wäre das Bild irreführend, also gar nicht erst abfragen.
   const wideViewport = viewport.east - viewport.west > 8;
   // Flug- und Schiffspositionen veralten in Sekunden — pollen, nicht cachen.
-  const aircraft = useApi(`aircraft:${viewKey}`, () => fetchAircraft(viewport), [viewKey], {
+  const aircraft = useApi(`aircraft:${viewKey}`, () => fetchAircraft(viewport), [viewKey, refreshTick], {
     enabled: layers.aircraft && !wideViewport,
     refreshMs: 15000,
     cache: false,
   });
-  const vessels = useApi(`vessels:${viewKey}`, () => fetchVessels(viewport), [viewKey], {
+  const vessels = useApi(`vessels:${viewKey}`, () => fetchVessels(viewport), [viewKey, refreshTick], {
     enabled: layers.vessels,
     refreshMs: 20000,
     cache: false,
@@ -124,24 +127,24 @@ export function App() {
   // APRS fragt gezielt Rufzeichen ab (kein Ausschnitt) — aprs.fi bittet um
   // sparsame Abrufe, deshalb nur bei aktiver Ebene und im Minutentakt.
   const aprsKey = layers.aprsTargets.join(',');
-  const aprs = useApi(`aprs:${aprsKey}`, () => fetchAprs(layers.aprsTargets), [aprsKey], {
+  const aprs = useApi(`aprs:${aprsKey}`, () => fetchAprs(layers.aprsTargets), [aprsKey, refreshTick], {
     enabled: layers.aprs && layers.aprsTargets.length > 0,
     refreshMs: 60000,
     cache: false,
   });
   // Windfeld folgt dem Ausschnitt; das Modell rechnet stündlich, 10 min reichen.
-  const wind = useApi(`wind:${viewKey}`, () => fetchWind(viewport), [viewKey], {
+  const wind = useApi(`wind:${viewKey}`, () => fetchWind(viewport), [viewKey, refreshTick], {
     enabled: layers.wind,
     refreshMs: 600000,
     cache: false,
   });
-  const news = useApi('news', () => fetchNews());
-  const health = useApi('health', () => fetchHealth());
+  const news = useApi('news', () => fetchNews(), [refreshTick]);
+  const health = useApi('health', () => fetchHealth(), [refreshTick]);
   const flowAvailable = health.data?.features?.flow ?? false;
   const aisAvailable = health.data?.features?.ais ?? false;
   const aprsAvailable = health.data?.features?.aprs ?? false;
 
-  const maps = useApi('maps', () => fetchMaps());
+  const maps = useApi('maps', () => fetchMaps(), [refreshTick]);
   const availableMap: Record<string, number> = Object.fromEntries(
     (maps.data?.data ?? []).map((m) => [m.code, m.bytes]),
   );
@@ -175,6 +178,16 @@ export function App() {
 
   const lastSync = weather.savedAt;
   const anyCached = [weather, warnings, traffic, pegel, air, transit, news].some((s) => s.fromCache);
+  const anyLoading = [weather, forecast, warnings, traffic, pegel, air, transit, radar, news].some(
+    (s) => s.loading,
+  );
+
+  /** Alles neu holen — nur sinnvoll, solange eine Verbindung besteht. */
+  const refreshAll = useCallback(() => {
+    if (!navigator.onLine) return;
+    setRefreshTick((n) => n + 1);
+    refreshOffline();
+  }, [refreshOffline]);
 
   const [detail, setDetail] = useState<DetailKey | null>(null);
 
@@ -228,6 +241,21 @@ export function App() {
           <span className="pl-name">{place}</span>
           <svg className="pl-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          className={`iconbtn${anyLoading ? ' is-busy' : ''}`}
+          onClick={refreshAll}
+          disabled={!online}
+          title={online ? 'Alle Daten aktualisieren' : 'Ohne Verbindung nicht möglich'}
+          aria-label="Alle Daten aktualisieren"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 11a8 8 0 0 0-14-4.5L4 9" />
+            <path d="M4 13a8 8 0 0 0 14 4.5L20 15" />
+            <path d="M4 4v5h5M20 20v-5h-5" />
           </svg>
         </button>
 

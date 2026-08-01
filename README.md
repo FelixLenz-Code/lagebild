@@ -57,6 +57,9 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 Flug- und Schiffspositionen werden nur geladen, solange ihre Ebene an ist, und
 bewusst **nicht** offline gespeichert — sie veralten in Sekunden.
 
+Der Knopf mit den Kreispfeilen in der Kopfzeile holt **alle** Datensätze neu;
+ohne Verbindung ist er gesperrt, und solange Abfragen laufen, dreht er sich.
+
 Flugzeuge tragen die Silhouette ihrer Musterklasse (Kleinflugzeug, Jet,
 Großraum, Hubschrauber, Segelflug — aus der ADS-B-Kategorie abgeleitet), gefärbt
 nach Zustand (in der Luft, am Boden, Notfall-Squawk). Das Popup zeigt Höhe samt
@@ -83,8 +86,9 @@ Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
   daraus ein **Strömungsbild**: Hunderte Teilchen treiben über ein eigenes
   Canvas mit dem Wind und ziehen verblassende Spuren; zwischen den
   Gitterpunkten wird bilinear interpoliert, die Farbe zeigt die Stärke
-  (Beaufort-nah). An den Gitterpunkten steht zusätzlich der Zahlenwert in
-  km/h. Bei `prefers-reduced-motion` bleibt das Bild stehen. Freie
+  (Beaufort-nah). Die Zahlenwerte in km/h an den Gitterpunkten lassen sich im
+  Menü als Unterpunkt „Windwerte" zuschalten (standardmäßig aus). Bei
+  `prefers-reduced-motion` bleibt das Bild stehen. Freie
   Wind-Kacheldienste gibt es nicht, das Gitter ist der praktikable Weg.
 * **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
   (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von

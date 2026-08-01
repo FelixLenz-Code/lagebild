@@ -333,7 +333,12 @@ function windLabelsToGeoJson(points: WindPoint[]): GeoJSON.FeatureCollection {
     features: points.map((p, i) => ({
       type: 'Feature',
       id: i,
-      properties: { label: `${p.speedKmh}`, color: WIND_CLASSES.find((c) => p.speedKmh < c.max)?.color ?? '#1f2933' },
+      properties: {
+        label: `${p.speedKmh}`,
+        // Dunkle Schrift mit hellem Rand liest sich auf jedem Untergrund;
+        // die Stärke steckt ohnehin in der Farbe der Strömungslinien.
+        color: p.speedKmh >= 50 ? '#8f1d14' : '#1f2933',
+      },
       geometry: { type: 'Point', coordinates: [p.coordinates.lon, p.coordinates.lat] },
     })),
   };
@@ -467,6 +472,9 @@ export function LageMap({
   const [iconEpoch, setIconEpoch] = useState(0);
   const [aprsTargets, setAprsTargets] = useState<string[]>(() => loadTargets());
   const [aprsOpen, setAprsOpen] = useState(false);
+  // Anzeigeoption der Windebene, keine eigene Ebene — bleibt von „Alle aus"
+  // unberührt und startet wie die Ebenen selbst ausgeschaltet.
+  const [windLabels, setWindLabels] = useState(false);
   useEffect(() => saveTargets(aprsTargets), [aprsTargets]);
   const [drawFeatures, setDrawFeatures] = useState<DrawFeature[]>(() => loadDraw());
   const [drawMode, setDrawMode] = useState<DrawMode>('off');
@@ -1036,7 +1044,7 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    if (!showWind || windField.points.length === 0) {
+    if (!showWind || !windLabels || windField.points.length === 0) {
       if (map.getLayer('wind-labels')) map.removeLayer('wind-labels');
       if (map.getSource('wind-labels')) map.removeSource('wind-labels');
       return;
@@ -1062,10 +1070,11 @@ export function LageMap({
       paint: {
         'text-color': ['get', 'color'],
         'text-halo-color': '#ffffff',
-        'text-halo-width': 1.6,
+        'text-halo-width': 2,
+        'text-halo-blur': 0.4,
       },
     });
-  }, [showWind, windField, ready, styleEpoch]);
+  }, [showWind, windLabels, windField, ready, styleEpoch]);
 
   // Eigene Markierungen: Quelle + Layer anlegen (oberste Ebene)
   useEffect(() => {
@@ -1166,7 +1175,20 @@ export function LageMap({
   const layerOptions: LayerOption[] = [
     { id: 'warnings', label: 'Warnungen', color: SEVERITY_COLOR.severe, group: 'Gefahren', active: showWarnings },
     { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', active: showRadar },
-    { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Pfeilfeld, 10 m über Grund', active: showWind },
+    { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Strömungsbild, 10 m über Grund', active: showWind },
+    ...(showWind
+      ? [
+          {
+            id: 'wind-labels',
+            label: 'Windwerte',
+            color: '#2c7448',
+            group: 'Wetter',
+            hint: 'km/h an den Gitterpunkten',
+            active: windLabels,
+            sub: true,
+          } satisfies LayerOption,
+        ]
+      : []),
     { id: 'night', label: 'Tag/Nacht', color: '#0b1a33', group: 'Wetter', hint: 'Dämmerungsgrenze', active: showNight },
     ...(flowAvailable
       ? [
@@ -1211,7 +1233,9 @@ export function LageMap({
             options={layerOptions}
             open={menuOpen}
             onOpenChange={setMenuOpen}
-            onToggle={(id) => toggleLayer(id as LayerId)}
+            onToggle={(id) =>
+              id === 'wind-labels' ? setWindLabels((v) => !v) : toggleLayer(id as LayerId)
+            }
             onAllOff={() => setOn({ ...ALL_LAYERS_OFF })}
             footer={
               <span className="lm-credit">
