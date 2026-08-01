@@ -28,6 +28,16 @@ const SHIP = 'M16 2.4c2.6 3 4.2 6.6 4.2 10.6v12.8c0 2.1-1.5 3.8-4.2 3.8s-4.2-1.7
 const ARROW = 'M16 3.5 25 27l-9-5.4L7 27 16 3.5Z';
 /** Ortsfeste APRS-Station: Antennenmast. */
 const MAST = 'M16 6a4 4 0 0 1 4 4c0 1.6-1 3-2.4 3.6L20 27h-3l-1-8-1 8h-3l2.4-13.4A4 4 0 0 1 16 6Z';
+/* Haltestellen-Symbole: weißes Piktogramm auf farbigem Kreis — das trägt auch
+   bei 10 Pixeln noch, anders als feine Strichzeichnungen. */
+const GLYPH_BUS =
+  'M11.2 9.6h9.6c1 0 1.7.8 1.7 1.7v8.3c0 .7-.4 1.3-1 1.6v1.3h-2.1v-1.1h-6.8v1.1h-2.1v-1.3c-.6-.3-1-.9-1-1.6v-8.3c0-.9.7-1.7 1.7-1.7Zm.3 2.2v3.7h9v-3.7Zm1 5.3a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Zm7 0a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Z';
+const GLYPH_TRAM =
+  'M15.4 5.4h1.2v3.6h-1.2ZM11.4 9.4h9.2c1 0 1.8.8 1.8 1.8v8.2c0 .8-.5 1.4-1.2 1.7l1.2 2h-2.1l-1-1.7h-6.6l-1 1.7h-2.1l1.2-2c-.7-.3-1.2-.9-1.2-1.7v-8.2c0-1 .8-1.8 1.8-1.8Zm.2 2.3v3.7h8.8v-3.7Zm.9 5.2a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Zm7 0a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Z';
+const GLYPH_RAIL =
+  'M16 8c-3.7 0-6.2.5-6.2 3.6v6.2c0 1.2.9 2.2 2.1 2.4l-1.7 2.6h2l1.1-1.8h5.4l1.1 1.8h2l-1.7-2.6c1.2-.2 2.1-1.2 2.1-2.4v-6.2C22.2 8.5 19.7 8 16 8Zm-4.4 3.8h8.8v3.6h-8.8Zm1.2 5.2a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Zm6.4 0a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3Z';
+const GLYPH_FERRY =
+  'M13.2 8.6h5.6v2.2h3.1l1.7 5.5c-.9.8-2 1.3-3.2 1.3-1.3 0-2.4-.6-3.2-1.4-.9.8-2 1.4-3.3 1.4-1.2 0-2.3-.5-3.2-1.3l1.7-5.5h3.1Zm-3.4 10c1 .8 2.2 1.3 3.5 1.3 1.3 0 2.4-.5 3.3-1.3.9.8 2 1.3 3.3 1.3 1.3 0 2.5-.5 3.5-1.3l-1 3.4c-.8.4-1.6.6-2.5.6-1.2 0-2.3-.4-3.3-1-.9.6-2 1-3.3 1-.9 0-1.7-.2-2.5-.6Z';
 
 const SIZE = 32;
 const RATIO = 2;
@@ -47,10 +57,26 @@ export const WIND_CLASSES = [
 
 
 function draw(map: MlMap, id: string, path: string, fill: string, stroke: string): Promise<void> {
+  return drawSvg(
+    map,
+    id,
+    `<path d="${path}" fill="${fill}" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round"/>`,
+  );
+}
+
+/** Farbiger Kreis mit weißem Piktogramm — für Haltestellen. */
+function badge(glyph: string, color: string): string {
+  return (
+    `<circle cx="16" cy="16" r="13" fill="${color}" stroke="#ffffff" stroke-width="2.4"/>` +
+    `<path d="${glyph}" fill="#ffffff" fill-rule="evenodd"/>`
+  );
+}
+
+function drawSvg(map: MlMap, id: string, body: string): Promise<void> {
   return new Promise((resolve) => {
     const svg =
       `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE * RATIO}" height="${SIZE * RATIO}" viewBox="0 0 ${SIZE} ${SIZE}">` +
-      `<path d="${path}" fill="${fill}" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+      `${body}</svg>`;
     const img = new Image(SIZE * RATIO, SIZE * RATIO);
     img.onload = () => {
       const canvas = document.createElement('canvas');
@@ -109,9 +135,35 @@ const VARIANTS: Record<string, [string, string, string]> = {
   'aprs-wx': [MAST, '#0d8a8a', '#ffffff'],
 };
 
+/** Haltestellen-Symbole: Art → farbiger Kreis mit Piktogramm. */
+const STOP_BADGES: Record<string, [string, string]> = {
+  bus: [GLYPH_BUS, '#1d4e73'],
+  tram: [GLYPH_TRAM, '#6c2790'],
+  rail: [GLYPH_RAIL, '#a92318'],
+  ferry: [GLYPH_FERRY, '#0d8a8a'],
+  other: [GLYPH_BUS, '#5b5b60'],
+};
+
+/** Art einer Haltestelle → Icon-Name in den Layer-Ausdrücken. */
+export const STOP_ICON: Record<string, string> = {
+  bus: 'stop-bus',
+  tram: 'stop-tram',
+  rail: 'stop-rail',
+  ferry: 'stop-ferry',
+  other: 'stop-other',
+};
+
+/** Farbe je Haltestellenart — auch für Legende und Sheet. */
+export const STOP_COLOR: Record<string, string> = Object.fromEntries(
+  Object.entries(STOP_BADGES).map(([kind, [, color]]) => [kind, color]),
+);
+
 /** Alle Icons in die Karte laden (idempotent, nach jedem Stilwechsel nötig). */
 export async function ensureMapIcons(map: MlMap): Promise<void> {
-  await Promise.all(
-    Object.entries(VARIANTS).map(([id, [path, fill, stroke]]) => draw(map, id, path, fill, stroke)),
-  );
+  await Promise.all([
+    ...Object.entries(VARIANTS).map(([id, [path, fill, stroke]]) => draw(map, id, path, fill, stroke)),
+    ...Object.entries(STOP_BADGES).map(([kind, [glyph, color]]) =>
+      drawSvg(map, STOP_ICON[kind]!, badge(glyph, color)),
+    ),
+  ]);
 }

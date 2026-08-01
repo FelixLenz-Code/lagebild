@@ -171,6 +171,27 @@ export interface RadarForecast {
   frames: RadarForecastFrame[];
 }
 
+/** Ein Halt im Verlauf einer Fahrt. */
+export interface TransitTripStop {
+  name: string;
+  lat: number;
+  lon: number;
+  /** Tatsächliche bzw. geplante Abfahrt (am Ziel: Ankunft). */
+  when: string | null;
+  plannedWhen: string | null;
+  delayMin: number | null;
+  cancelled: boolean;
+}
+
+/** Der Laufweg einer Fahrt: alle Halte von Start bis Ziel. */
+export interface TransitTrip {
+  line: string;
+  product: string | null;
+  /** Zielbeschilderung der Fahrt. */
+  direction: string;
+  stops: TransitTripStop[];
+}
+
 /** Eine Abfahrt an einem Halt (DB/ÖPNV) mit Echtzeit-Verspätung. */
 export interface TransitDeparture {
   line: string;
@@ -182,6 +203,21 @@ export interface TransitDeparture {
   platform: string | null;
   cancelled: boolean;
   remark?: string;
+  /** Kennung der Fahrt — damit lässt sich ihr Laufweg nachladen. */
+  tripId?: string;
+}
+
+/** Eine Haltestelle für die Kartenebene (aus den Fahrplandaten). */
+export interface TransitStopPoint {
+  /** Alle Steig-Kennungen dieser Haltestelle (Richtungen zusammengefasst). */
+  ids: string[];
+  name: string;
+  /** Name ohne vorangestellten Ortsnamen — für die Beschriftung auf der Karte. */
+  shortName?: string;
+  lat: number;
+  lon: number;
+  /** Grobe Art für Symbol und Filter. */
+  kind: 'bus' | 'tram' | 'rail' | 'ferry' | 'other';
 }
 
 /** Ein Halt in der Nähe mit seinen nächsten Abfahrten. */
@@ -384,6 +420,99 @@ export interface GeoResult {
   name: string;
   lat: number;
   lon: number;
+  /** Ergänzender Ort/Adresszusatz für die zweite Zeile. */
+  detail?: string | null;
+  /** Kategorie-Schlüssel (z.B. 'fuel', 'street', 'place') für Symbol und Filter. */
+  category?: string;
+  /** Woher der Treffer stammt — offline aus dem Suchindex oder online. */
+  source?: 'offline' | 'online';
+  /** Interne Kennung im Offline-Index (für die Hausnummern-Auflösung). */
+  entryId?: number;
+  /** Anzahl bekannter Hausnummern zu dieser Straße (nur offline). */
+  addressCount?: number;
+  /** Luftlinie zum Bezugspunkt in Metern. */
+  distanceM?: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Routenplanung (offline)                                             */
+/* ------------------------------------------------------------------ */
+
+/** Fortbewegungsart der Routenplanung. */
+export type RouteProfile = 'car' | 'bike' | 'foot';
+
+/** Art einer Fahranweisung. */
+export type ManeuverType =
+  | 'depart'
+  | 'turn'
+  | 'continue'
+  | 'roundabout'
+  | 'merge'
+  | 'fork'
+  | 'arrive';
+
+/** Richtung einer Fahranweisung. */
+export type ManeuverModifier =
+  | 'left'
+  | 'slight-left'
+  | 'sharp-left'
+  | 'right'
+  | 'slight-right'
+  | 'sharp-right'
+  | 'straight'
+  | 'uturn';
+
+/** Ein Abschnitt der Route bis zur nächsten Anweisung. */
+export interface RouteStep {
+  type: ManeuverType;
+  modifier: ManeuverModifier | null;
+  /** Straßenname des folgenden Abschnitts. */
+  name: string | null;
+  /** Länge des Abschnitts in Metern. */
+  distanceM: number;
+  /** Dauer des Abschnitts in Sekunden. */
+  durationS: number;
+  /** Ort der Anweisung. */
+  lat: number;
+  lon: number;
+  /** Index des Anweisungspunkts in der Routengeometrie. */
+  index: number;
+  /** Ausfahrt im Kreisverkehr (1-basiert). */
+  exit?: number;
+  /** Fertiger deutscher Anweisungstext. */
+  text: string;
+}
+
+/**
+ * Warum eine Route (nicht) zustande kam. `start-off-grid`/`end-off-grid`
+ * bedeuten: Der Punkt liegt nicht im gespeicherten Straßennetz — dann fehlt
+ * die Region, nicht die Verbindung.
+ */
+export type RouteStatus = 'ok' | 'start-off-grid' | 'end-off-grid' | 'no-path';
+
+/** Antwort der Routenberechnung inklusive Begründung. */
+export interface RouteOutcome {
+  status: RouteStatus;
+  /** Beste Route (identisch mit `routes[0]`). */
+  route: RouteResult | null;
+  /** Bis zu drei deutlich verschiedene Wege, der schnellste zuerst. */
+  routes: RouteResult[];
+  /** Abstand der Eingabepunkte zum nächsten Weg (Meter). */
+  startOffRoadM: number | null;
+  endOffRoadM: number | null;
+}
+
+/** Ergebnis einer Routenberechnung. */
+export interface RouteResult {
+  profile: RouteProfile;
+  distanceM: number;
+  durationS: number;
+  /** Linienzug [lon, lat] — direkt als GeoJSON verwendbar. */
+  coordinates: [number, number][];
+  steps: RouteStep[];
+  /** Tatsächlich benutzte Start-/Zielpunkte auf dem Straßennetz. */
+  snappedStart: Coords;
+  snappedEnd: Coords;
 }
 
 /** Amtlicher Gemeindeschlüssel → die ersten zwei Ziffern kennzeichnen das Bundesland. */

@@ -11,6 +11,9 @@ import type {
   RadarData,
   GeoResult,
   TransitStop,
+  TransitStopPoint,
+  TransitDeparture,
+  TransitTrip,
   Aircraft,
   AircraftDetails,
   Vessel,
@@ -55,14 +58,27 @@ export const fetchAir = (c: Coords): Promise<ApiEnvelope<AirQuality>> =>
 export const fetchTransit = (c: Coords): Promise<ApiEnvelope<TransitStop[]>> =>
   getJson(`/api/transit?${q(c)}`);
 
+/** Haltestellen im Ausschnitt — aus den Fahrplandaten, nicht aus OSM. */
+export const fetchStops = (b: Bbox): Promise<ApiEnvelope<TransitStopPoint[]>> =>
+  getJson(`/api/stops?${bboxQ(b)}`);
+
+/** Laufweg einer Fahrt (alle Halte mit Zeiten). */
+export const fetchTrip = (tripId: string): Promise<ApiEnvelope<TransitTrip | null>> =>
+  getJson(`/api/stops/trip?id=${encodeURIComponent(tripId)}`);
+
+/** Nächste Abfahrten einer Haltestelle (alle Steige). */
+export const fetchStopDepartures = (ids: string[]): Promise<ApiEnvelope<TransitDeparture[]>> =>
+  getJson(`/api/stops/departures?id=${encodeURIComponent(ids.join(','))}`);
+
 export const fetchRadar = (): Promise<ApiEnvelope<RadarData>> => getJson(`/api/radar`);
 
 /** DWD-Radarvorhersage (5-Min-Schritte bis +2 h) rund um einen Punkt. */
 export const fetchRadarForecast = (c: Coords): Promise<ApiEnvelope<RadarForecast>> =>
   getJson(`/api/radar/forecast?${q(c)}&distance=150000`);
 
-export const fetchGeocode = (query: string): Promise<ApiEnvelope<GeoResult[]>> =>
-  getJson(`/api/geocode?q=${encodeURIComponent(query)}`);
+/** Online-Ortssuche; mit Bezugspunkt bevorzugt Photon nahe Treffer. */
+export const fetchGeocode = (query: string, near?: Coords): Promise<ApiEnvelope<GeoResult[]>> =>
+  getJson(`/api/geocode?q=${encodeURIComponent(query)}${near ? `&${q(near)}` : ''}`);
 
 export interface Health {
   ok: boolean;
@@ -70,8 +86,9 @@ export interface Health {
 }
 export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
 
+/** Auf dem Server bereitliegende Offline-Pakete je Bundesland (Bytes). */
 export interface MapsList {
-  data: { code: string; bytes: number }[];
+  data: { code: string; map?: number; route?: number; search?: number }[];
 }
 export const fetchMaps = (): Promise<MapsList> => getJson(`/api/maps`);
 

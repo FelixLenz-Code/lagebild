@@ -1,4 +1,5 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { DepartureBoard } from './Departures.js';
 import type {
   Coords,
   WeatherNow,
@@ -13,7 +14,6 @@ import type {
 import {
   relativeTime,
   timeUntil,
-  timeHM,
   hourLabel,
   dayLabel,
   formatDateTime,
@@ -483,21 +483,7 @@ export function TransitDetail({ stops }: { stops: TransitStop[] }) {
             <b>{s.name}</b>
             {s.distanceM != null && <span className="alert-meta mono">{Math.round(s.distanceM)} m</span>}
           </div>
-          <div className="dep-list">
-            {s.departures.map((d, i) => (
-              <div className="dep" key={i}>
-                <span className="line-pill">{d.line}</span>
-                <span className="dep-dir">{d.direction}</span>
-                <span
-                  className={`dep-time mono${d.cancelled ? ' cancelled' : d.delayMin && d.delayMin >= 1 ? ' late' : ''}`}
-                >
-                  {d.cancelled
-                    ? 'fällt aus'
-                    : `${timeHM(d.when ?? d.plannedWhen)}${d.delayMin ? ` +${d.delayMin}` : ''}`}
-                </span>
-              </div>
-            ))}
-          </div>
+          <DepartureBoard departures={s.departures} stopName={s.name} />
         </div>
       ))}
     </div>

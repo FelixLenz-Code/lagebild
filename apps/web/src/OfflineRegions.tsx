@@ -1,48 +1,91 @@
 import { useState } from 'react';
 import { FEDERAL_STATES } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
-import { downloadOffline, deleteOffline } from './offlineMaps.js';
+import {
+  PACKAGE_LABEL,
+  deleteRegion,
+  downloadPackage,
+  regionBytes,
+  type PackageKind,
+  type RegionFiles,
+} from './offlineMaps.js';
 
 interface Props {
-  /** Auf dem Server verfügbare Regionen: code → Bytegröße. */
-  availableMap: Record<string, number>;
-  /** Bereits heruntergeladene Regionen: code → Bytegröße. */
-  offline: Record<string, number>;
+  /** Auf dem Server verfügbare Pakete je Region. */
+  available: Record<string, RegionFiles>;
+  /** Bereits heruntergeladene Pakete je Region. */
+  offline: Record<string, RegionFiles>;
   onClose: () => void;
   onChanged: () => void;
 }
 
+const KINDS: PackageKind[] = ['map', 'route', 'search'];
 const mb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 
 export function OfflineRegions(props: Props) {
-  const [progress, setProgress] = useState<Record<string, number>>({});
+  const [progress, setProgress] = useState<{ code: string; kind: PackageKind; fraction: number } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const downloadedCodes = Object.keys(props.offline);
-  const totalBytes = downloadedCodes.reduce((a, c) => a + props.offline[c]!, 0);
+  const downloadedCodes = Object.keys(props.offline).filter((c) => regionBytes(props.offline[c]) > 0);
+  const totalBytes = downloadedCodes.reduce((a, c) => a + regionBytes(props.offline[c]), 0);
+  const offerTotal = Object.keys(props.available).reduce((a, c) => a + regionBytes(props.available[c]), 0);
+  const haveTotal = Object.keys(props.available).reduce(
+    (a, c) =>
+      a +
+      KINDS.reduce((sum, k) => sum + (props.available[c]?.[k] && props.offline[c]?.[k] ? props.available[c]![k]! : 0), 0),
+    0,
+  );
+  const missingAll = Object.keys(props.available).filter((c) =>
+    KINDS.some((k) => props.available[c]?.[k] && !props.offline[c]?.[k]),
+  ).length;
 
+  /** Lädt alle auf dem Server vorhandenen Teile einer Region nacheinander. */
   async function download(code: string) {
     setError(null);
     setBusy(code);
-    setProgress((p) => ({ ...p, [code]: 0 }));
     try {
-      await downloadOffline(code, (frac) => setProgress((p) => ({ ...p, [code]: frac })));
-      props.onChanged();
+      await downloadRegion(code);
     } catch {
-      setError('Download fehlgeschlagen. Ist die Region auf dem Server hinterlegt?');
+      setError('Download fehlgeschlagen. Liegt das Paket auf dem Server?');
     } finally {
       setBusy(null);
-      setProgress((p) => {
-        const next = { ...p };
-        delete next[code];
-        return next;
-      });
+      setProgress(null);
+      props.onChanged();
+    }
+  }
+
+  async function downloadRegion(code: string) {
+    for (const kind of KINDS) {
+      if (!props.available[code]?.[kind]) continue;
+      if (props.offline[code]?.[kind]) continue;
+      setProgress({ code, kind, fraction: 0 });
+      await downloadPackage(code, kind, (fraction) => setProgress({ code, kind, fraction }));
+      props.onChanged();
+    }
+  }
+
+  /** Alles laden, was der Server hat — Routen laufen dann bundesweit. */
+  async function downloadAll() {
+    setError(null);
+    setBusy('*');
+    try {
+      for (const s of FEDERAL_STATES) {
+        if (!props.available[s.code]) continue;
+        setBusy(s.code);
+        await downloadRegion(s.code);
+      }
+    } catch {
+      setError('Download fehlgeschlagen. Liegt das Paket auf dem Server?');
+    } finally {
+      setBusy(null);
+      setProgress(null);
+      props.onChanged();
     }
   }
 
   async function remove(code: string) {
-    await deleteOffline(code);
+    await deleteRegion(code);
     props.onChanged();
   }
 
@@ -58,52 +101,86 @@ export function OfflineRegions(props: Props) {
           <path d="M20 6 9 17l-5-5" />
         </svg>
         <div>
-          <b>Fachdaten sind bundesweit immer offline.</b> Hier lädst du zusätzlich die <b>Hintergrundkarte</b> pro Bundesland.
+          <b>Fachdaten sind bundesweit immer offline.</b> Hier lädst du zusätzlich die{' '}
+          <b>Hintergrundkarte</b>, den <b>Routing-Graphen</b> und den <b>Suchindex</b> (Adressen und
+          POIs) — damit funktionieren Suche und Navigation vollständig ohne Netz.
         </div>
       </div>
       {error && <p className="err" style={{ marginBottom: 12 }}>{error}</p>}
 
+      <div className="region all">
+        <div className="rinfo">
+          <b>Deutschland komplett</b>
+          <span className="rmeta">
+            {missingAll === 0
+              ? 'Alle verfügbaren Regionen sind gespeichert'
+              : `${missingAll} Regionen offen · ${mb(offerTotal - haveTotal)} zu laden`}
+          </span>
+        </div>
+        <div className="raction">
+          {missingAll > 0 && (
+            <button className="rbtn" type="button" disabled={busy !== null} onClick={downloadAll}>
+              Alles laden
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="sr-hint">
+        Routen dürfen über Landesgrenzen gehen: Die App verbindet alle gespeicherten Regionen
+        entlang der Strecke zu einem Netz.
+      </p>
+
       <div className="region-list">
         {FEDERAL_STATES.map((s) => {
-          const isDown = s.code in props.offline;
-          const available = s.code in props.availableMap;
-          const frac = progress[s.code];
+          const have = props.offline[s.code] ?? {};
+          const offer = props.available[s.code] ?? {};
+          const haveBytes = regionBytes(have);
+          const offerBytes = regionBytes(offer);
+          const missing = KINDS.filter((k) => offer[k] && !have[k]);
           const downloading = busy === s.code;
+          const frac = progress && progress.code === s.code ? progress.fraction : 0;
           return (
             <div className="region" key={s.code}>
               <span className="rcode">{s.code}</span>
               <div className="rinfo">
                 <b>{s.name}</b>
                 <span className="rmeta">
-                  {isDown
-                    ? `Offline · ${mb(props.offline[s.code]!)}`
-                    : downloading
-                      ? 'Wird geladen …'
-                      : available
-                        ? `${mb(props.availableMap[s.code]!)}`
-                        : 'Nicht verfügbar'}
+                  {downloading
+                    ? `${PACKAGE_LABEL[progress?.kind ?? 'map']} wird geladen …`
+                    : offerBytes === 0
+                      ? 'Nicht verfügbar'
+                      : KINDS.filter((k) => offer[k]).map((k) => (
+                          <span key={k} className={`part${have[k] ? ' is-on' : ''}`}>
+                            {PACKAGE_LABEL[k]} {mb(offer[k]!)}
+                          </span>
+                        ))}
                 </span>
               </div>
               <div className="raction">
                 {downloading ? (
                   <div className="rprog">
-                    <div className="track"><i style={{ width: `${Math.round((frac ?? 0) * 100)}%` }} /></div>
-                    <div className="pct">{Math.round((frac ?? 0) * 100)} %</div>
+                    <div className="track"><i style={{ width: `${Math.round(frac * 100)}%` }} /></div>
+                    <div className="pct">{Math.round(frac * 100)} %</div>
                   </div>
-                ) : isDown ? (
-                  <>
-                    <span className="rok">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                      Offline
-                    </span>
-                    <button className="rdel" type="button" aria-label="Löschen" onClick={() => remove(s.code)}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>
-                    </button>
-                  </>
                 ) : (
-                  <button className="rbtn" type="button" disabled={!available || busy !== null} onClick={() => download(s.code)}>
-                    Laden
-                  </button>
+                  <>
+                    {haveBytes > 0 && missing.length === 0 && (
+                      <span className="rok">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                        {mb(haveBytes)}
+                      </span>
+                    )}
+                    {missing.length > 0 && (
+                      <button className="rbtn" type="button" disabled={busy !== null} onClick={() => download(s.code)}>
+                        {haveBytes > 0 ? 'Ergänzen' : 'Laden'}
+                      </button>
+                    )}
+                    {haveBytes > 0 && (
+                      <button className="rdel" type="button" aria-label="Löschen" onClick={() => remove(s.code)}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

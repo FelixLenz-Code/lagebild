@@ -28,3 +28,29 @@ export function inStateBounds(c: Coords, code: string): boolean {
   if (!b) return false;
   return c.lon >= b[0] && c.lon <= b[2] && c.lat >= b[1] && c.lat <= b[3];
 }
+
+/**
+ * Alle Länder, deren Rechteck einen Punkt enthält. Die Rechtecke überlappen
+ * kräftig (das rheinland-pfälzische reicht weit nach Hessen hinein), deshalb
+ * taugt das **nur als Hinweis** — ob eine Gegend wirklich abgedeckt ist,
+ * beantwortet der Graph selbst beim Fangen auf das Straßennetz.
+ */
+export function statesContaining(c: Coords): string[] {
+  return Object.keys(STATE_BOUNDS).filter((code) => inStateBounds(c, code));
+}
+
+/**
+ * Alle Länder, die zwischen zwei Punkten liegen könnten: das umschließende
+ * Rechteck mit Zuschlag, damit auch ein Umweg über das Nachbarland im Netz
+ * enthalten ist.
+ */
+export function statesForCorridor(from: Coords, to: Coords, marginDeg = 0.4): string[] {
+  const west = Math.min(from.lon, to.lon) - marginDeg;
+  const east = Math.max(from.lon, to.lon) + marginDeg;
+  const south = Math.min(from.lat, to.lat) - marginDeg;
+  const north = Math.max(from.lat, to.lat) + marginDeg;
+  return Object.keys(STATE_BOUNDS).filter((code) => {
+    const b = STATE_BOUNDS[code]!;
+    return b[0] <= east && b[2] >= west && b[1] <= north && b[3] >= south;
+  });
+}

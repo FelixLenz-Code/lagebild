@@ -4,6 +4,8 @@ import maplibregl, {
   type Marker,
   type Popup as MlPopup,
   type FilterSpecification,
+  type GeoJSONSource,
+  type MapMouseEvent,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type {
@@ -21,6 +23,8 @@ import type {
   AprsStation,
   WindPoint,
   WindField,
+  RouteResult,
+  TransitStopPoint,
 } from '@lagebild/shared';
 import { fetchAircraftDetails, type Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
@@ -29,7 +33,7 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
-import { ensureMapIcons, WIND_CLASSES } from './mapIcons.js';
+import { ensureMapIcons, STOP_ICON, WIND_CLASSES } from './mapIcons.js';
 import { WindAnimation } from './windField.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
 import { AprsTargets } from './AprsTargets.js';
@@ -48,6 +52,8 @@ import {
 } from './format.js';
 
 const DRAW_COLOR = '#0d9488';
+/** Farbe der Routenlinie (kräftig genug, um über allen Ebenen zu tragen). */
+const ROUTE_COLOR = '#2f7fd1';
 type DrawMode = 'off' | 'point' | 'area';
 
 /** Frisch gezeichnete Markierung, die noch auf ihren Namen wartet. */
@@ -374,6 +380,31 @@ interface Props {
   aprsAvailable: boolean;
   /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt online. */
   offlineCode: string | null;
+  /** Berechnete Route (offline) — Linie, Start- und Zielmarke. */
+  route: RouteResult | null;
+  /** Haltestellen im Ausschnitt. */
+  stops: TransitStopPoint[];
+  /** Antippen einer Haltestelle öffnet ihre Abfahrten. */
+  onStopClick: (stop: TransitStopPoint) => void;
+  /** true, wenn für die Gegend überhaupt ein Suchindex gespeichert ist. */
+  stopsAvailable: boolean;
+  /** Nicht gewählte Varianten (grau, anklickbar). */
+  alternatives: { index: number; route: RouteResult }[];
+  /** Auswahl einer Variante durch Antippen der grauen Linie. */
+  onSelectRoute: (index: number) => void;
+  /** Startpunkt der Route (null = eigener Standort). */
+  routeOrigin: Coords | null;
+  /** Angetippter Suchtreffer bzw. Routenziel. */
+  pin: { lat: number; lon: number; name: string; category?: string } | null;
+  /** Zielführung läuft — Kamera folgt der Position. */
+  navigating: boolean;
+  /** Aktuelle Position und Kurs während der Zielführung. */
+  navPosition: Coords | null;
+  navBearing: number | null;
+  /** Punkt aus dem Kartenmenü als Ziel bzw. Start übernehmen. */
+  onPickPoint: (point: Coords, kind: 'destination' | 'origin' | 'place', label?: string) => void;
+  /** Der nächste Klick setzt den Standort (Modus aus dem Standort-Menü). */
+  pickingLocation: boolean;
   onViewport: (b: Bbox) => void;
   /** Meldet die aktiven Live-Ebenen — diese Daten werden erst dann geladen. */
   onLayersChange: (active: ActiveLayers) => void;
@@ -386,12 +417,14 @@ export interface ActiveLayers {
   vessels: boolean;
   aprs: boolean;
   wind: boolean;
+  /** Haltestellen (Bus, Tram, Bahn) aus dem Offline-Index. */
+  stops: boolean;
   /** Beobachtete APRS-Rufzeichen (aprs.fi kennt keine Umkreissuche). */
   aprsTargets: string[];
 }
 
 /** Alle umschaltbaren Kartenebenen. */
-type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night';
+type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops';
 
 /**
  * Darstellung der Symbol-Ebenen. Flugzeuge erst ab Zoom 6, weil das ADS-B-Netz
@@ -418,6 +451,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   aprs: false,
   wind: false,
   night: false,
+  stops: false,
 };
 
 export function LageMap({
@@ -436,6 +470,19 @@ export function LageMap({
   aisAvailable,
   aprsAvailable,
   offlineCode,
+  route,
+  stops,
+  stopsAvailable,
+  onStopClick,
+  alternatives,
+  onSelectRoute,
+  routeOrigin,
+  pin,
+  navigating,
+  navPosition,
+  navBearing,
+  onPickPoint,
+  pickingLocation,
   onViewport,
   onLayersChange,
 }: Props) {
@@ -445,6 +492,25 @@ export function LageMap({
   const dataMarkers = useRef<Marker[]>([]);
   const onViewportRef = useRef(onViewport);
   onViewportRef.current = onViewport;
+  const onSelectRouteRef = useRef(onSelectRoute);
+  onSelectRouteRef.current = onSelectRoute;
+  const onPickPointRef = useRef(onPickPoint);
+  onPickPointRef.current = onPickPoint;
+  const onStopClickRef = useRef(onStopClick);
+  onStopClickRef.current = onStopClick;
+  const stopsRef = useRef(stops);
+  stopsRef.current = stops;
+  const pickingRef = useRef(pickingLocation);
+  pickingRef.current = pickingLocation;
+  const routeMarkers = useRef<Marker[]>([]);
+  const navMarker = useRef<Marker | null>(null);
+  const [pointMenu, setPointMenu] = useState<{
+    x: number;
+    y: number;
+    lngLat: Coords;
+    /** Name der angetippten eigenen Markierung (sonst null). */
+    label?: string | null;
+  } | null>(null);
   const warnPopup = useRef<MlPopup | null>(null);
   const warnById = useRef<Map<string, WarningFeature>>(new Map());
   const currentBase = useRef<string>('online');
@@ -465,6 +531,7 @@ export function LageMap({
     vessels: showVessels,
     aprs: showAprs,
     wind: showWind,
+    stops: showStops,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -500,9 +567,10 @@ export function LageMap({
         vessels: showVessels,
         aprs: showAprs,
         wind: showWind,
+        stops: showStops,
         aprsTargets,
       }),
-    [showRadar, showAircraft, showVessels, showAprs, showWind, aprsTargets, onLayersChange],
+    [showRadar, showAircraft, showVessels, showAprs, showWind, showStops, aprsTargets, onLayersChange],
   );
 
   // Nachschlagetabellen für die Klick-Popups
@@ -554,6 +622,11 @@ export function LageMap({
 
     // Zeichnen: Klick setzt einen Punkt bzw. eine Flächen-Ecke.
     map.on('click', (e) => {
+      // Standort setzen hat Vorrang vor allem anderen.
+      if (pickingRef.current) {
+        onPickPointRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng }, 'place');
+        return;
+      }
       const mode = drawModeRef.current;
       const c: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       if (mode === 'point') {
@@ -667,7 +740,9 @@ export function LageMap({
           if (cancelled || mapRef.current !== map) return;
           const key = addLocalPmtiles(file);
           currentBase.current = offlineCode;
-          map.setStyle(buildStyle(`pmtiles://${key}`, dark), { diff: false });
+          // buildStyle setzt das pmtiles://-Präfix selbst — der Schlüssel ist
+          // der Dateiname, unter dem das Protokoll die OPFS-Datei kennt.
+          map.setStyle(buildStyle(key, dark), { diff: false });
         })
         .catch(() => {});
       return () => {
@@ -1135,6 +1210,314 @@ export function LageMap({
     }
   }, [traffic, pegel, showTraffic, showPegel, ready]);
 
+  /* ---------- Haltestellen ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('stops')) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addSource('stops', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'stops',
+      type: 'symbol',
+      source: 'stops',
+      minzoom: 12,
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.32, 16, 0.5],
+        'icon-allow-overlap': false,
+        'text-field': ['step', ['zoom'], '', 13, ['get', 'label']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-offset': [0, 1.05],
+        'text-anchor': 'top',
+        'text-optional': true,
+        'text-max-width': 9,
+        'text-padding': 3,
+        // Bahnhöfe gewinnen, wenn sich Beschriftungen ins Gehege kommen.
+        'symbol-sort-key': ['case', ['==', ['get', 'icon'], 'stop-rail'], 0, 1],
+      },
+      paint: {
+        // Auf dunkler Karte helle Schrift mit dunklem Rand — sonst kleben die
+        // Namen wie Aufkleber auf dem Hintergrund.
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.6,
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('stops') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showStops ? stops : []).map((s, i) => ({
+        type: 'Feature',
+        properties: {
+          index: i,
+          label: s.shortName ?? s.name,
+          icon: STOP_ICON[s.kind] ?? 'stop-other',
+        },
+        geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+      })),
+    });
+  }, [stops, showStops, ready, styleEpoch]);
+
+  // Antippen einer Haltestelle: Menü mit „Route hierher".
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const stop = index != null ? stopsRef.current[index] : undefined;
+      if (stop) onStopClickRef.current(stop);
+    };
+    const enter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const leave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+    map.on('click', 'stops', onClick);
+    map.on('mouseenter', 'stops', enter);
+    map.on('mouseleave', 'stops', leave);
+    return () => {
+      map.off('click', 'stops', onClick);
+      map.off('mouseenter', 'stops', enter);
+      map.off('mouseleave', 'stops', leave);
+    };
+  }, [ready, styleEpoch]);
+
+  /* ---------- Route: Linie, Marken, Kamera ---------- */
+
+  // Quelle und Linien einmal je Style anlegen (oben auf allen Ebenen).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('route')) return;
+    // Varianten liegen unter der gewählten Route.
+    map.addSource('route-alt', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'route-alt-line',
+      type: 'line',
+      source: 'route-alt',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#8b93a1',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 7, 18, 12],
+        'line-opacity': 0.85,
+      },
+    });
+    map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'route-casing',
+      type: 'line',
+      source: 'route',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#0b2b45',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 14, 12, 18, 20],
+        'line-opacity': 0.85,
+      },
+    });
+    map.addLayer({
+      id: 'route-line',
+      type: 'line',
+      source: 'route',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ROUTE_COLOR,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 7, 18, 13],
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  // Varianten zeichnen (mit ihrem Index, damit ein Klick sie auswählt)
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('route-alt') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: alternatives.map((a) => ({
+        type: 'Feature',
+        properties: { index: a.index },
+        geometry: { type: 'LineString', coordinates: a.route.coordinates },
+      })),
+    });
+  }, [alternatives, ready, styleEpoch]);
+
+  // Antippen einer grauen Linie wählt diese Variante.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      const index = e.features?.[0]?.properties?.index;
+      if (typeof index === 'number') onSelectRouteRef.current(index);
+    };
+    const enter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const leave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+    map.on('click', 'route-alt-line', onClick);
+    map.on('mouseenter', 'route-alt-line', enter);
+    map.on('mouseleave', 'route-alt-line', leave);
+    return () => {
+      map.off('click', 'route-alt-line', onClick);
+      map.off('mouseenter', 'route-alt-line', enter);
+      map.off('mouseleave', 'route-alt-line', leave);
+    };
+  }, [ready, styleEpoch]);
+
+  // Geometrie aktualisieren
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('route') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData(
+      route
+        ? {
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: route.coordinates } }],
+          }
+        : { type: 'FeatureCollection', features: [] },
+    );
+  }, [route, ready, styleEpoch]);
+
+  // Start-, Ziel- und Suchmarke (HTML-Marker überstehen Style-Wechsel).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const m of routeMarkers.current) m.remove();
+    routeMarkers.current = [];
+    const add = (point: Coords, cls: string, label?: string) => {
+      const el = document.createElement('div');
+      el.className = `mk-route ${cls}`;
+      if (label) el.title = label;
+      routeMarkers.current.push(
+        new maplibregl.Marker({ element: el, anchor: cls === 'mk-pin' ? 'bottom' : 'center' })
+          .setLngLat([point.lon, point.lat])
+          .addTo(map),
+      );
+    };
+    if (route) {
+      add(route.snappedStart, 'mk-start', 'Start');
+      add(route.snappedEnd, 'mk-end', 'Ziel');
+    } else if (pin) {
+      add({ lat: pin.lat, lon: pin.lon }, 'mk-pin', pin.name);
+    }
+    if (routeOrigin && !route) add(routeOrigin, 'mk-start', 'Start');
+  }, [route, pin, routeOrigin, ready]);
+
+  // Zielführung: Position folgen, Karte in Fahrtrichtung drehen.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!navigating || !navPosition) {
+      navMarker.current?.remove();
+      navMarker.current = null;
+      return;
+    }
+    if (!navMarker.current) {
+      const el = document.createElement('div');
+      el.className = 'mk mk-nav';
+      navMarker.current = new maplibregl.Marker({ element: el });
+    }
+    navMarker.current.setLngLat([navPosition.lon, navPosition.lat]).addTo(map);
+    map.easeTo({
+      center: [navPosition.lon, navPosition.lat],
+      zoom: Math.max(map.getZoom(), 16),
+      bearing: navBearing ?? map.getBearing(),
+      pitch: 50,
+      duration: 900,
+    });
+  }, [navigating, navPosition, navBearing, ready]);
+
+  // Nach dem Beenden wieder flach und nach Norden ausrichten.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || navigating) return;
+    if (map.getPitch() !== 0 || map.getBearing() !== 0) {
+      map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+    }
+  }, [navigating, ready]);
+
+  // Ganze Route ins Bild rücken, sobald eine neue berechnet wurde.
+  const routeKey = route ? `${route.distanceM}:${route.coordinates.length}:${route.profile}` : '';
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !route || navigating || !route.coordinates.length) return;
+    let west = 180;
+    let south = 90;
+    let east = -180;
+    let north = -90;
+    for (const [lon, lat] of route.coordinates) {
+      if (lon < west) west = lon;
+      if (lon > east) east = lon;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+    map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding: { top: 60, bottom: 180, left: 50, right: 50 }, duration: 800, maxZoom: 16 },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeKey, ready]);
+
+  // Eigene Markierungen antippen: Menü mit „Route hierher".
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const name = e.features?.[0]?.properties?.name as string | undefined;
+      setPointMenu({
+        x: e.point.x,
+        y: e.point.y,
+        lngLat: { lat: e.lngLat.lat, lon: e.lngLat.lng },
+        label: name ?? null,
+      });
+    };
+    for (const layer of ['draw-point', 'draw-area-fill']) map.on('click', layer, onClick);
+    return () => {
+      for (const layer of ['draw-point', 'draw-area-fill']) map.off('click', layer, onClick);
+    };
+  }, [ready, styleEpoch]);
+
+  // Langes Antippen / rechte Maustaste öffnet das Punktmenü.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onContext = (e: MapMouseEvent) => {
+      if (drawModeRef.current !== 'off') return;
+      e.preventDefault();
+      setPointMenu({ x: e.point.x, y: e.point.y, lngLat: { lat: e.lngLat.lat, lon: e.lngLat.lng } });
+    };
+    const close = () => setPointMenu(null);
+    // Klicks auf Haltestellen oder eigene Markierungen öffnen das Menü — dieser
+    // allgemeine Handler läuft danach und darf es nicht sofort wieder zumachen.
+    const closeOnClick = (e: MapMouseEvent) => {
+      const layers = ['stops', 'draw-point', 'draw-area-fill'].filter((id) => map.getLayer(id));
+      if (layers.length && map.queryRenderedFeatures(e.point, { layers }).length) return;
+      setPointMenu(null);
+    };
+    map.on('contextmenu', onContext);
+    map.on('movestart', close);
+    map.on('click', closeOnClick);
+    return () => {
+      map.off('contextmenu', onContext);
+      map.off('movestart', close);
+      map.off('click', closeOnClick);
+    };
+  }, [ready]);
+
   const finishArea = () => {
     if (areaVertices.length >= 3) {
       const ring: [number, number][] = [...areaVertices, areaVertices[0]!];
@@ -1202,6 +1585,14 @@ export function LageMap({
         ]
       : []),
     { id: 'traffic', label: 'Verkehrsmeldungen', color: 'var(--sev3)', group: 'Verkehr', active: showTraffic },
+    {
+      id: 'stops',
+      label: 'Haltestellen',
+      color: '#1d4e73',
+      group: 'Verkehr',
+      hint: stopsAvailable ? 'Bus, Tram, Bahn · ab Zoom 12' : 'Region unter „Offline" laden',
+      active: showStops,
+    },
     { id: 'aircraft', label: 'Flugzeuge', color: '#1d4e73', group: 'Verkehr', hint: 'ADS-B, ab Zoom 6', active: showAircraft },
     ...(aisAvailable
       ? [{ id: 'vessels', label: 'Schiffe', color: '#2c7448', group: 'Verkehr', hint: 'AIS', active: showVessels } satisfies LayerOption]
@@ -1306,6 +1697,39 @@ export function LageMap({
             <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
           </svg>
         </button>
+
+        {pointMenu && (
+          <div className="pointmenu" style={{ left: pointMenu.x, top: pointMenu.y }} role="menu">
+            {pointMenu.label && <div className="pm-title">{pointMenu.label}</div>}
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'destination', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Route hierher
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'origin', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Als Start setzen
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'place', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Hierher wechseln
+            </button>
+          </div>
+        )}
 
         <div className="legends">
           {showWarnings && (

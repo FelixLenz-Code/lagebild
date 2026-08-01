@@ -9,6 +9,11 @@ apps/api/public/
 # offline map tiles (large binaries, generated/hosted separately)
 apps/api/maps/
 *.pmtiles
+*.route
+*.search
+
+# heruntergeladene OSM-Auszuege fuer scripts/build-routing.mjs
+.cache/
 
 # env / secrets
 .env

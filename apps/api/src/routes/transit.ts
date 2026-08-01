@@ -4,90 +4,86 @@ import { readCoords } from '../lib/geo.js';
 import { cached } from '../lib/cache.js';
 import { fetchJson } from '../lib/http.js';
 import { envelope } from '../lib/envelope.js';
+import { distanceKm } from '../lib/distance.js';
 import { mapPool } from '../lib/pool.js';
+import { MOTIS_BASE, tidyDepartures, toDeparture, type MotisStopTime } from '../lib/motis.js';
 
 /**
- * Bahn/ÖPNV: nächste Halte + Abfahrten mit Echtzeit-Verspätung und Störungen
- * über die freie DB-REST-API (HAFAS). Basis-URL per Env konfigurierbar, damit
- * bei Ausfall der öffentlichen Instanz eine eigene genutzt werden kann.
- * https://v6.db.transport.rest/
+ * Bahn/ÖPNV: nächste Halte und ihre Abfahrten mit Echtzeit.
+ *
+ * Quelle ist **transitous.org** (MOTIS-API, frei und ohne Schlüssel). Das
+ * Projekt bündelt die offiziellen Fahrplandaten der Verbünde (in Deutschland
+ * DELFI) samt Echtzeit-Meldungen — es deckt also nicht nur die Bahn ab,
+ * sondern auch Bus, Tram und U-Bahn.
+ *
+ * Vorgänger war `v6.db.transport.rest` (HAFAS); diese Instanz antwortet
+ * dauerhaft mit 503 und ist damit unbrauchbar geworden.
+ *
+ * Zwei Aufrufe je Abfrage:
+ *   GET /reverse-geocode?place=lat,lon&type=STOP   → Halte in der Nähe
+ *   GET /stoptimes?stopId=…&n=…                    → Abfahrten eines Halts
  */
 export const transitRoute = new Hono();
 
-const BASE = process.env.TRANSPORT_BASE ?? 'https://v6.db.transport.rest';
+const BASE = MOTIS_BASE;
+/** So viele Halte werden ausgewertet (jeder kostet eine Abfrage). */
+const STOPS = 3;
+/** Abfahrten je Halt. */
+const DEPARTURES = 8;
+/** Weiter als das voraus interessiert im Lagebild nicht (Stunden). */
+const HORIZON_H = 12;
 
-interface NearbyStop {
-  id?: string;
+interface GeoEntry {
+  type?: string;
   name?: string;
-  distance?: number;
-  location?: { latitude?: number; longitude?: number };
-}
-interface RawDeparture {
-  direction?: string;
-  when?: string | null;
-  plannedWhen?: string | null;
-  delay?: number | null;
-  platform?: string | null;
-  cancelled?: boolean;
-  line?: { name?: string; product?: string };
-  remarks?: { type?: string; text?: string }[];
-}
-
-function toDeparture(x: RawDeparture): TransitDeparture {
-  return {
-    line: x.line?.name ?? '?',
-    product: x.line?.product ?? null,
-    direction: x.direction ?? '',
-    when: x.when ?? null,
-    plannedWhen: x.plannedWhen ?? null,
-    delayMin: x.delay != null ? Math.round(x.delay / 60) : null,
-    platform: x.platform ?? null,
-    cancelled: Boolean(x.cancelled),
-    remark: (x.remarks ?? []).find((r) => r.type === 'warning' || r.type === 'status')?.text || undefined,
-  };
+  id?: string;
+  lat?: number;
+  lon?: number;
 }
 
 transitRoute.get('/', async (c) => {
   const coords = readCoords(c);
   if (!coords) return c.json({ error: 'lat und lon erforderlich' }, 400);
 
-  const key = `transit:${coords.lat.toFixed(2)}:${coords.lon.toFixed(2)}`;
+  const key = `transit:${coords.lat.toFixed(3)}:${coords.lon.toFixed(3)}`;
   const cache = cached<TransitStop[]>(key, 60);
-  if (cache.hit) return c.json(envelope(cache.hit, 'DB (transport.rest)', true));
+  if (cache.hit) return c.json(envelope(cache.hit, 'transitous.org', true));
 
   try {
-    const nearby = await fetchJson<NearbyStop[]>(
-      `${BASE}/locations/nearby?latitude=${coords.lat}&longitude=${coords.lon}&results=5&stops=true`,
-      { timeoutMs: 8000 },
+    const nearby = await fetchJson<GeoEntry[]>(
+      `${BASE}/reverse-geocode?place=${coords.lat},${coords.lon}&type=STOP`,
+      { timeoutMs: 9000 },
     );
-    const stops = nearby.filter((s) => s.id).slice(0, 3);
+    const stops = nearby
+      .filter((s) => s.type === 'STOP' && s.id && s.lat != null && s.lon != null)
+      .map((s) => ({ ...s, km: distanceKm(coords, { lat: s.lat!, lon: s.lon! }) }))
+      .sort((a, b) => a.km - b.km)
+      .slice(0, STOPS);
 
     const result = await mapPool(stops, 3, async (s) => {
       let departures: TransitDeparture[] = [];
       try {
-        const dep = await fetchJson<{ departures?: RawDeparture[] }>(
-          `${BASE}/stops/${encodeURIComponent(s.id!)}/departures?duration=60&results=6`,
-          { timeoutMs: 8000 },
+        const dep = await fetchJson<{ stopTimes?: MotisStopTime[] }>(
+          `${BASE}/stoptimes?stopId=${encodeURIComponent(s.id!)}&n=${DEPARTURES}`,
+          { timeoutMs: 9000 },
         );
-        departures = (dep.departures ?? []).map(toDeparture);
+        departures = tidyDepartures((dep.stopTimes ?? []).map(toDeparture), HORIZON_H);
       } catch {
         /* einzelner Halt ohne Abfahrten → leer lassen */
       }
-      const loc = s.location;
       return {
         id: s.id!,
         name: s.name ?? 'Halt',
-        distanceM: s.distance ?? null,
-        coordinates:
-          loc?.latitude != null && loc?.longitude != null ? { lat: loc.latitude, lon: loc.longitude } : null,
+        distanceM: Math.round(s.km * 1000),
+        coordinates: { lat: s.lat!, lon: s.lon! },
         departures,
       } satisfies TransitStop;
     });
 
     cache.set(result);
-    return c.json(envelope(result, 'DB (transport.rest)'));
+    return c.json(envelope(result, 'transitous.org'));
   } catch {
-    // Öffentliche Instanz nicht erreichbar → leere Liste statt Fehler.
-    return c.json(envelope([] as TransitStop[], 'DB (transport.rest)'));
+    // Quelle nicht erreichbar → leere Liste statt Fehler.
+    return c.json(envelope([] as TransitStop[], 'transitous.org'));
   }
 });

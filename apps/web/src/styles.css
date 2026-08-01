@@ -16,6 +16,12 @@
   --ok: #2c7448;
   --r: 8px;
   --r-sm: 5px;
+  /* Haltestellenarten — auch für die Linien-Plaketten in der Abfahrtstafel. */
+  --stop-bus: #1d4e73;
+  --stop-tram: #6c2790;
+  --stop-rail: #a92318;
+  --stop-ferry: #0b7676;
+  --stop-other: #5b5b60;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,6 +31,9 @@
     --line: #2a2a2d; --line-strong: #38383c;
     --accent: #4a90d9; --accent-ink: #7fb4e6;
     --sev1: #d9ad2e; --sev2: #dd8226; --sev3: #cf4034; --sev4: #9a56c8; --ok: #3c9c66;
+    /* Auf dunklem Grund brauchen die Haltestellenfarben deutlich mehr Helligkeit. */
+    --stop-bus: #6ba9e6; --stop-tram: #c193e8; --stop-rail: #ef7a6d; --stop-ferry: #45cfcf;
+    --stop-other: #a6a6ac;
     color-scheme: dark;
   }
 }
@@ -468,6 +477,12 @@ svg { display: block; }
 /* ---------- transit (Bahn/ÖPNV) ---------- */
 .stop-name { font-size: .9rem; font-weight: 600; }
 .line-pill { display: inline-flex; align-items: center; font-size: .68rem; font-weight: 700; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); padding: 2px 6px; border-radius: 3px; flex: none; }
+/* Linien-Plakette in der Farbe des Verkehrsmittels (theme-abhängig). */
+.line-pill.bus { background: color-mix(in srgb, var(--stop-bus) 18%, transparent); color: var(--stop-bus); }
+.line-pill.tram { background: color-mix(in srgb, var(--stop-tram) 18%, transparent); color: var(--stop-tram); }
+.line-pill.rail { background: color-mix(in srgb, var(--stop-rail) 18%, transparent); color: var(--stop-rail); }
+.line-pill.ferry { background: color-mix(in srgb, var(--stop-ferry) 18%, transparent); color: var(--stop-ferry); }
+.line-pill.other { background: color-mix(in srgb, var(--stop-other) 18%, transparent); color: var(--stop-other); }
 .line-item .meta.late { color: var(--sev2); font-weight: 600; }
 .dep-list { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
 .dep { display: flex; align-items: center; gap: 9px; font-size: .84rem; }
@@ -520,3 +535,154 @@ svg { display: block; }
 .namebtns { display: flex; justify-content: flex-end; gap: 8px; }
 .rbtn.ghost { background: transparent; border-color: var(--line-strong); color: var(--muted); }
 .rbtn.ghost:hover { color: var(--ink); border-color: var(--ink); }
+
+/* ---------- Suche (Adressen, Orte, POIs) ---------- */
+.sr-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); }
+.sr-row:last-child { border-bottom: none; }
+.sr-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; padding: 9px 8px; background: transparent; border: none; color: var(--ink); cursor: pointer; }
+.sr-main:hover { background: var(--surface-2); }
+.sr-ico { width: 26px; height: 26px; flex: none; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sr-text { display: flex; flex-direction: column; min-width: 0; }
+.sr-name { font-size: .89rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-detail { font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-tag { margin-left: 6px; font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); padding: 1px 4px; border-radius: 3px; }
+.sr-go { width: 42px; flex: none; background: transparent; border: none; border-left: 1px solid var(--line); color: var(--accent); cursor: pointer; display: grid; place-items: center; }
+.sr-go svg { width: 17px; height: 17px; }
+.sr-go:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sr-hint { font-size: .72rem; color: var(--faint); margin: -6px 0 12px; }
+
+/* ---------- Routenplanung ---------- */
+.routepanel {
+  flex: none; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 9px;
+  max-height: 46vh; overflow-y: auto;
+}
+.rp-head { display: flex; align-items: center; gap: 10px; }
+.rp-head h3 { margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.rp-profiles { display: flex; gap: 4px; margin-left: auto; background: var(--surface-2); padding: 3px; border-radius: var(--r-sm); }
+.rp-profile { border: none; background: transparent; color: var(--muted); font-size: .78rem; font-weight: 600; padding: 5px 11px; border-radius: 4px; cursor: pointer; }
+.rp-profile.is-on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.rp-points { display: flex; flex-direction: column; gap: 5px; }
+.rp-point { display: flex; align-items: center; gap: 9px; font-size: .86rem; min-width: 0; }
+.rp-point > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-point .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.rp-point .dot.start { background: var(--ok); }
+.rp-point .dot.end { background: var(--sev3); }
+.rp-summary { display: flex; align-items: baseline; gap: 14px; font-size: .82rem; color: var(--muted); }
+.rp-summary b { font-size: 1.15rem; font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
+.rp-actions { display: flex; align-items: center; gap: 8px; }
+.rp-hint { font-size: .76rem; color: var(--muted); margin: 0; }
+.rp-hint.err { color: var(--sev2); }
+.btn-primary { flex: 1; min-height: 40px; border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: .86rem; font-weight: 650; cursor: pointer; }
+.btn-quiet { background: transparent; border: none; color: var(--muted); font-size: .76rem; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; padding: 4px; }
+.btn-quiet:hover { color: var(--ink); }
+.rp-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rp-steps li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: .82rem; }
+.st-ico { width: 22px; flex: none; color: var(--accent); display: grid; place-items: center; }
+.st-text { flex: 1; min-width: 0; }
+.st-dist { color: var(--muted); font-size: .74rem; white-space: nowrap; }
+
+/* ---------- Zielführung ---------- */
+.navbar { flex: none; background: var(--accent); color: #fff; padding: 10px 14px 8px; display: flex; flex-direction: column; gap: 6px; }
+.nav-main { display: flex; align-items: center; gap: 12px; }
+.nav-ico { width: 42px; height: 42px; flex: none; border-radius: var(--r-sm); background: rgba(255,255,255,.16); display: grid; place-items: center; }
+.nav-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.nav-text b { font-size: 1.3rem; font-weight: 700; line-height: 1.1; letter-spacing: -.01em; }
+.nav-text span { font-size: .84rem; opacity: .92; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navbar .iconbtn { border-color: rgba(255,255,255,.35); color: #fff; background: transparent; }
+.navbar .iconbtn.is-off { opacity: .55; }
+.nav-foot { display: flex; align-items: center; gap: 14px; font-size: .78rem; opacity: .95; }
+.nav-foot b { font-weight: 650; }
+.nav-foot .btn-quiet { margin-left: auto; color: #fff; }
+.nav-warn { color: #ffd7a1; font-weight: 650; }
+
+/* ---------- Marken für Route, Ziel und Position ---------- */
+.mk-route { width: 15px; height: 15px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+.mk-route.mk-start { background: var(--ok); }
+.mk-route.mk-end { background: var(--sev3); }
+.mk-route.mk-pin { width: 16px; height: 16px; background: var(--accent); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
+.mk-nav { width: 18px; height: 18px; background: var(--accent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 28%, transparent); }
+
+/* Punktmenü auf der Karte (langes Antippen / rechte Maustaste) */
+.pointmenu {
+  position: absolute; z-index: 6; transform: translate(-6px, -6px);
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  box-shadow: 0 6px 20px rgba(0,0,0,.22); display: flex; flex-direction: column; overflow: hidden; min-width: 160px;
+}
+.pointmenu button { text-align: left; background: transparent; border: none; color: var(--ink); font-size: .82rem; padding: 9px 13px; cursor: pointer; }
+.pointmenu button + button { border-top: 1px solid var(--line); }
+.pointmenu button:hover { background: var(--surface-2); }
+
+/* Teile einer Offline-Region */
+.rinfo .part { margin-right: 8px; white-space: nowrap; }
+.rinfo .part.is-on { color: var(--ok); font-weight: 600; }
+.region.all { border-bottom: 1px solid var(--line); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: 6px; }
+.region.all .rinfo b { font-size: .92rem; }
+
+/* Streckenvarianten */
+.rp-alts { display: flex; gap: 6px; }
+.rp-alt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; align-items: flex-start; padding: 7px 10px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; text-align: left; }
+.rp-alt b { font-size: .95rem; font-weight: 650; }
+.rp-alt span { font-size: .7rem; color: var(--muted); }
+.rp-alt .rp-alt-diff { color: var(--faint); }
+.rp-alt.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.rp-alt.is-on .rp-alt-diff { color: var(--accent); font-weight: 600; }
+.rp-avoid { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.rp-avoid input { accent-color: var(--accent); }
+
+/* Standort-Menü und Setzen-Modus */
+.loc-now { padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: 12px; }
+.loc-name { font-size: 1rem; font-weight: 650; }
+.loc-coords { font-size: .76rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.loc-src { color: var(--faint); }
+.pickbar { flex: none; display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-top: 1px solid var(--line); font-size: .82rem; }
+.sr-star { width: 38px; flex: none; background: transparent; border: none; border-left: 1px solid var(--line); color: var(--faint); cursor: pointer; display: grid; place-items: center; }
+.sr-star svg { width: 16px; height: 16px; }
+.sr-star.is-on { color: var(--sev1); }
+.sr-star:hover { color: var(--ink); }
+.sr-ico.is-own { color: #0d9488; background: color-mix(in srgb, #0d9488 14%, transparent); }
+.sr-tag.own { color: #0d9488; border-color: color-mix(in srgb, #0d9488 45%, transparent); margin-left: 0; margin-right: 6px; }
+.pointmenu .pm-title { padding: 8px 13px 6px; font-size: .78rem; font-weight: 650; color: var(--ink); border-bottom: 1px solid var(--line); background: var(--surface-2); }
+
+/* Zählkachel: Datenpunkte im Kartenausschnitt */
+.counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 4px; }
+.cc { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 2px 0; background: transparent; border: none; text-align: left; color: inherit; }
+.cc-num { font-size: 1.35rem; font-weight: 650; letter-spacing: -.01em; line-height: 1.15; }
+.cc-lbl { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.cc-tap { cursor: pointer; border-radius: var(--r-sm); padding: 2px 4px; margin: 0 -4px; }
+.cc-tap:hover { background: var(--surface-2); }
+
+/* Kleine Aktionsknöpfe in der Start-/Zielzeile der Route */
+.rp-chip {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--muted); cursor: pointer;
+  font-size: .74rem; font-weight: 600; line-height: 1.5;
+}
+.rp-chip svg { width: 13px; height: 13px; color: var(--accent); }
+.rp-chip:hover { border-color: var(--accent); color: var(--ink); }
+.rp-chip.icon { padding: 5px; }
+.rp-chip.icon svg { width: 15px; height: 15px; }
+.rp-point .rp-chip:first-of-type { margin-left: auto; }
+
+/* Abfahrtstafel: Verkehrsmittel im Klartext, Zeile antippbar für den Laufweg */
+.dep-mode { font-size: .72rem; color: var(--muted); flex: none; }
+.dep-btn { display: flex; align-items: center; gap: 9px; width: 100%; background: transparent; border: none; color: inherit; cursor: pointer; text-align: left; padding: 3px 4px; margin: -3px -4px; border-radius: var(--r-sm); font: inherit; }
+.dep-btn:hover { background: var(--surface-2); }
+.dep-btn .chevron { margin-left: 2px; color: var(--faint); }
+
+/* Laufweg einer Fahrt */
+.trip-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.trip-dir { font-size: .86rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-stops { list-style: none; margin: 0; padding: 0 0 0 4px; }
+.trip-stops li { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: .85rem; position: relative; }
+.trip-stops li i { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--surface); border: 2px solid var(--line-strong); z-index: 1; }
+.trip-stops li::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: var(--line-strong); }
+.trip-stops li:first-child::before { top: 50%; }
+.trip-stops li:last-child::before { bottom: 50%; }
+.trip-stops li.is-here i { background: var(--accent); border-color: var(--accent); }
+.trip-stops li.is-here .ts-name { font-weight: 650; }
+.ts-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-time { color: var(--muted); font-size: .78rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ts-time.late { color: var(--sev2); font-weight: 600; }
+.ts-time.cancelled { color: var(--sev3); font-weight: 600; }

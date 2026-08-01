@@ -30,6 +30,21 @@ export function timeHM(iso: string | null): string {
   return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * Abfahrtszeit: heute nur die Uhrzeit, sonst mit Wochentag — sonst sehen
+ * Fahrten an verschiedenen Tagen identisch aus.
+ */
+export function departureTime(iso: string | null): string {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return time;
+  const tomorrow = new Date(now.getTime() + 86400000);
+  if (d.toDateString() === tomorrow.toDateString()) return `morgen ${time}`;
+  return `${d.toLocaleDateString('de-DE', { weekday: 'short' })} ${time}`;
+}
+
 export function formatDateTime(iso: string | null): string {
   if (!iso) return '–';
   return new Date(iso).toLocaleString('de-DE', {
@@ -82,6 +97,28 @@ export const SEVERITY_VAR: Record<Severity, string> = {
   severe: 'var(--sev3)',
   extreme: 'var(--sev4)',
 };
+
+/** Verkehrsmittel-Bezeichnung → Art (steuert Farbe der Linien-Plakette). */
+export function kindOfProduct(product: string | null | undefined): string {
+  switch (product) {
+    case 'Bus':
+    case 'Fernbus':
+      return 'bus';
+    case 'Tram':
+    case 'U-Bahn':
+      return 'tram';
+    case 'S-Bahn':
+    case 'Zug':
+    case 'Regionalzug':
+    case 'Fernzug':
+    case 'Nachtzug':
+      return 'rail';
+    case 'Fähre':
+      return 'ferry';
+    default:
+      return 'other';
+  }
+}
 
 export const APRS_KIND_DE: Record<string, string> = {
   station: 'APRS-Station',
