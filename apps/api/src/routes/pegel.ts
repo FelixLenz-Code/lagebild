@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { WaterLevel, Coords } from '@lagebild/shared';
+import type { WaterLevel, WaterLevelHistory, WaterLevelPoint, Coords } from '@lagebild/shared';
 import { readCoords, readBbox, inBbox, bboxCenter } from '../lib/geo.js';
 import { cached } from '../lib/cache.js';
 import { fetchJson } from '../lib/http.js';
@@ -20,6 +20,7 @@ interface RawTimeseries {
 }
 
 interface RawStation {
+  uuid?: string;
   shortname?: string;
   longname?: string;
   longitude?: number;
@@ -40,6 +41,7 @@ function toLevel(s: RawStation): WaterLevel {
   // Zeitreihe "W" = Wasserstand (in cm)
   const w = (s.timeseries ?? []).find((t) => t.shortname === 'W');
   return {
+    id: s.uuid,
     station: s.shortname ?? s.longname ?? 'Pegel',
     water: s.water?.longname ?? s.water?.shortname ?? '',
     levelCm: w?.currentMeasurement?.value ?? null,
@@ -89,4 +91,51 @@ pegelRoute.get('/', async (c) => {
     .slice(0, 8);
   cache.set(levels);
   return c.json(envelope(levels, 'PEGELONLINE (WSV)'));
+});
+
+/**
+ * Verlauf einer Messstelle. PEGELONLINE liefert Minutenwerte (7 Tage sind über
+ * 10.000 Punkte) — hier wird auf gut 120 Stützpunkte ausgedünnt, das reicht für
+ * die Kurve im Popup und hält die Antwort klein.
+ */
+pegelRoute.get('/history', async (c) => {
+  const id = (c.req.query('id') ?? '').trim();
+  if (!/^[0-9a-f-]{20,40}$/i.test(id)) return c.json({ error: 'id erforderlich' }, 400);
+  const days = Math.min(Math.max(Number(c.req.query('days') ?? 3) || 3, 1), 14);
+
+  const key = `pegel-hist:${id}:${days}`;
+  const cache = cached<WaterLevelHistory>(key, 600);
+  if (cache.hit) return c.json(envelope(cache.hit, 'PEGELONLINE (WSV)', true));
+
+  const raw = await fetchJson<{ timestamp?: string; value?: number }[]>(
+    `https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${encodeURIComponent(id)}/W/measurements.json?start=P${days}D`,
+    { timeoutMs: 15000 },
+  );
+  const all = raw.filter((m) => m.timestamp && Number.isFinite(m.value)) as { timestamp: string; value: number }[];
+  if (!all.length) {
+    return c.json(envelope({ points: [], minCm: 0, maxCm: 0, change3hCm: null, trend: null }, 'PEGELONLINE (WSV)'));
+  }
+
+  const step = Math.max(1, Math.ceil(all.length / 120));
+  const points: WaterLevelPoint[] = [];
+  for (let i = 0; i < all.length; i += step) points.push({ t: all[i]!.timestamp, v: all[i]!.value });
+  // Der letzte Messwert soll immer dabei sein — er steht im Popup als Zahl.
+  const last = all[all.length - 1]!;
+  if (points[points.length - 1]?.t !== last.timestamp) points.push({ t: last.timestamp, v: last.value });
+
+  const values = all.map((m) => m.value);
+  // Vergleichswert von vor drei Stunden für den Trend.
+  const threeHoursAgo = new Date(last.timestamp).getTime() - 3 * 3600_000;
+  const past = all.find((m) => new Date(m.timestamp).getTime() >= threeHoursAgo);
+  const change = past ? Math.round(last.value - past.value) : null;
+
+  const history: WaterLevelHistory = {
+    points,
+    minCm: Math.min(...values),
+    maxCm: Math.max(...values),
+    change3hCm: change,
+    trend: change == null ? null : change > 2 ? 'rising' : change < -2 ? 'falling' : 'steady',
+  };
+  cache.set(history);
+  return c.json(envelope(history, 'PEGELONLINE (WSV)'));
 });

@@ -23,11 +23,12 @@ import type {
   AprsStation,
   WindPoint,
   WindField,
+  WaterLevelHistory,
   RouteResult,
   TransitItinerary,
   TransitStopPoint,
 } from '@lagebild/shared';
-import { fetchAircraftDetails, type Bbox } from './api.js';
+import { fetchAircraftDetails, fetchPegelHistory, type Bbox } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
 import { getOfflineFile } from './offlineMaps.js';
 import { DrawList } from './DrawList.js';
@@ -127,13 +128,66 @@ function trafficPopupHtml(t: TrafficIncident): string {
   );
 }
 
-function pegelPopupHtml(p: WaterLevel): string {
-  const level = p.levelCm != null ? `${p.levelCm} cm` : '–';
+/** Verlaufskurve als SVG — die Popups sind reines HTML, also wird sie gezeichnet. */
+function pegelSparkline(h: WaterLevelHistory): string {
+  const W = 276;
+  const H = 62;
+  const pad = 5;
+  const pts = h.points;
+  if (pts.length < 2) return '';
+  const span = Math.max(1, h.maxCm - h.minCm);
+  const x = (i: number) => pad + (i / (pts.length - 1)) * (W - 2 * pad);
+  const y = (v: number) => pad + (1 - (v - h.minCm) / span) * (H - 2 * pad);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const area = `${line} L${x(pts.length - 1).toFixed(1)},${H - pad} L${x(0).toFixed(1)},${H - pad} Z`;
+  const lastX = x(pts.length - 1).toFixed(1);
+  const lastY = y(pts[pts.length - 1]!.v).toFixed(1);
   return (
-    `<div class="warn-popup">` +
-    `<b>${esc(p.station)}</b>` +
-    (p.water ? `<div class="wp-region">${esc(p.water)}</div>` : '') +
-    `<p class="wp-desc">Wasserstand: ${esc(level)}${p.measuredAt ? ` · ${esc(formatDateTime(p.measuredAt))}` : ''}</p>` +
+    `<svg class="pg-spark" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" aria-hidden="true">` +
+    `<path d="${area}" fill="color-mix(in srgb, var(--accent) 16%, transparent)"/>` +
+    `<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>` +
+    `<circle cx="${lastX}" cy="${lastY}" r="3" fill="var(--accent)"/>` +
+    `</svg>`
+  );
+}
+
+const TREND_ARROW: Record<string, string> = { rising: '▲', falling: '▼', steady: '▬' };
+
+/**
+ * Popup einer Messstelle. Der Verlauf wird beim Öffnen nachgeladen — solange
+ * steht dort ein Hinweis statt einer leeren Fläche.
+ */
+function pegelPopupHtml(p: WaterLevel, history?: WaterLevelHistory | null, loading = false): string {
+  const rows = [row('Gewässer', p.water || null), row('Wasserstand', p.levelCm != null ? `${p.levelCm} cm` : null)];
+  let trendLine = '';
+  if (history?.change3hCm != null && history.trend) {
+    const sign = history.change3hCm > 0 ? '+' : '';
+    trendLine =
+      `<div class="pg-trend ${history.trend}">${TREND_ARROW[history.trend] ?? ''} ` +
+      `${sign}${history.change3hCm} cm in 3 h</div>`;
+  }
+
+  let chart = '';
+  if (loading) {
+    chart = '<div class="pg-note">Verlauf wird geladen …</div>';
+  } else if (history && history.points.length > 1) {
+    const first = history.points[0]!;
+    const last = history.points[history.points.length - 1]!;
+    chart =
+      pegelSparkline(history) +
+      `<div class="pg-axis"><span>${formatDateTime(first.t)}</span>` +
+      `<span>min ${Math.round(history.minCm)} · max ${Math.round(history.maxCm)} cm</span>` +
+      `<span>${timeHM(last.t)}</span></div>`;
+  } else if (history) {
+    chart = '<div class="pg-note">Kein Verlauf verfügbar.</div>';
+  }
+
+  return (
+    `<div class="warn-popup pegel-popup"><h4>${esc(p.station)}</h4>` +
+    `<div class="wp-rows">${rows.join('')}</div>` +
+    trendLine +
+    chart +
+    (p.measuredAt ? `<div class="wp-time">Messung ${formatDateTime(p.measuredAt)}</div>` : '') +
     `</div>`
   );
 }
@@ -503,6 +557,8 @@ export function LageMap({
   onPickPointRef.current = onPickPoint;
   const onStopClickRef = useRef(onStopClick);
   onStopClickRef.current = onStopClick;
+  /** Bereits geladene Pegelverläufe (null = Abruf fehlgeschlagen). */
+  const pegelHistory = useRef<Map<string, WaterLevelHistory | null>>(new Map());
   const stopsRef = useRef(stops);
   stopsRef.current = stops;
   const pickingRef = useRef(pickingLocation);
@@ -1206,9 +1262,30 @@ export function LageMap({
     if (showPegel) {
       for (const p of pegel) {
         if (!p.coordinates) continue;
+        const popup = new maplibregl.Popup({ offset: 12, maxWidth: '320px' }).setHTML(pegelPopupHtml(p));
+        // Der Verlauf ist ein eigener Abruf — erst holen, wenn jemand hinschaut.
+        if (p.id) {
+          popup.on('open', () => {
+            const known = pegelHistory.current.get(p.id!);
+            if (known !== undefined) {
+              popup.setHTML(pegelPopupHtml(p, known));
+              return;
+            }
+            popup.setHTML(pegelPopupHtml(p, null, true));
+            fetchPegelHistory(p.id!)
+              .then((res) => {
+                pegelHistory.current.set(p.id!, res.data);
+                if (popup.isOpen()) popup.setHTML(pegelPopupHtml(p, res.data));
+              })
+              .catch(() => {
+                pegelHistory.current.set(p.id!, null);
+                if (popup.isOpen()) popup.setHTML(pegelPopupHtml(p, null));
+              });
+          });
+        }
         const m = new maplibregl.Marker({ element: markerEl('var(--accent)', 12) })
           .setLngLat([p.coordinates.lon, p.coordinates.lat])
-          .setPopup(new maplibregl.Popup({ offset: 12, maxWidth: '300px' }).setHTML(pegelPopupHtml(p)))
+          .setPopup(popup)
           .addTo(map);
         dataMarkers.current.push(m);
       }

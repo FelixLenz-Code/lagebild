@@ -7,6 +7,7 @@ import type {
   TrafficIncident,
   NewsItem,
   WaterLevel,
+  WaterLevelHistory,
   AirQuality,
   RadarData,
   GeoResult,
@@ -117,6 +118,10 @@ export const fetchTraffic = (b: Bbox): Promise<ApiEnvelope<TrafficIncident[]>> =
 
 export const fetchPegel = (b: Bbox): Promise<ApiEnvelope<WaterLevel[]>> =>
   getJson(`/api/pegel?${bboxQ(b)}`);
+
+/** Verlauf einer Messstelle (ausgedünnt auf ~120 Punkte). */
+export const fetchPegelHistory = (id: string, days = 3): Promise<ApiEnvelope<WaterLevelHistory>> =>
+  getJson(`/api/pegel/history?id=${encodeURIComponent(id)}&days=${days}`);
 
 export const fetchAircraft = (b: Bbox): Promise<ApiEnvelope<Aircraft[]>> =>
   getJson(`/api/aircraft?${bboxQ(b)}`);

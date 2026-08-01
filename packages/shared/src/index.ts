@@ -119,12 +119,32 @@ export interface TrafficIncident {
 
 /** Pegelstand (PEGELONLINE). */
 export interface WaterLevel {
+  /** PEGELONLINE-Kennung der Messstelle (für den Verlauf). */
+  id?: string;
   station: string;
   water: string;
   levelCm: number | null;
   trend: 'rising' | 'falling' | 'steady' | null;
   measuredAt: string | null;
   coordinates?: Coords | null;
+}
+
+/** Ein Messpunkt im Pegelverlauf. */
+export interface WaterLevelPoint {
+  /** Zeitpunkt (ISO). */
+  t: string;
+  /** Wasserstand in cm. */
+  v: number;
+}
+
+/** Verlauf einer Pegel-Messstelle. */
+export interface WaterLevelHistory {
+  points: WaterLevelPoint[];
+  minCm: number;
+  maxCm: number;
+  /** Änderung der letzten drei Stunden in cm. */
+  change3hCm: number | null;
+  trend: 'rising' | 'falling' | 'steady' | null;
 }
 
 /** Luftqualität nach European Air Quality Index (EAQI). */

@@ -702,3 +702,12 @@ svg { display: block; }
 .tp-detail { font-size: .76rem; color: var(--muted); }
 .tp-legs li.is-walk .tp-when { color: var(--muted); font-weight: 600; }
 .tp-legs li.tp-end .tp-head b { font-size: .86rem; }
+
+/* Pegel-Popup mit Verlaufskurve */
+.pegel-popup .pg-spark { display: block; margin: 8px 0 2px; }
+.pegel-popup .pg-axis { display: flex; justify-content: space-between; gap: 8px; font-size: .64rem; color: var(--faint); }
+.pegel-popup .pg-trend { font-size: .74rem; font-weight: 600; margin-top: 4px; }
+.pegel-popup .pg-trend.rising { color: var(--sev2); }
+.pegel-popup .pg-trend.falling { color: var(--ok); }
+.pegel-popup .pg-trend.steady { color: var(--muted); }
+.pegel-popup .pg-note { font-size: .74rem; color: var(--muted); margin: 8px 0 2px; }
