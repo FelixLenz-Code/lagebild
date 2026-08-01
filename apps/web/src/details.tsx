@@ -108,12 +108,10 @@ function AirSection({ air }: { air: AirQuality }) {
 const COL_W = 54;
 /** Bänder des Diagramms (gemeinsame Zeitachse, deshalb feste Höhen). */
 const TEMP_H = 60;
-const RAIN_H = 98;
-const PROB_TOP = 4;
-const PROB_H = 26;
-const RAIN_BASE = RAIN_H - 16;
+const RAIN_H = 72;
+const RAIN_BASE = RAIN_H - 4;
 /** Platz für die Mengenbalken samt Beschriftung. */
-const BAR_MAX = RAIN_BASE - (PROB_TOP + PROB_H) - 10;
+const BAR_MAX = RAIN_BASE - 14;
 
 /**
  * Regenstärke in Stufen — Farben und Schwellen wie in der Radar-Legende,
@@ -182,8 +180,6 @@ function HourlyForecast({ hourly, coords }: { hourly: WeatherForecast['hourly'];
   // Maßstab mindestens 1 mm, damit Nieselregen nicht wie Starkregen aussieht.
   const scale = Math.max(1, peak);
   const maxProb = Math.max(0, ...hours.map((h) => h.precipitationProbabilityPct ?? 0));
-  const probY = (p: number) => PROB_TOP + PROB_H - (p / 100) * PROB_H;
-  const probLine = hours.map((h, i) => `${mid(i)},${probY(h.precipitationProbabilityPct ?? 0)}`).join(' ');
   const windows = rainWindows(hours);
 
   // --- Nachtstunden und Jetzt-Marke ---
@@ -297,17 +293,13 @@ function HourlyForecast({ hourly, coords }: { hourly: WeatherForecast['hourly'];
             {nowVisible && <line x1={nowX} y1={0} x2={nowX} y2={TEMP_H} className="wx-now" />}
           </svg>
 
-          {/* Regen: Wahrscheinlichkeit als Linie, Menge als Balken nach Stärke gefärbt */}
-          <svg width={width} height={RAIN_H} className="rain-chart" role="img" aria-label="Regenmenge und Regenwahrscheinlichkeit">
+          {/* Regenmenge als Balken, nach Stärke gefärbt */}
+          <svg width={width} height={RAIN_H} className="rain-chart" role="img" aria-label="Regenmenge je Stunde">
             {nightBands(RAIN_BASE)}
             {picked != null && <rect x={picked * COL_W} y={0} width={COL_W} height={RAIN_BASE} className="wx-pick" />}
-            <line x1={0} y1={probY(50)} x2={width} y2={probY(50)} className="wx-guide" />
             <line x1={0} y1={RAIN_BASE} x2={width} y2={RAIN_BASE} stroke="var(--line-strong)" strokeWidth={1} />
-            <polygon points={`0,${probY(0)} ${probLine} ${width},${probY(0)}`} fill="var(--sev1)" opacity={0.12} />
-            <polyline points={probLine} fill="none" stroke="var(--sev1)" strokeWidth={1.8} strokeLinejoin="round" />
             {hours.map((h, i) => {
               const mm = h.precipitationMm ?? 0;
-              const prob = h.precipitationProbabilityPct;
               const height = mm > 0 ? Math.max(3, (mm / scale) * BAR_MAX) : 0;
               return (
                 <g key={h.time}>
@@ -328,11 +320,6 @@ function HourlyForecast({ hourly, coords }: { hourly: WeatherForecast['hourly'];
                       )}
                     </>
                   )}
-                  {prob != null && i % 3 === 0 && (
-                    <text x={mid(i)} y={RAIN_H - 4} textAnchor="middle" className="rain-tick">
-                      {prob} %
-                    </text>
-                  )}
                 </g>
               );
             })}
@@ -345,6 +332,23 @@ function HourlyForecast({ hourly, coords }: { hourly: WeatherForecast['hourly'];
               </>
             )}
           </svg>
+
+          {/* Regenwahrscheinlichkeit als schlichter Wert je Stunde */}
+          <div className="wx-hourrow wx-probrow">
+            {hours.map((h, i) => {
+              const prob = h.precipitationProbabilityPct;
+              const level = prob == null ? '' : prob >= 60 ? ' high' : prob >= 30 ? ' mid' : '';
+              return (
+                <div
+                  className={`wx-prob${level}${night[i] ? ' is-night' : ''}${picked === i ? ' is-picked' : ''}`}
+                  key={h.time}
+                  style={{ width: COL_W }}
+                >
+                  {prob != null ? `${prob} %` : '–'}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -360,7 +364,7 @@ function HourlyForecast({ hourly, coords }: { hourly: WeatherForecast['hourly'];
           </span>
         ))}
         <span>
-          <i className="line" /> Regenwahrscheinlichkeit (gestrichelt = 50 %)
+          <i className="pct">%</i> Regenwahrscheinlichkeit
         </span>
       </div>
     </>

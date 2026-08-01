@@ -338,6 +338,7 @@ function windToGeoJson(points: WindPoint[]): GeoJSON.FeatureCollection {
         icon: `wind-${windClass(p.speedKmh)}`,
         rotate: (p.directionDeg + 180) % 360,
         label: `${p.speedKmh}`,
+        speed: p.speedKmh,
         // Schwacher Wind bekommt einen kleineren Pfeil.
         size: p.speedKmh < 12 ? 0.5 : p.speedKmh < 29 ? 0.62 : 0.74,
       },
@@ -999,6 +1000,37 @@ export function LageMap({
       });
     }
   }, [showAircraft, showVessels, showAprs, showWind, aircraft, vessels, aprs, wind, ready, styleEpoch, iconEpoch]);
+
+  // Windpfeile driften in ihre eigene Richtung und blenden dabei auf und ab.
+  // `icon-offset` wirkt im gedrehten Symbolraster, deshalb genügt ein einziger
+  // Wert für alle Pfeile — jeder wandert entlang seiner Windrichtung.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !showWind || wind.length === 0) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    let frame = 0;
+    const CYCLE_MS = 2200;
+    const step = () => {
+      frame = requestAnimationFrame(step);
+      if (!map.getLayer('wind')) return;
+      const phase = (performance.now() % CYCLE_MS) / CYCLE_MS;
+      // Kräftigerer Wind treibt den Pfeil weiter — Stufen wie bei der Farbe.
+      const shift = (factor: number) => ['literal', [0, -phase * 26 * factor]] as const;
+      map.setLayoutProperty('wind', 'icon-offset', [
+        'case',
+        ['<', ['get', 'speed'], 12],
+        shift(0.55),
+        ['<', ['get', 'speed'], 29],
+        shift(0.85),
+        shift(1.2),
+      ]);
+      // Am Anfang aufblenden, am Ende ausblenden — das ergibt den Flusseindruck.
+      map.setPaintProperty('wind', 'icon-opacity', Math.min(1, Math.sin(Math.PI * phase) * 1.6 + 0.25));
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [showWind, wind, ready, styleEpoch, iconEpoch]);
 
   // Eigene Markierungen: Quelle + Layer anlegen (oberste Ebene)
   useEffect(() => {

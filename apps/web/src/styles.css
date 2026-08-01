@@ -368,6 +368,18 @@ svg { display: block; }
 .rain-legend i.bar { width: 9px; height: 9px; border-radius: 2px; background: var(--accent); }
 .rain-legend i.line { width: 14px; height: 2px; border-radius: 1px; background: var(--sev1); }
 .rain-legend i.line.acc { background: var(--accent); height: 2.5px; }
+.rain-legend i.pct { font-style: normal; font-weight: 700; color: var(--accent); }
+
+/* Regenwahrscheinlichkeit: ein Wert je Stunde statt einer Kurve */
+.wx-probrow { border-top: 1px solid var(--line); }
+.wx-prob {
+  flex: none; text-align: center; padding: 5px 0 2px;
+  font-size: .68rem; color: var(--faint); font-variant-numeric: tabular-nums;
+}
+.wx-prob.mid { color: var(--muted); font-weight: 600; }
+.wx-prob.high { color: var(--accent); font-weight: 700; }
+.wx-prob.is-night { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.wx-prob.is-picked { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 
 /* air quality inside the weather views */
 .wx-air { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }

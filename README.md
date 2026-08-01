@@ -72,7 +72,8 @@ Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
   Detailansicht fasst die **nächsten 24 Stunden** in einem Diagramm mit
   gemeinsamer Zeitachse zusammen: Wettersymbol, Temperaturkurve und darunter
   der Regen — Balken nach Stärke gefärbt (leicht/mäßig/stark, Schwellen wie in
-  der Radar-Legende), Linie = Regenwahrscheinlichkeit. Nachtstunden sind
+  der Radar-Legende) und darunter die Regenwahrscheinlichkeit als Wert je
+  Stunde (hervorgehoben ab 30 bzw. 60 %). Nachtstunden sind
   hinterlegt, eine Marke zeigt „jetzt", und beim Antippen einer Stunde stehen
   Temperatur, Menge, Wahrscheinlichkeit und Wind im Klartext darüber. Die
   Kopfzeile nennt die Regenphasen („Regen 13–19 Uhr, 0–3 Uhr · 13,6 mm
@@ -80,7 +81,9 @@ Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
 * **Wind**: `/api/wind` legt ein Gitter über den Ausschnitt und holt die
   Punkte in **einer** Open-Meteo-Anfrage (frei, ohne Key). Auf der Karte wird
   daraus ein Pfeilfeld: Richtung = wohin der Wind weht, Farbe = Stärke
-  (Beaufort-nah), Beschriftung = km/h. Freie Wind-Kacheldienste gibt es nicht,
+  (Beaufort-nah), Beschriftung = km/h. Die Pfeile driften animiert in ihre
+  Windrichtung (stärkerer Wind treibt weiter); bei `prefers-reduced-motion`
+  bleibt das Feld ruhig. Freie Wind-Kacheldienste gibt es nicht,
   das Gitter ist der praktikable Weg.
 * **Regenradar**: In Deutschland zeigt die Karte das **DWD-Vorhersageradar**
   (RADOLAN-RV via Bright Sky, `/api/radar/forecast`): 5-Minuten-Schritte von
