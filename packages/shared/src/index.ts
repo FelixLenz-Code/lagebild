@@ -607,6 +607,41 @@ export interface LightningStrike {
   accuracyM: number | null;
 }
 
+/** Rastanlage oder Ladepunkt an einer Autobahn. */
+export interface RestFacility {
+  id: string;
+  road: string;
+  kind: 'parking' | 'charging';
+  title: string;
+  subtitle: string | null;
+  lat: number;
+  lon: number;
+  /** Stellplätze (nur Rastanlagen). */
+  carSpaces: number | null;
+  lorrySpaces: number | null;
+  /** Ladepunkte, Leistung und Betreiber (nur Ladestationen). */
+  chargePoints: number | null;
+  chargePower: string | null;
+  operator: string | null;
+  /** Ausstattung im Klartext, soweit gemeldet. */
+  features: string[];
+}
+
+/** Standort einer öffentlichen Webcam (Bild bleibt auf der Betreiberseite). */
+export interface WebcamSpot {
+  id: string;
+  name: string;
+  title: string | null;
+  lat: number;
+  lon: number;
+  elevationM: number | null;
+  /** Blickrichtung in Grad. */
+  bearing: number | null;
+  country: string;
+  offline: boolean;
+  url: string;
+}
+
 /** Eine Wärmeanomalie aus dem Satellitenblick (NASA FIRMS, VIIRS 375 m). */
 export interface FireDetection {
   lat: number;

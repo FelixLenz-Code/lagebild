@@ -11,7 +11,7 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { STOP_COLOR } from './mapIcons.js';
@@ -175,6 +175,8 @@ export function App() {
     nina: false,
     fires: false,
     radiation: false,
+    rest: false,
+    webcams: false,
     aurora: false,
     fire: false,
     aprsTargets: [],
@@ -246,6 +248,17 @@ export function App() {
     () => fetchRadiation(viewport),
     [viewKey, refreshTick],
     { enabled: layers.radiation, refreshMs: 900_000 },
+  );
+  // Rastanlagen und Webcams ändern sich in Wochen — stündlich reicht völlig.
+  const rest = useApi(`rest:${viewKey}`, () => fetchRest(viewport), [viewKey, refreshTick], {
+    enabled: layers.rest,
+    refreshMs: 3600_000,
+  });
+  const webcams = useApi(
+    `webcams:${viewKey}`,
+    () => fetchWebcams(viewport),
+    [viewKey, refreshTick],
+    { enabled: layers.webcams, refreshMs: 3600_000 },
   );
   const quakes = useApi('quakes', () => fetchQuakes(), [refreshTick], {
     enabled: layers.quakes,
@@ -890,6 +903,8 @@ export function App() {
             nina={nina.data?.data ?? []}
             fires={fires.data?.data ?? []}
             radiation={radiation.data?.data ?? []}
+            rest={rest.data?.data ?? []}
+            webcams={webcams.data?.data ?? []}
             lightningAvailable={lightningAvailable}
             aurora={aurora.data?.data ?? null}
             fire={fire.data?.data ?? null}

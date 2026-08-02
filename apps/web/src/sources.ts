@@ -106,7 +106,7 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
       {
         key: 'autobahn',
         name: 'Autobahn GmbH des Bundes',
-        use: 'Baustellen, Sperrungen, Staumeldungen',
+        use: 'Baustellen, Sperrungen, Staumeldungen sowie Rastanlagen und Ladepunkte',
         url: 'https://autobahn.api.bund.dev/',
         terms: 'offene Verwaltungsdaten (bund.dev)',
       },
@@ -143,6 +143,14 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         use: 'Verkehrsfluss-Kacheln',
         url: 'https://developer.tomtom.com/',
         terms: 'eigener Schlüssel nötig, Anzeige nur mit gültigem Schlüssel',
+      },
+      {
+        key: 'fotowebcam',
+        name: 'Foto-Webcam.eu',
+        use: 'Standorte öffentlicher Panorama-Webcams',
+        url: 'https://www.foto-webcam.eu/',
+        terms:
+          'Links sind ausdrücklich erwünscht, die Bildnutzung ist je Kamera geregelt — die App zeigt deshalb nur Standort und Link, keine Bilder',
       },
       {
         key: 'photon',

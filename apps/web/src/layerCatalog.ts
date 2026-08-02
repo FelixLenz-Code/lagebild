@@ -30,7 +30,9 @@ export type LayerId =
   | 'lightning'
   | 'nina'
   | 'fires'
-  | 'radiation';
+  | 'radiation'
+  | 'rest'
+  | 'webcams';
 
 /** Zusätzlich zu den Ebenen: eingerückte Anzeigeoptionen. */
 export type LayerRowId = LayerId | 'wind-labels';
@@ -61,6 +63,7 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'lightning', label: 'Blitze', color: '#e3b505', group: 'Wetter', hint: 'Entladungen der letzten 30 Minuten', needs: 'lightning', source: 'blitzortung' },
   { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Strömungsbild, 10 m über Grund', source: 'openmeteo' },
   { id: 'wind-labels', label: 'Windwerte', color: '#2c7448', group: 'Wetter', hint: 'km/h an den Gitterpunkten', sub: true },
+  { id: 'webcams', label: 'Webcams', color: '#5b5b60', group: 'Wetter', hint: 'Panorama-Kameras · Bild auf der Betreiberseite', source: 'fotowebcam' },
   { id: 'night', label: 'Tag/Nacht', color: '#0b1a33', group: 'Wetter', hint: 'Dämmerungsgrenze, selbst gerechnet' },
 
   // Gefahren
@@ -75,6 +78,7 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'traffic', label: 'Verkehrsmeldungen', color: 'var(--sev3)', group: 'Verkehr', hint: 'Baustellen, Sperrungen, Staus', source: 'autobahn' },
   { id: 'vehicles', label: 'Busse & Bahnen', color: '#a92318', group: 'Verkehr', hint: 'Position aus dem Fahrplan gerechnet', source: 'transitous' },
   { id: 'stops', label: 'Haltestellen', color: '#1d4e73', group: 'Verkehr', hint: 'Bus, Tram, Bahn · ab Zoom 12', source: 'transitous' },
+  { id: 'rest', label: 'Rastplätze & Laden', color: '#1d4e73', group: 'Verkehr', hint: 'Autobahn: Stellplätze und Ladepunkte', source: 'autobahn' },
   { id: 'aircraft', label: 'Flugzeuge', color: '#1d4e73', group: 'Verkehr', hint: 'ADS-B, ab Zoom 6', source: 'adsb' },
   { id: 'vessels', label: 'Schiffe', color: '#2c7448', group: 'Verkehr', hint: 'AIS', needs: 'ais', source: 'aisstream' },
   { id: 'aprs', label: 'Amateurfunk', color: '#6b3fa0', group: 'Verkehr', hint: 'feste Rufzeichenliste', needs: 'aprs', source: 'aprsfi' },

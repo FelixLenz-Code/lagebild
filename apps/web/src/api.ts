@@ -18,6 +18,8 @@ import type {
   CivilWarning,
   FireDetection,
   RadiationStation,
+  RestFacility,
+  WebcamSpot,
   PollenForecast,
   EarthquakeItem,
   AuroraGrid,
@@ -126,6 +128,14 @@ export const fetchQuakes = (): Promise<ApiEnvelope<EarthquakeItem[]>> =>
 /** Wärmeanomalien der letzten 24 h im Ausschnitt (NASA FIRMS). */
 export const fetchFires = (b: Bbox): Promise<ApiEnvelope<FireDetection[]>> =>
   getJson(`/api/hazards/fires?${bboxQ(b)}`);
+
+/** Rastanlagen und Ladepunkte an Autobahnen im Ausschnitt. */
+export const fetchRest = (b: Bbox): Promise<ApiEnvelope<RestFacility[]>> =>
+  getJson(`/api/rest?${bboxQ(b)}`);
+
+/** Standorte öffentlicher Webcams im Ausschnitt. */
+export const fetchWebcams = (b: Bbox): Promise<ApiEnvelope<WebcamSpot[]>> =>
+  getJson(`/api/webcams?${bboxQ(b)}`);
 
 /** Ortsdosisleistung im Ausschnitt (BfS). */
 export const fetchRadiation = (b: Bbox): Promise<ApiEnvelope<RadiationStation[]>> =>

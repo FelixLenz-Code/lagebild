@@ -173,6 +173,16 @@ export const NEWS_STYLE: Record<string, { path: string; color: string; label: st
   other: { path: GLYPH_PAPER, color: '#5b5b60', label: 'Nachricht' },
 };
 
+/** Rastanlage: „P" als Aussparung im Kreis. */
+const GLYPH_PARKING =
+  'M11.5 8.5h6.6a5.6 5.6 0 0 1 0 11.2h-2.6v3.8h-4Zm4 3.6v4h2.4a2 2 0 0 0 0-4Z';
+/** Ladepunkt: Stecker mit zwei Stiften. */
+const GLYPH_PLUG =
+  'M12 6h2.6v4.4H12Zm5.4 0H20v4.4h-2.6Zm-6.6 6h10.4v3.2a5.2 5.2 0 0 1-3.6 4.95V26h-3.2v-5.85a5.2 5.2 0 0 1-3.6-4.95Z';
+/** Webcam: Gehäuse mit Objektiv. */
+const GLYPH_CAMERA =
+  'M6 11.5h13.5v9H6Zm15.5 2.6 4.5-2.6v9l-4.5-2.6ZM9 21.5h5v2.2H9Z';
+
 /** Warndreieck für Behördenwarnungen (Mitte der Fläche). */
 /* Ausrufezeichen als Aussparung (fill-rule evenodd) — das Piktogramm wird
    weiß gefüllt, die inneren Flächen bleiben dadurch farbig. */
@@ -245,6 +255,10 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     ...Object.entries(VEHICLE_COLORS).map(([kind, color]) =>
       draw(map, `veh-${kind}`, GLYPH_VEHICLE, color, '#ffffff'),
     ),
+    drawSvg(map, 'rest-parking', badge(GLYPH_PARKING, '#1d4e73')),
+    drawSvg(map, 'rest-charging', badge(GLYPH_PLUG, '#2c7448')),
+    drawSvg(map, 'webcam-spot', badge(GLYPH_CAMERA, '#5b5b60')),
+    drawSvg(map, 'webcam-off', badge(GLYPH_CAMERA, '#9a9aa0')),
     // Behördenwarnung: Dreieck je Warnstufe, damit die Stufe nicht allein an
     // der Flächenfarbe hängt.
     ...Object.entries({

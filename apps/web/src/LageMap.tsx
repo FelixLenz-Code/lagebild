@@ -33,6 +33,8 @@ import type {
   CivilWarning,
   FireDetection,
   RadiationStation,
+  RestFacility,
+  WebcamSpot,
   GeoJsonGeometry,
   AuroraGrid,
   FireDangerGrid,
@@ -293,6 +295,59 @@ function lightningPopupHtml(s: LightningStrike): string {
     `<div class="wp-meta">${esc(relativeTime(s.time))} · ${esc(formatDateTime(s.time))}</div>` +
     `<div class="wp-meta">${s.stations} Empfangsstationen${accuracy ? ` · ${esc(accuracy)}` : ''}</div>` +
     `<div class="wp-meta">Blitzortung.org (ehrenamtliches Netz)</div>` +
+    `</div>`
+  );
+}
+
+/** Popup einer Rastanlage bzw. eines Ladepunkts. */
+function restPopupHtml(f: RestFacility): string {
+  const rows: [string, string][] = [];
+  if (f.carSpaces != null) rows.push(['Pkw-Stellplätze', String(f.carSpaces)]);
+  if (f.lorrySpaces != null) rows.push(['Lkw-Stellplätze', String(f.lorrySpaces)]);
+  if (f.chargePoints != null) rows.push(['Ladepunkte', String(f.chargePoints)]);
+  if (f.chargePower) rows.push(['Leistung', f.chargePower]);
+  if (f.operator) rows.push(['Betreiber', f.operator]);
+  return (
+    `<div class="warn-popup">` +
+    `<h4>${esc(f.title)}</h4>` +
+    `<div class="wp-region">${esc(f.road)}${f.subtitle ? ` · ${esc(f.subtitle)}` : ''}</div>` +
+    (rows.length
+      ? `<div class="wp-rows">${rows
+          .map(([k, v]) => `<span class="ac-k">${esc(k)}</span><span class="ac-v">${esc(v)}</span>`)
+          .join('')}</div>`
+      : '') +
+    (f.features.length ? `<p class="wp-desc">${esc(f.features.join(' · '))}</p>` : '') +
+    `</div>`
+  );
+}
+
+/** Himmelsrichtung im Klartext — „Blick 290°" sagt nicht jedem etwas. */
+const COMPASS = ['N', 'NO', 'O', 'SO', 'S', 'SW', 'W', 'NW'];
+
+/**
+ * Popup eines Webcam-Standorts.
+ *
+ * Bewusst **ohne Kamerabild**: Foto-Webcam.eu erlaubt das Verlinken
+ * ausdrücklich, die Bildnutzung ist aber je Kamera geregelt.
+ */
+function webcamPopupHtml(w: WebcamSpot): string {
+  const dir =
+    w.bearing == null ? '' : `${COMPASS[Math.round(w.bearing / 45) % 8]} (${w.bearing}°)`;
+  const rows: [string, string][] = [];
+  if (w.elevationM != null) rows.push(['Höhe', `${w.elevationM} m`]);
+  if (dir) rows.push(['Blickrichtung', dir]);
+  return (
+    `<div class="warn-popup">` +
+    `<h4>${esc(w.name)}</h4>` +
+    (w.title ? `<div class="wp-region">${esc(w.title)}</div>` : '') +
+    (rows.length
+      ? `<div class="wp-rows">${rows
+          .map(([k, v]) => `<span class="ac-k">${esc(k)}</span><span class="ac-v">${esc(v)}</span>`)
+          .join('')}</div>`
+      : '') +
+    (w.offline ? `<div class="wp-meta">zurzeit offline</div>` : '') +
+    `<a class="wp-link" href="${esc(w.url)}" target="_blank" rel="noreferrer">Zum Kamerabild</a>` +
+    `<div class="wp-meta">Bild und Rechte liegen bei Foto-Webcam.eu</div>` +
     `</div>`
   );
 }
@@ -642,6 +697,10 @@ interface Props {
   fires: FireDetection[];
   /** Messstellen der Ortsdosisleistung. */
   radiation: RadiationStation[];
+  /** Rastanlagen und Ladepunkte an Autobahnen. */
+  rest: RestFacility[];
+  /** Standorte öffentlicher Webcams. */
+  webcams: WebcamSpot[];
   /** Polarlicht-Gitter und Waldbrandgefahr als Flächen. */
   aurora: AuroraGrid | null;
   fire: FireDangerGrid | null;
@@ -699,6 +758,9 @@ export interface ActiveLayers {
   /** Satelliten-Feuer und Strahlungsmessnetz. */
   fires: boolean;
   radiation: boolean;
+  /** Rastanlagen/Ladepunkte und Webcam-Standorte. */
+  rest: boolean;
+  webcams: boolean;
   aurora: boolean;
   fire: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
@@ -743,6 +805,8 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   wind: false,
   night: false,
   nina: false,
+  rest: false,
+  webcams: false,
   fires: false,
   radiation: false,
   lightning: false,
@@ -788,6 +852,8 @@ export function LageMap({
   nina,
   fires,
   radiation,
+  rest,
+  webcams,
   aurora,
   fire,
   flyTo,
@@ -871,6 +937,8 @@ export function LageMap({
     nina: showNina,
     fires: showFires,
     radiation: showRadiation,
+    rest: showRest,
+    webcams: showWebcams,
     aurora: showAurora,
     fire: showFire,
   } = on;
@@ -918,6 +986,8 @@ export function LageMap({
         nina: showNina,
         fires: showFires,
         radiation: showRadiation,
+        rest: showRest,
+        webcams: showWebcams,
         aurora: showAurora,
         fire: showFire,
         aprsTargets,
@@ -925,7 +995,7 @@ export function LageMap({
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
-      showAurora, showFire, aprsTargets,
+      showAurora, showFire, showRest, showWebcams, aprsTargets,
       onLayersChange,
     ],
   );
@@ -2226,6 +2296,101 @@ export function LageMap({
       map.off('click', 'lightning', onClick);
     };
   }, [lightning, ready, styleEpoch]);
+
+  /* ---------- Rastanlagen, Ladepunkte und Webcams ---------- */
+
+  // Beide sind Punktebenen mit Piktogramm und werden gleich aufgebaut.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    for (const id of ['rest', 'webcams'] as const) {
+      if (map.getSource(id)) continue;
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id,
+        type: 'symbol',
+        source: id,
+        minzoom: id === 'rest' ? 8 : 5,
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.36, 14, 0.58],
+          'icon-allow-overlap': false,
+          'text-field': ['step', ['zoom'], '', 11, ['get', 'label']],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 10,
+          'text-offset': [0, 1.1],
+          'text-anchor': 'top',
+          'text-optional': true,
+          'text-max-width': 9,
+        },
+        paint: {
+          'text-color': dark ? '#e7e7e9' : '#1f2933',
+          'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+    }
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('rest') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showRest ? rest : []).map((f, i) => ({
+        type: 'Feature',
+        properties: {
+          index: i,
+          icon: f.kind === 'charging' ? 'rest-charging' : 'rest-parking',
+          label: f.title,
+        },
+        geometry: { type: 'Point', coordinates: [f.lon, f.lat] },
+      })),
+    });
+  }, [rest, showRest, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('webcams') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showWebcams ? webcams : []).map((w, i) => ({
+        type: 'Feature',
+        properties: {
+          index: i,
+          icon: w.offline ? 'webcam-off' : 'webcam-spot',
+          label: w.name,
+        },
+        geometry: { type: 'Point', coordinates: [w.lon, w.lat] },
+      })),
+    });
+  }, [webcams, showWebcams, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onRest = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const f = index != null ? rest[index] : undefined;
+      if (f) warnPopup.current!.setLngLat(e.lngLat).setHTML(restPopupHtml(f)).addTo(map);
+    };
+    const onCam = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const w = index != null ? webcams[index] : undefined;
+      if (w) warnPopup.current!.setLngLat(e.lngLat).setHTML(webcamPopupHtml(w)).addTo(map);
+    };
+    map.on('click', 'rest', onRest);
+    map.on('click', 'webcams', onCam);
+    return () => {
+      map.off('click', 'rest', onRest);
+      map.off('click', 'webcams', onCam);
+    };
+  }, [rest, webcams, ready, styleEpoch]);
 
   /* ---------- Feuer aus dem Satellitenblick ---------- */
 
