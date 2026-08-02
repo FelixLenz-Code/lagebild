@@ -64,6 +64,17 @@ export const stopsOffline = (
   limit?: number,
 ) => call<GeoResult[]>({ type: 'stops', code, bbox, limit });
 
+/**
+ * Punkte bestimmter Kategorien im Ausschnitt — für die Notfall-Ebene
+ * (Klinik, Apotheke, Polizei, Feuerwehr …) direkt aus dem Offline-Index.
+ */
+export const poisOffline = (
+  code: string,
+  categories: string[],
+  bbox: { west: number; south: number; east: number; north: number },
+  limit?: number,
+) => call<GeoResult[]>({ type: 'poi', code, categories, bbox, limit });
+
 /** Hausnummern einer Straße. */
 export const houseNumbersOffline = (code: string, entryId: number) =>
   call<HouseNumber[]>({ type: 'houses', code, entryId });

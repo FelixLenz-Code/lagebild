@@ -13,6 +13,10 @@ import type {
   GeoResult,
   HfSpaceWeather,
   HfMufGrid,
+  TransitVehicle,
+  EarthquakeItem,
+  AuroraGrid,
+  FireDangerGrid,
   TransitStop,
   TransitStopPoint,
   TransitDeparture,
@@ -98,6 +102,21 @@ export const fetchRadarForecast = (c: Coords): Promise<ApiEnvelope<RadarForecast
   getJson(`/api/radar/forecast?${q(c)}&distance=150000`);
 
 /** Online-Ortssuche; mit Bezugspunkt bevorzugt Photon nahe Treffer. */
+/** Fahrzeuge des öffentlichen Verkehrs im Ausschnitt (Position geschätzt). */
+export const fetchVehicles = (b: Bbox): Promise<ApiEnvelope<TransitVehicle[]>> =>
+  getJson(`/api/vehicles?${bboxQ(b)}`);
+
+/** Erdbeben der letzten Woche ab Stärke 2,5. */
+export const fetchQuakes = (): Promise<ApiEnvelope<EarthquakeItem[]>> =>
+  getJson(`/api/hazards/quakes`);
+
+/** Polarlicht-Wahrscheinlichkeit als weltweites Gitter. */
+export const fetchAurora = (): Promise<ApiEnvelope<AuroraGrid>> => getJson(`/api/hazards/aurora`);
+
+/** Waldbrandgefahr in Deutschland (DWD, Stufe 1–5). */
+export const fetchFireDanger = (): Promise<ApiEnvelope<FireDangerGrid>> =>
+  getJson(`/api/hazards/fire`);
+
 /** Funkwetter: Kennzahlen und Bandbewertungen (stündlich erneuert). */
 export const fetchHfSpace = (): Promise<ApiEnvelope<HfSpaceWeather>> => getJson(`/api/hf/space`);
 

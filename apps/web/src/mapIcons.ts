@@ -173,6 +173,34 @@ export const NEWS_STYLE: Record<string, { path: string; color: string; label: st
   other: { path: GLYPH_PAPER, color: '#5b5b60', label: 'Nachricht' },
 };
 
+/** Fahrzeugpfeil (zeigt nach Norden, wird per icon-rotate gedreht). */
+const GLYPH_VEHICLE = 'M16 4 26 27l-10-5.5L6 27Z';
+
+/** Farben je Verkehrsmittel — passend zu den Haltestellen. */
+const VEHICLE_COLORS: Record<string, string> = {
+  bus: '#1d4e73',
+  tram: '#6c2790',
+  rail: '#a92318',
+  ferry: '#0d8a8a',
+  other: '#5b5b60',
+};
+
+/** Notfall-Punkte: Art → Piktogramm und Farbe. */
+const EMERGENCY_BADGES: Record<string, [string, string]> = {
+  hospital: ['M13.6 8.5h4.8v5.1h5.1v4.8h-5.1v5.1h-4.8v-5.1H8.5v-4.8h5.1Z', '#a92318'],
+  pharmacy: ['M13.6 8.5h4.8v5.1h5.1v4.8h-5.1v5.1h-4.8v-5.1H8.5v-4.8h5.1Z', '#0d8a8a'],
+  doctor: ['M13.6 8.5h4.8v5.1h5.1v4.8h-5.1v5.1h-4.8v-5.1H8.5v-4.8h5.1Z', '#2f6fa8'],
+  police: ['M16 5.5 25 8.6v6.6c0 5-3.7 9.4-9 11-5.3-1.6-9-6-9-11V8.6Zm-1 12.1-2.7-2.7-1.6 1.6 4.3 4.3 7-7-1.6-1.6Z', '#1d4e73'],
+  fire_station: ['M17.5 4c.6 3.4-1.2 4.8-2.7 6.4-1.6 1.7-3.3 3.5-3.3 7.1a6.5 6.5 0 0 0 13 0c0-2.6-1-4.2-2.3-5.6-.3 1.3-1.2 2.2-2.2 2.2-1.4 0-2-1.1-2-2.6C18 8.9 18.4 6.1 17.5 4Z', '#c96f0f'],
+  drinking_water: ['M16 5s7 8.2 7 12.6a7 7 0 0 1-14 0C9 13.2 16 5 16 5Z', '#2f6fa8'],
+  shelter: ['M16 5 28 13h-3v12H7V13H4Zm-4 12v6h8v-6Z', '#5b5b60'],
+};
+
+/** Notfall-Kategorie → Icon-Name auf der Karte. */
+export const EMERGENCY_ICON: Record<string, string> = Object.fromEntries(
+  Object.keys(EMERGENCY_BADGES).map((k) => [k, `emg-${k}`]),
+);
+
 /** Haltestellen-Symbole: Art → farbiger Kreis mit Piktogramm. */
 const STOP_BADGES: Record<string, [string, string]> = {
   bus: [GLYPH_BUS, '#1d4e73'],
@@ -205,6 +233,12 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     ),
     ...Object.entries(NEWS_STYLE).map(([cat, { path, color }]) =>
       drawSvg(map, `news-${cat}`, badge(path, color)),
+    ),
+    ...Object.entries(EMERGENCY_BADGES).map(([kind, [glyph, color]]) =>
+      drawSvg(map, `emg-${kind}`, badge(glyph, color)),
+    ),
+    ...Object.entries(VEHICLE_COLORS).map(([kind, color]) =>
+      draw(map, `veh-${kind}`, GLYPH_VEHICLE, color, '#ffffff'),
     ),
   ]);
 }

@@ -6,7 +6,15 @@ import { cached } from '../lib/cache.js';
 import { fetchJson } from '../lib/http.js';
 import { envelope } from '../lib/envelope.js';
 import { mapPool } from '../lib/pool.js';
-import { MODE_DE, MOTIS_BASE, stopKind, tidyDepartures, toDeparture, type MotisStopTime } from '../lib/motis.js';
+import {
+  MODE_DE,
+  MOTIS_BASE,
+  decodePolyline,
+  stopKind,
+  tidyDepartures,
+  toDeparture,
+  type MotisStopTime,
+} from '../lib/motis.js';
 
 /** Ein Ort im Laufweg (Start, Zwischenhalt oder Ziel). */
 interface MotisPlace {
@@ -30,6 +38,7 @@ interface MotisLeg {
   routeShortName?: string;
   routeLongName?: string;
   tripShortName?: string;
+  legGeometry?: { points?: string; precision?: number };
 }
 
 /**
@@ -195,6 +204,11 @@ stopsRoute.get('/trip', async (c) => {
         ...(leg.intermediateStops ?? []).map((p) => toStop(p, false)),
         toStop(leg.to ?? {}, true),
       ].filter((s) => s.name),
+      // Der Linienzug bringt die Fahrt auf die Karte. MOTIS schickt die
+      // Genauigkeit der Kodierung mit — sie ist nicht überall gleich.
+      geometry: leg.legGeometry?.points
+        ? decodePolyline(leg.legGeometry.points, leg.legGeometry.precision ?? 7)
+        : [],
     };
     cache.set(trip);
     return c.json(envelope(trip, 'transitous.org'));

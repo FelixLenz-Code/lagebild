@@ -7,15 +7,18 @@ import type {
   TransitItinerary,
   TransitLeg,
   TransitStopPoint,
+  TransitVehicle,
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchPlan, fetchHfSpace, fetchHfMuf, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
+import { STOP_COLOR } from './mapIcons.js';
 import { SearchSheet } from './SearchSheet.js';
 import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
+import { VehicleSheet } from './VehicleSheet.js';
 import { HfBands, HfDetail } from './HfPanel.js';
 import { NewsIcon } from './NewsIcon.js';
 import { HfPathSheet } from './HfPathSheet.js';
@@ -23,13 +26,13 @@ import { forecastPath } from './hfPath.js';
 import { RoutePanel, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
-import { routeOffline, stopsOffline } from './offline/client.js';
+import { poisOffline, routeOffline, stopsOffline } from './offline/client.js';
 import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
 import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
 import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, TransitDetail } from './details.js';
-import { relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
+import { kindOfProduct, relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
 import { WeatherIcon } from './WeatherIcon.js';
 import { sunAltitude } from './sun.js';
 
@@ -145,6 +148,11 @@ export function App() {
     stops: false,
     muf: false,
     news: false,
+    vehicles: false,
+    emergency: false,
+    quakes: false,
+    aurora: false,
+    fire: false,
     aprsTargets: [],
   });
   const radarForecast = useApi(
@@ -180,6 +188,27 @@ export function App() {
     enabled: layers.wind,
     refreshMs: 600000,
     cache: false,
+  });
+  // Fahrzeugpositionen werden aus dem Fahrplan gerechnet und veralten schnell.
+  const vehicles = useApi(
+    `vehicles:${viewKey}`,
+    () => fetchVehicles(viewport),
+    [viewKey, refreshTick],
+    { enabled: layers.vehicles, refreshMs: 20000, cache: false },
+  );
+  // Erdbeben, Polarlicht und Waldbrandgefahr gelten weltweit bzw. landesweit —
+  // sie hängen nicht am Ausschnitt und werden selten erneuert.
+  const quakes = useApi('quakes', () => fetchQuakes(), [refreshTick], {
+    enabled: layers.quakes,
+    refreshMs: 600_000,
+  });
+  const aurora = useApi('aurora', () => fetchAurora(), [refreshTick], {
+    enabled: layers.aurora,
+    refreshMs: 600_000,
+  });
+  const fire = useApi('fire', () => fetchFireDanger(), [refreshTick], {
+    enabled: layers.fire,
+    refreshMs: 3600_000,
   });
   // Funkwetter wird stündlich erneuert — häufiger abzurufen bringt nichts und
   // widerspricht der Bitte der Quelle.
@@ -262,6 +291,23 @@ export function App() {
     { enabled: layers.stops && !!stopsCode && (!online || !stopsLive.data?.length), cache: false },
   );
 
+  /** Punkte, die im Notfall zählen — alle stehen im Offline-Suchindex. */
+  const EMERGENCY_CATEGORIES = [
+    'hospital',
+    'pharmacy',
+    'doctor',
+    'police',
+    'fire_station',
+    'drinking_water',
+    'shelter',
+  ];
+  const emergencyState = useApi(
+    `emergency:${stopsCode}:${viewKey}`,
+    () => (stopsCode ? poisOffline(stopsCode, EMERGENCY_CATEGORIES, viewport, 400) : Promise.resolve([])),
+    [stopsCode, viewKey, refreshTick],
+    { enabled: layers.emergency && !!stopsCode, cache: false },
+  );
+
   /** Art einer Haltestelle aus der Kategorie des Offline-Index. */
   const OFFLINE_KIND: Record<string, TransitStopPoint['kind']> = {
     bus_stop: 'bus',
@@ -283,6 +329,36 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopsLive.data, stopsOfflineState.data]);
 
+
+  /**
+   * Angetipptes Fahrzeug: Fahrplan (Laufweg) dazu holen. Die Fahrt wird alle
+   * 30 s aufgefrischt, solange das Blatt offen ist — Verspätungen ändern sich.
+   */
+  const [vehicle, setVehicle] = useState<TransitVehicle | null>(null);
+  /** Blatt zu, Laufweg bleibt: die Fahrt ist weiter gewählt. */
+  const [vehicleSheet, setVehicleSheet] = useState(false);
+  /** Zählt hoch, wenn der Laufweg ins Bild gerückt werden soll. */
+  const [tripFit, setTripFit] = useState(0);
+  const selectVehicle = useCallback((v: TransitVehicle) => {
+    setVehicle(v);
+    setVehicleSheet(true);
+  }, []);
+  // Ebene aus → auch die gewählte Fahrt verschwindet.
+  useEffect(() => {
+    if (!layers.vehicles) setVehicle(null);
+  }, [layers.vehicles]);
+  const vehicleTripState = useApi(
+    `trip:${vehicle?.id ?? ''}`,
+    () => (vehicle ? fetchTrip(vehicle.id).then((r) => r.data) : Promise.resolve(null)),
+    [vehicle?.id],
+    { enabled: !!vehicle, refreshMs: 30000, cache: false },
+  );
+  // Die Marke wandert weiter — der Laufweg wird an der jeweils aktuellen
+  // Position getrennt, damit „schon gefahren" stimmt.
+  const vehicleNow = useMemo(
+    () => (vehicle ? (vehicles.data?.data.find((v) => v.id === vehicle.id) ?? vehicle) : null),
+    [vehicle, vehicles.data],
+  );
 
   /* ---------- Routenplanung (rein lokal) ---------- */
   const [destination, setDestination] = useState<(Place & { category?: string }) | null>(null);
@@ -654,6 +730,25 @@ export function App() {
             flyTo={flyTo}
             hfPath={hfForecast?.line ?? null}
             stops={stopPoints}
+            vehicles={vehicles.data?.data ?? []}
+            onVehicleClick={selectVehicle}
+            onTripOpen={() => setVehicleSheet(true)}
+            onTripClear={() => setVehicle(null)}
+            vehicleTrip={
+              vehicleNow && vehicleTripState.data?.geometry.length
+                ? {
+                    geometry: vehicleTripState.data.geometry,
+                    at: { lat: vehicleNow.lat, lon: vehicleNow.lon },
+                    color: STOP_COLOR[kindOfProduct(vehicleNow.product)] ?? '#1d4e73',
+                    label: vehicleNow.line,
+                    fitKey: tripFit,
+                  }
+                : null
+            }
+            emergency={layers.emergency ? (emergencyState.data ?? []) : []}
+            quakes={quakes.data?.data ?? []}
+            aurora={aurora.data?.data ?? null}
+            fire={fire.data?.data ?? null}
             stopsAvailable={online || !!stopsCode}
             onStopClick={setStopDetail}
             alternatives={routes.map((r, i) => ({ index: i, route: r })).filter((r) => r.index !== routeIndex)}
@@ -967,6 +1062,24 @@ export function App() {
           from={place}
           to={hfTarget}
           onClose={() => setHfTarget(null)}
+        />
+      )}
+
+      {vehicle && vehicleSheet && (
+        <VehicleSheet
+          vehicle={vehicleNow ?? vehicle}
+          trip={vehicleTripState.data ?? null}
+          loading={vehicleTripState.loading}
+          failed={!vehicleTripState.loading && !vehicleTripState.data}
+          onShowOnMap={() => {
+            setVehicleSheet(false);
+            setTripFit((n) => n + 1);
+          }}
+          onRouteToStop={(stop) => {
+            startRouteTo({ name: stop.name, lat: stop.lat, lon: stop.lon });
+            setVehicle(null);
+          }}
+          onClose={() => setVehicle(null)}
         />
       )}
 

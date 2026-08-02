@@ -107,6 +107,13 @@ svg { display: block; }
 }
 .mapcontrols > * { pointer-events: auto; }
 .maptools { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Band über der Karte, solange ein Laufweg gezeichnet ist. */
+.tripbar { display: inline-flex; align-items: stretch; margin-bottom: 6px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.tripbar button { background: none; border: none; font: inherit; color: var(--ink); cursor: pointer; padding: 6px 10px; font-size: .8rem; }
+.tripbar .tb-open { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.tripbar .tb-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.tripbar .tb-clear { border-left: 1px solid var(--line); color: var(--muted); }
+.tripbar button:hover { background: var(--surface-2); }
 .chip {
   cursor: pointer; user-select: none; min-height: 34px;
   display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border-radius: var(--r-sm);
@@ -683,6 +690,12 @@ svg { display: block; }
 .trip-stops li.is-here i { background: var(--accent); border-color: var(--accent); }
 .trip-stops li.is-here .ts-name { font-weight: 650; }
 .ts-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Halte einer Fahrt sind anfahrbar — als Schaltfläche, aber ohne Knopf-Optik. */
+.ts-link { text-align: left; background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.ts-link:hover { text-decoration: underline; }
+/* Schon abgefahrene Halte treten zurück (nicht nur farblich: auch blasser Punkt). */
+.trip-stops li.is-past { opacity: .55; }
+.trip-stops li.is-past i { background: var(--line-strong); }
 .ts-time { color: var(--muted); font-size: .78rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ts-time.late { color: var(--sev2); font-weight: 600; }
 .ts-time.cancelled { color: var(--sev3); font-weight: 600; }

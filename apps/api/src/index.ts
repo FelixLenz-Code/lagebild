@@ -23,6 +23,8 @@ import { vesselsRoute, startAisCollector, aisUsable } from './routes/vessels.js'
 import { aprsRoute, aprsUsable } from './routes/aprs.js';
 import { windRoute } from './routes/wind.js';
 import { hfRoute } from './routes/hf.js';
+import { vehiclesRoute } from './routes/vehicles.js';
+import { hazardsRoute } from './routes/hazards.js';
 
 const app = new Hono();
 
@@ -56,6 +58,8 @@ app.route('/api/vessels', vesselsRoute);
 app.route('/api/aprs', aprsRoute);
 app.route('/api/wind', windRoute);
 app.route('/api/hf', hfRoute);
+app.route('/api/vehicles', vehiclesRoute);
+app.route('/api/hazards', hazardsRoute);
 // Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
 app.use(
   '/api/maps/*',

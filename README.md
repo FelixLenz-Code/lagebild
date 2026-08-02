@@ -51,6 +51,11 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Flugzeuge | adsb.fi (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
 | Schiffe | aisstream.io (AIS) | nur mit `AISSTREAM_KEY` |
 | Amateurfunk | aprs.fi (APRS) | nur mit `APRSFI_KEY`, feste Rufzeichenliste |
+| Busse & Bahnen | transitous.org (MOTIS) | Fahrzeuge in Bewegung, ab Zoom 10 |
+| Notfallpunkte | Offline-Suchindex (OSM) | Klinik, Apotheke, Polizei, Feuerwehr — ohne Netz |
+| Erdbeben | USGS | letzte Woche, ab Stärke 2,5 |
+| Waldbrandgefahr | DWD | Stufe 1–5, Deutschland |
+| Polarlicht | NOAA SWPC (OVATION) | Wahrscheinlichkeit weltweit |
 | Tag/Nacht | selbst gerechnet | Dämmerungssaum, wandert minütlich mit |
 | Markieren | eigene Punkte/Flächen | Benennung direkt beim Anlegen |
 
@@ -335,6 +340,30 @@ nur eine Zugabe, keine alleinige Information. Angezeigt werden nur Abfahrten der
 hat ein Halt nichts Näheres, bleiben zwei Einträge als Hinweis stehen (mit
 Wochentag, damit „morgen 09:40" nicht wie „gleich" aussieht).
 
+### Busse und Bahnen in Bewegung
+
+Die Ebene **„Busse & Bahnen"** (Gruppe Verkehr) zeigt ab Zoom 10 die Fahrzeuge im
+Ausschnitt als gedrehten Pfeil in der Farbe des Verkehrsmittels
+(`/api/vehicles` → MOTIS `map/trips`, alle 20 s neu, serverseitig 15 s gecacht).
+
+**Das ist keine GPS-Ortung.** MOTIS liefert keine Fahrzeugpositionen, sondern die
+Fahrtabschnitte im Ausschnitt mit Abfahrt, Ankunft und Linienzug. Die Position
+wird daraus gerechnet: Anteil der verstrichenen Zeit → Punkt auf der Strecke.
+Für Fahrten mit Echtzeitmeldung (in Bremen zur Probe 73 von 79) stecken darin die
+**gemeldeten Ist-Zeiten** samt Verspätung, sonst nur der Sollfahrplan; das Blatt
+schreibt beides hin. Die Live-Karten der Verkehrsverbünde arbeiten genauso — eine
+echte Fahrzeugpeilung gibt es in den offenen Daten (GTFS/GTFS-RT über DELFI)
+nicht. Der Linienzug hat hier Genauigkeit 5, anders als bei `/plan`.
+
+Ein Tipp auf ein Fahrzeug öffnet dessen **Fahrplan**: Linie, Ziel, Verspätung und
+der ganze Laufweg mit allen Halten; der nächste Halt ist hervorgehoben, schon
+abgefahrene stehen blass. Jeder Halt lässt sich als Ziel übernehmen. Gleichzeitig
+zeichnet die Karte den **Laufweg der Fahrt** — der Teil vor dem Fahrzeug kräftig
+in Linienfarbe, der schon gefahrene grau gestrichelt. „Laufweg auf der Karte"
+schließt das Blatt, rückt die Fahrt ins Bild und lässt die Linie stehen; das Band
+oben links („Laufweg 25 ✕") holt den Fahrplan zurück oder nimmt die Linie wieder
+weg.
+
 ## Nachrichten: regional und verortet
 
 Angezeigt werden alle Meldungen der aktuellen Ausgabe — bundesweit rund 55,
@@ -385,6 +414,39 @@ Kategorie, Schlagzeile, Zeitpunkt und Link; ungenaue Orte sind blasser. Dieselbe
 Symbole stehen in der Nachrichtenliste. In der Nachrichtenliste lässt sich auf
 **„Mit Ort"** umschalten, und ein Klick auf den Ortsnamen schwenkt die Karte
 dorthin.
+
+## Notfallpunkte, Erdbeben, Waldbrand und Polarlicht
+
+Vier weitere Ebenen, jede mit eigener Quelle:
+
+**Notfallpunkte** (Gruppe Lage) kommen ab Zoom 11 aus dem **Offline-Suchindex**
+der heruntergeladenen Region — Krankenhaus, Apotheke, Arztpraxis, Polizei,
+Feuerwehr, Trinkwasser und Schutzhütte, jeweils mit eigenem Piktogramm.
+Kliniken werden beim Gedränge zuerst platziert. Ein Tipp öffnet dasselbe
+Kartenmenü wie eigene Markierungen, also mit „Route hierher". Das funktioniert
+**ohne Netz** und ist genau dann gedacht, wenn es darauf ankommt.
+
+**Erdbeben** (Gruppe Lage) zeigt die Beben der letzten Woche ab Stärke 2,5
+([USGS](https://earthquake.usgs.gov/), gemeinfrei, 10 min Cache). Der Kreis wächst
+mit der Stärke, die Farbe geht von gelb über orange nach rot; das Popup nennt
+Stärke, Ort, Tiefe, Zeitpunkt und verlinkt den USGS-Bericht.
+
+**Waldbrandgefahr** (Gruppe Gefahren) ist der Waldbrandgefahrenindex des DWD
+(Stufe 1–5). Der offene DWD-Server liefert ihn nur je Station als gepackte CSV;
+der Server dünnt die Stationsliste auf eine je 0,6°-Zelle aus (rund 155), holt
+deren Tageswerte und rechnet daraus per Abstandsgewichtung ein 0,2°-Gitter über
+Deutschland (6 h Cache). Die Fläche liegt unter den Warnungen, damit diese
+lesbar bleiben.
+
+**Polarlicht** (Gruppe Funk) legt die Sichtungswahrscheinlichkeit des
+OVATION-Modells von [NOAA SWPC](https://services.swpc.noaa.gov/) (gemeinfrei,
+10 min Cache) als grüne Fläche über die Karte — 1°-Gitter, bilinear geglättet,
+Deckkraft nach Wahrscheinlichkeit. Für den Funkbetrieb ist das die Kehrseite der
+MUF-Ebene: Wo das Oval steht, dämpft die Aurora die Kurzwelle.
+
+Beide Flächen (Waldbrand, Polarlicht) werden wie die MUF-Ebene als Bildquelle
+gezeichnet und dabei **zeilenweise auf Mercator zurückgerechnet**
+(`gridImage.ts`), sonst wären sie in Nord-Süd-Richtung verzogen.
 
 ## Funkwetter und Kurzwellen-Ausbreitung
 

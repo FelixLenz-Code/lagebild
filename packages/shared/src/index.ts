@@ -210,6 +210,8 @@ export interface TransitTrip {
   /** Zielbeschilderung der Fahrt. */
   direction: string;
   stops: TransitTripStop[];
+  /** Linienzug der ganzen Fahrt [lon, lat] — für die Karte. */
+  geometry: [number, number][];
 }
 
 /** Ein Abschnitt einer ÖPNV-Verbindung: Fußweg oder Fahrt. */
@@ -552,6 +554,65 @@ export interface HfMufGrid {
   rows: number;
   values: number[];
   stations: HfStation[];
+}
+
+/** Ein Fahrzeug des öffentlichen Verkehrs in Fahrt. */
+export interface TransitVehicle {
+  id: string;
+  line: string;
+  /** MOTIS-Verkehrsmittel (BUS, TRAM, HIGHSPEED_RAIL …). */
+  mode: string;
+  product: string | null;
+  lat: number;
+  lon: number;
+  /** Fahrtrichtung in Grad. */
+  bearing: number;
+  towards: string;
+  delayMin: number | null;
+  realTime: boolean;
+}
+
+/** Ein Erdbeben (USGS). */
+export interface EarthquakeItem {
+  id: string;
+  magnitude: number;
+  place: string;
+  time: string | null;
+  depthKm: number;
+  lat: number;
+  lon: number;
+  url: string;
+  tsunami: boolean;
+}
+
+/**
+ * Polarlicht-Wahrscheinlichkeit als weltweites Gitter (NOAA OVATION).
+ * `values` liegt zeilenweise von Nord (90°) nach Süd, je Zeile ab 0° östlicher
+ * Länge — Werte in Prozent.
+ */
+export interface AuroraGrid {
+  observedAt: string | null;
+  forecastAt: string | null;
+  cols: number;
+  rows: number;
+  values: number[];
+  maxPercent: number;
+}
+
+/**
+ * Waldbrandgefahrenindex des DWD als Fläche über Deutschland (Stufe 1–5).
+ * `values` zeilenweise von `north` nach Süden, je Zeile ab `west`.
+ */
+export interface FireDangerGrid {
+  day: string;
+  /** Zahl der ausgewerteten Messstationen. */
+  stations: number;
+  west: number;
+  north: number;
+  cellDeg: number;
+  cols: number;
+  rows: number;
+  values: number[];
 }
 
 /** Ergebnis einer Ortssuche (Geocoding). */

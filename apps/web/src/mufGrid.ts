@@ -1,4 +1,5 @@
 import type { HfMufGrid } from '@lagebild/shared';
+import { corners, renderMercator } from './gridImage.js';
 
 /**
  * Das MUF-Gitter als Bild für die Karte.
@@ -27,12 +28,7 @@ const ALPHA = 145;
 /** Mercator endet vor den Polen. */
 const MAX_LAT = 85.0511;
 /** Ecken der Bildquelle im Uhrzeigersinn ab Nordwest. */
-export const MUF_BOUNDS: [[number, number], [number, number], [number, number], [number, number]] = [
-  [-180, MAX_LAT],
-  [180, MAX_LAT],
-  [180, -MAX_LAT],
-  [-180, -MAX_LAT],
-];
+export const MUF_BOUNDS = corners(-180, -MAX_LAT, 180, MAX_LAT);
 
 const rgb = (hex: string): [number, number, number] => [
   parseInt(hex.slice(1, 3), 16),
@@ -78,30 +74,19 @@ function sample(grid: HfMufGrid, lat: number, lon: number): number {
 /** Erzeugt das Overlay als Data-URL (Breite × Höhe in Pixeln). */
 export function mufToDataUrl(grid: HfMufGrid, width = 720, height = 720): string | null {
   if (!grid.values.length) return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  const img = ctx.createImageData(width, height);
-  const maxMerc = Math.log(Math.tan(Math.PI / 4 + (MAX_LAT * Math.PI) / 360));
-
-  for (let py = 0; py < height; py++) {
-    // Bildzeile → Mercator-Y → geografische Breite.
-    const mercY = maxMerc - ((py + 0.5) / height) * 2 * maxMerc;
-    const lat = (Math.atan(Math.sinh(mercY)) * 180) / Math.PI;
-    for (let px = 0; px < width; px++) {
-      const lon = -180 + ((px + 0.5) / width) * 360;
-      const [r, g, b] = colorFor(sample(grid, lat, lon));
-      const o = (py * width + px) * 4;
-      img.data[o] = r;
-      img.data[o + 1] = g;
-      img.data[o + 2] = b;
-      img.data[o + 3] = ALPHA;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return canvas.toDataURL('image/png');
+  return renderMercator({
+    width,
+    height,
+    north: MAX_LAT,
+    south: -MAX_LAT,
+    west: -180,
+    east: 180,
+    valueAt: (lat, lon) => sample(grid, lat, lon),
+    color: (v) => {
+      const [r, g, b] = colorFor(v);
+      return [r, g, b, ALPHA];
+    },
+  });
 }
 
 /** Welche Bänder sind bei diesem MUF-Wert brauchbar? */

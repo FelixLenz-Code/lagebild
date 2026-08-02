@@ -21,6 +21,14 @@ export type WorkerRequest =
   | { id: number; type: 'houses'; code: string; entryId: number }
   | {
       id: number;
+      type: 'poi';
+      code: string;
+      categories: string[];
+      bbox: { west: number; south: number; east: number; north: number };
+      limit?: number;
+    }
+  | {
+      id: number;
       type: 'stops';
       code: string;
       bbox: { west: number; south: number; east: number; north: number };
@@ -123,6 +131,10 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
     case 'stops': {
       const s = await loadSearch(msg.code);
       return s.inBbox(['bus_stop', 'tram_stop', 'station', 'ferry_terminal'], msg.bbox, msg.limit ?? 600);
+    }
+    case 'poi': {
+      const s = await loadSearch(msg.code);
+      return s.inBbox(msg.categories, msg.bbox, msg.limit ?? 400);
     }
     case 'route': {
       const g = await loadRoute(msg.codes);

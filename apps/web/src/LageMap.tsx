@@ -26,6 +26,11 @@ import type {
   WindField,
   WaterLevelHistory,
   NewsItem,
+  GeoResult,
+  TransitVehicle,
+  EarthquakeItem,
+  AuroraGrid,
+  FireDangerGrid,
   HfMufGrid,
   RouteResult,
   TransitItinerary,
@@ -39,7 +44,21 @@ import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
 import { mufToDataUrl, MUF_BOUNDS, MUF_SCALE } from './mufGrid.js';
-import { ensureMapIcons, NEWS_STYLE, STOP_COLOR, STOP_ICON, WIND_CLASSES } from './mapIcons.js';
+import {
+  ensureMapIcons,
+  EMERGENCY_ICON,
+  NEWS_STYLE,
+  STOP_COLOR,
+  STOP_ICON,
+  WIND_CLASSES,
+} from './mapIcons.js';
+import {
+  auroraToDataUrl,
+  AURORA_BOUNDS,
+  fireToDataUrl,
+  fireBounds,
+  FIRE_LEVELS,
+} from './hazardGrids.js';
 import { WindAnimation } from './windField.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
 import { AprsTargets } from './AprsTargets.js';
@@ -209,6 +228,21 @@ function newsPopupHtml(item: NewsItem): string {
     (place ? ` · ${esc(place.name)}${place.approximate ? ' (ungenau)' : ''}` : '') +
     `</div>` +
     `<a class="wp-link" href="${esc(item.url)}" target="_blank" rel="noreferrer">Zur Meldung</a>` +
+    `</div>`
+  );
+}
+
+/** Popup eines Erdbebens: Stärke, Ort, Tiefe, Zeitpunkt. */
+function quakePopupHtml(q: EarthquakeItem): string {
+  return (
+    `<div class="warn-popup">` +
+    `<h4>Stärke ${q.magnitude.toFixed(1).replace('.', ',')}</h4>` +
+    `<b>${esc(q.place)}</b>` +
+    `<div class="wp-meta">Tiefe ${Math.round(q.depthKm)} km` +
+    (q.time ? ` · ${esc(relativeTime(q.time))}` : '') +
+    (q.tsunami ? ' · Tsunami-Hinweis' : '') +
+    `</div>` +
+    `<a class="wp-link" href="${esc(q.url)}" target="_blank" rel="noreferrer">Bericht (USGS)</a>` +
     `</div>`
   );
 }
@@ -465,6 +499,31 @@ interface Props {
   muf: HfMufGrid | null;
   /** Verortete Meldungen für die Nachrichten-Ebene. */
   news: NewsItem[];
+  /** Fahrzeuge des öffentlichen Verkehrs (Position geschätzt). */
+  vehicles: TransitVehicle[];
+  /** Antippen eines Fahrzeugs öffnet dessen Fahrplan. */
+  onVehicleClick: (vehicle: TransitVehicle) => void;
+  /** Laufweg der geöffneten Fahrt — gefahrener Teil blass, Rest kräftig. */
+  vehicleTrip: {
+    geometry: [number, number][];
+    at: Coords;
+    color: string;
+    /** Aufschrift des Bandes, das den Laufweg wieder abwählbar macht. */
+    label: string;
+    /** Zählt hoch, wenn der Rest der Fahrt ins Bild gerückt werden soll. */
+    fitKey: number;
+  } | null;
+  /** Fahrplan der gewählten Fahrt wieder öffnen. */
+  onTripOpen: () => void;
+  /** Laufweg von der Karte nehmen. */
+  onTripClear: () => void;
+  /** Notfallpunkte aus dem Offline-Index (Krankenhaus, Apotheke …). */
+  emergency: GeoResult[];
+  /** Erdbeben der letzten Woche. */
+  quakes: EarthquakeItem[];
+  /** Polarlicht-Gitter und Waldbrandgefahr als Flächen. */
+  aurora: AuroraGrid | null;
+  fire: FireDangerGrid | null;
   /** Karte auf diesen Punkt schwenken (z.B. aus der Nachrichtenliste). */
   flyTo: { lat: number; lon: number; zoom?: number; key: number } | null;
   /** Haltestellen im Ausschnitt. */
@@ -500,6 +559,12 @@ interface Props {
 /** Ebenen, deren Daten nur bei Bedarf geholt werden. */
 export interface ActiveLayers {
   radar: boolean;
+  /** Fahrzeuge, Notfallpunkte, Erdbeben, Polarlicht, Waldbrandgefahr. */
+  vehicles: boolean;
+  emergency: boolean;
+  quakes: boolean;
+  aurora: boolean;
+  fire: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
   muf: boolean;
   /** Verortete Nachrichten. */
@@ -515,7 +580,7 @@ export interface ActiveLayers {
 }
 
 /** Alle umschaltbaren Kartenebenen. */
-type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops' | 'muf' | 'news';
+type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops' | 'muf' | 'news' | 'vehicles' | 'emergency' | 'quakes' | 'aurora' | 'fire';
 
 /**
  * Darstellung der Symbol-Ebenen. Flugzeuge erst ab Zoom 6, weil das ADS-B-Netz
@@ -545,6 +610,11 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   stops: false,
   muf: false,
   news: false,
+  vehicles: false,
+  emergency: false,
+  quakes: false,
+  aurora: false,
+  fire: false,
 };
 
 export function LageMap({
@@ -567,6 +637,15 @@ export function LageMap({
   itinerary,
   muf,
   news,
+  vehicles,
+  onVehicleClick,
+  vehicleTrip,
+  onTripOpen,
+  onTripClear,
+  emergency,
+  quakes,
+  aurora,
+  fire,
   flyTo,
   hfPath,
   stops,
@@ -596,6 +675,8 @@ export function LageMap({
   onPickPointRef.current = onPickPoint;
   const onStopClickRef = useRef(onStopClick);
   onStopClickRef.current = onStopClick;
+  const onVehicleClickRef = useRef(onVehicleClick);
+  onVehicleClickRef.current = onVehicleClick;
   /** Bereits geladene Pegelverläufe (null = Abruf fehlgeschlagen). */
   const pegelHistory = useRef<Map<string, WaterLevelHistory | null>>(new Map());
   const stopsRef = useRef(stops);
@@ -634,6 +715,11 @@ export function LageMap({
     stops: showStops,
     muf: showMuf,
     news: showNews,
+    vehicles: showVehicles,
+    emergency: showEmergency,
+    quakes: showQuakes,
+    aurora: showAurora,
+    fire: showFire,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -672,9 +758,17 @@ export function LageMap({
         stops: showStops,
         muf: showMuf,
         news: showNews,
+        vehicles: showVehicles,
+        emergency: showEmergency,
+        quakes: showQuakes,
+        aurora: showAurora,
+        fire: showFire,
         aprsTargets,
       }),
-    [showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews, aprsTargets, onLayersChange],
+    [
+      showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
+      showVehicles, showEmergency, showQuakes, showAurora, showFire, aprsTargets, onLayersChange,
+    ],
   );
 
   // Nachschlagetabellen für die Klick-Popups
@@ -1523,6 +1617,347 @@ export function LageMap({
     };
   }, [news, ready, styleEpoch]);
 
+  /* ---------- Busse und Bahnen in Bewegung ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('vehicles')) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addSource('vehicles', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'vehicles',
+      type: 'symbol',
+      source: 'vehicles',
+      minzoom: 10,
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.34, 15, 0.6],
+        'icon-rotate': ['get', 'bearing'],
+        // Fahrzeuge dürfen sich überlappen — sie stehen dicht beieinander und
+        // ein ausgeblendeter Zug wäre irreführender als ein enges Bild.
+        'icon-allow-overlap': true,
+        'icon-rotation-alignment': 'map',
+        'text-field': ['step', ['zoom'], '', 12, ['get', 'line']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.5,
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('vehicles') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showVehicles ? vehicles : []).map((v, i) => ({
+        type: 'Feature',
+        properties: {
+          index: i,
+          icon: `veh-${kindOfProduct(v.product)}`,
+          bearing: v.bearing,
+          line: v.line,
+        },
+        geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
+      })),
+    });
+  }, [vehicles, showVehicles, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const v = index != null ? vehicles[index] : undefined;
+      if (v) onVehicleClickRef.current(v);
+    };
+    map.on('click', 'vehicles', onClick);
+    return () => {
+      map.off('click', 'vehicles', onClick);
+    };
+  }, [vehicles, ready, styleEpoch]);
+
+  // Laufweg der geöffneten Fahrt: bis zum Fahrzeug blass, danach kräftig.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!map.getSource('vehtrip')) {
+      map.addSource('vehtrip', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'vehtrip-past',
+        type: 'line',
+        source: 'vehtrip',
+        filter: ['==', ['get', 'past'], true],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#8b8b90', 'line-width': 3, 'line-dasharray': [1.5, 1.4] },
+      });
+      map.addLayer({
+        id: 'vehtrip-ahead',
+        type: 'line',
+        source: 'vehtrip',
+        filter: ['==', ['get', 'past'], false],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 15, 7],
+        },
+      });
+    }
+    const src = map.getSource('vehtrip') as GeoJSONSource | undefined;
+    if (!src) return;
+    if (!vehicleTrip || vehicleTrip.geometry.length < 2) {
+      src.setData({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+    // Trennpunkt ist der Stützpunkt, der dem Fahrzeug am nächsten liegt.
+    const { geometry, at, color } = vehicleTrip;
+    let split = 0;
+    let best = Infinity;
+    for (let i = 0; i < geometry.length; i++) {
+      const d = (geometry[i]![0] - at.lon) ** 2 + (geometry[i]![1] - at.lat) ** 2;
+      if (d < best) {
+        best = d;
+        split = i;
+      }
+    }
+    const features: GeoJSON.Feature[] = [];
+    if (split > 0) {
+      features.push({
+        type: 'Feature',
+        properties: { past: true, color },
+        geometry: { type: 'LineString', coordinates: geometry.slice(0, split + 1) },
+      });
+    }
+    if (split < geometry.length - 1) {
+      features.push({
+        type: 'Feature',
+        properties: { past: false, color },
+        geometry: { type: 'LineString', coordinates: geometry.slice(split) },
+      });
+    }
+    src.setData({ type: 'FeatureCollection', features });
+  }, [vehicleTrip, ready, styleEpoch]);
+
+  // Den Rest der Fahrt auf Wunsch ins Bild rücken.
+  const tripFitKey = vehicleTrip?.fitKey ?? 0;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !tripFitKey || !vehicleTrip) return;
+    let west = 180;
+    let south = 90;
+    let east = -180;
+    let north = -90;
+    for (const [lon, lat] of vehicleTrip.geometry) {
+      west = Math.min(west, lon);
+      east = Math.max(east, lon);
+      south = Math.min(south, lat);
+      north = Math.max(north, lat);
+    }
+    if (west > east) return;
+    map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding: 60, duration: 700, maxZoom: 14 },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripFitKey, ready]);
+
+  /* ---------- Notfallpunkte aus dem Offline-Index ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('emergency')) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addSource('emergency', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'emergency',
+      type: 'symbol',
+      source: 'emergency',
+      minzoom: 11,
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 0.4, 16, 0.62],
+        'icon-allow-overlap': false,
+        'text-field': ['step', ['zoom'], '', 13, ['get', 'name']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'text-offset': [0, 1.15],
+        'text-anchor': 'top',
+        'text-optional': true,
+        'text-max-width': 9,
+        // Kliniken zuerst — im Notfall zählt die Reihenfolge.
+        'symbol-sort-key': ['case', ['==', ['get', 'icon'], 'emg-hospital'], 0, 1],
+      },
+      paint: {
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.5,
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('emergency') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showEmergency ? emergency : []).map((p) => ({
+        type: 'Feature',
+        properties: {
+          name: p.name,
+          icon: EMERGENCY_ICON[p.category ?? ''] ?? 'emg-hospital',
+        },
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+      })),
+    });
+  }, [emergency, showEmergency, ready, styleEpoch]);
+
+  // Antippen eines Notfallpunktes: dasselbe Menü wie bei Haltestellen.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const name = e.features?.[0]?.properties?.name as string | undefined;
+      setPointMenu({
+        x: e.point.x,
+        y: e.point.y,
+        lngLat: { lat: e.lngLat.lat, lon: e.lngLat.lng },
+        label: name ?? null,
+      });
+    };
+    map.on('click', 'emergency', onClick);
+    return () => {
+      map.off('click', 'emergency', onClick);
+    };
+  }, [ready, styleEpoch]);
+
+  /* ---------- Erdbeben ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('quakes')) return;
+    map.addSource('quakes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'quakes',
+      type: 'circle',
+      source: 'quakes',
+      paint: {
+        // Fläche nach Stärke: ein Beben der Stärke 7 ist kein Punkt wie ein 2,5er.
+        'circle-radius': ['interpolate', ['linear'], ['get', 'mag'], 2.5, 4, 5, 9, 7, 18, 9, 30],
+        'circle-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'mag'],
+          2.5,
+          '#e3b505',
+          5,
+          '#e07b12',
+          6.5,
+          '#a92318',
+        ],
+        'circle-opacity': 0.55,
+        'circle-stroke-width': 1.2,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('quakes') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showQuakes ? quakes : []).map((q, i) => ({
+        type: 'Feature',
+        properties: { index: i, mag: q.magnitude },
+        geometry: { type: 'Point', coordinates: [q.lon, q.lat] },
+      })),
+    });
+  }, [quakes, showQuakes, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const q = index != null ? quakes[index] : undefined;
+      if (q) warnPopup.current!.setLngLat(e.lngLat).setHTML(quakePopupHtml(q)).addTo(map);
+    };
+    map.on('click', 'quakes', onClick);
+    return () => {
+      map.off('click', 'quakes', onClick);
+    };
+  }, [quakes, ready, styleEpoch]);
+
+  /* ---------- Waldbrandgefahr und Polarlicht als Flächen ---------- */
+
+  const fireUrl = useMemo(() => (fire && showFire ? fireToDataUrl(fire) : null), [fire, showFire]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const bounds = fire ? fireBounds(fire) : null;
+    const source = map.getSource('fire') as ImageSource | undefined;
+    if (!fireUrl || !bounds) {
+      if (map.getLayer('fire')) map.removeLayer('fire');
+      if (map.getSource('fire')) map.removeSource('fire');
+      return;
+    }
+    if (source) {
+      source.updateImage({ url: fireUrl, coordinates: bounds });
+      return;
+    }
+    map.addSource('fire', { type: 'image', url: fireUrl, coordinates: bounds });
+    map.addLayer(
+      { id: 'fire', type: 'raster', source: 'fire', paint: { 'raster-opacity': 0.75 } },
+      map.getLayer('warnings-fill') ? 'warnings-fill' : undefined,
+    );
+  }, [fireUrl, ready, styleEpoch]);
+
+  const auroraUrl = useMemo(
+    () => (aurora && showAurora ? auroraToDataUrl(aurora) : null),
+    [aurora, showAurora],
+  );
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const source = map.getSource('aurora') as ImageSource | undefined;
+    if (!auroraUrl) {
+      if (map.getLayer('aurora')) map.removeLayer('aurora');
+      if (map.getSource('aurora')) map.removeSource('aurora');
+      return;
+    }
+    if (source) {
+      source.updateImage({ url: auroraUrl, coordinates: AURORA_BOUNDS });
+      return;
+    }
+    map.addSource('aurora', { type: 'image', url: auroraUrl, coordinates: AURORA_BOUNDS });
+    map.addLayer(
+      { id: 'aurora', type: 'raster', source: 'aurora', paint: { 'raster-opacity': 0.9 } },
+      map.getLayer('warnings-fill') ? 'warnings-fill' : undefined,
+    );
+  }, [auroraUrl, ready, styleEpoch]);
+
   // Auf einen Punkt schwenken (Nachrichtenliste, Suchtreffer).
   useEffect(() => {
     const map = mapRef.current;
@@ -1844,7 +2279,9 @@ export function LageMap({
     // Klicks auf Haltestellen oder eigene Markierungen öffnen das Menü — dieser
     // allgemeine Handler läuft danach und darf es nicht sofort wieder zumachen.
     const closeOnClick = (e: MapMouseEvent) => {
-      const layers = ['stops', 'draw-point', 'draw-area-fill'].filter((id) => map.getLayer(id));
+      const layers = ['stops', 'emergency', 'draw-point', 'draw-area-fill'].filter((id) =>
+        map.getLayer(id),
+      );
       if (layers.length && map.queryRenderedFeatures(e.point, { layers }).length) return;
       setPointMenu(null);
     };
@@ -1897,6 +2334,38 @@ export function LageMap({
   // Inhalt des Ebenen-Menüs. Ebenen ohne Zugang (kein Key) tauchen gar nicht auf.
   const layerOptions: LayerOption[] = [
     {
+      id: 'emergency',
+      label: 'Notfallpunkte',
+      color: '#a92318',
+      group: 'Lage',
+      hint: 'Klinik, Apotheke, Polizei, Feuerwehr — offline',
+      active: showEmergency,
+    },
+    {
+      id: 'quakes',
+      label: 'Erdbeben',
+      color: '#8a4b1d',
+      group: 'Lage',
+      hint: 'letzte Woche, ab Stärke 2,5',
+      active: showQuakes,
+    },
+    {
+      id: 'fire',
+      label: 'Waldbrandgefahr',
+      color: 'linear-gradient(90deg,#3f8f4a,#e3b505,#a92318)',
+      group: 'Gefahren',
+      hint: 'DWD-Index, Stufe 1–5',
+      active: showFire,
+    },
+    {
+      id: 'aurora',
+      label: 'Polarlicht',
+      color: '#3cba7a',
+      group: 'Funk',
+      hint: 'Wahrscheinlichkeit (NOAA)',
+      active: showAurora,
+    },
+    {
       id: 'news',
       label: 'Nachrichten',
       color: '#6a7580',
@@ -1933,6 +2402,14 @@ export function LageMap({
         ]
       : []),
     { id: 'traffic', label: 'Verkehrsmeldungen', color: 'var(--sev3)', group: 'Verkehr', active: showTraffic },
+    {
+      id: 'vehicles',
+      label: 'Busse & Bahnen',
+      color: '#a92318',
+      group: 'Verkehr',
+      hint: 'Position aus dem Fahrplan gerechnet',
+      active: showVehicles,
+    },
     {
       id: 'stops',
       label: 'Haltestellen',
@@ -1975,6 +2452,19 @@ export function LageMap({
       <div className="mapwrap">
         <div ref={containerRef} className="lagemap" />
         <div className="mapcontrols">
+        {vehicleTrip && (
+          // Solange ein Laufweg auf der Karte liegt, muss er auch wieder
+          // wegzubekommen sein — sonst bleibt die Linie für immer stehen.
+          <div className="tripbar">
+            <button type="button" className="tb-open" onClick={onTripOpen}>
+              <span className="tb-dot" style={{ background: vehicleTrip.color }} />
+              Laufweg {vehicleTrip.label}
+            </button>
+            <button type="button" className="tb-clear" onClick={onTripClear} aria-label="Laufweg ausblenden">
+              ✕
+            </button>
+          </div>
+        )}
         <div className="maptools">
           <LayerMenu
             options={layerOptions}
@@ -2157,6 +2647,52 @@ export function LageMap({
                     {step.band}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+          {showFire && (
+            <div className="legend" aria-label="Waldbrandgefahrenindex">
+              <span className="legend-title">Waldbrandgefahr</span>
+              <div className="radar-scale">
+                {FIRE_LEVELS.map((step) => (
+                  <span key={step.min} className="rs-step" title={`Stufe ${step.min}`}>
+                    <i style={{ background: step.color }} />
+                    {step.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {showQuakes && (
+            <div className="legend" aria-label="Erdbebenstärke">
+              <span className="legend-title">Erdbeben</span>
+              <div className="radar-scale">
+                {[
+                  { mag: '2,5–4', color: '#e3b505' },
+                  { mag: '5', color: '#e07b12' },
+                  { mag: 'ab 6,5', color: '#a92318' },
+                ].map((step) => (
+                  <span key={step.mag} className="rs-step">
+                    <i style={{ background: step.color }} />
+                    {step.mag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {showAurora && aurora && (
+            <div className="legend" aria-label="Polarlicht-Wahrscheinlichkeit">
+              <span className="legend-title">Polarlicht</span>
+              <div className="radar-scale">
+                <span className="rs-step">
+                  <i style={{ background: 'rgba(60,186,122,0.35)' }} />
+                  gering
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: 'rgba(60,186,122,0.95)' }} />
+                  hoch
+                </span>
+                <span className="rs-step">bis {Math.round(aurora.maxPercent)} %</span>
               </div>
             </div>
           )}
