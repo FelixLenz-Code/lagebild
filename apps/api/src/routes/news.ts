@@ -136,7 +136,10 @@ interface PhotonHit {
 /** Ergebnisse werden lange gehalten — Ortsnamen ändern sich nicht. */
 const GEO_TTL = 7 * 24 * 3600;
 /** Höchstens so viele neue Abfragen je Aktualisierung (Photon schonen). */
-const MAX_LOOKUPS = 15;
+const MAX_LOOKUPS = 20;
+/** So viele Meldungen je Landesprogramm bzw. bundesweit übernehmen. */
+const REGIONAL_PER_STATE = 20;
+const NATIONAL_MAX = 60;
 /** Je Meldung werden nur die aussichtsreichsten Schlagworte geprüft. */
 const TAGS_PER_ITEM = 3;
 
@@ -192,7 +195,7 @@ newsRoute.get('/', async (c) => {
         `https://www.tagesschau.de/api2u/news?regions=${region}`,
         { timeoutMs: 9000 },
       );
-      regional.push(...(res.news ?? []).filter((n) => n.regionId === region).slice(0, 8));
+      regional.push(...(res.news ?? []).filter((n) => n.regionId === region).slice(0, REGIONAL_PER_STATE));
     } catch {
       /* ohne Regionalteil bleibt die bundesweite Liste */
     }
@@ -202,13 +205,13 @@ newsRoute.get('/', async (c) => {
   const seen = new Set<string>();
   const raw: (RawNews & { regional?: boolean })[] = [];
   // Regionales zuerst — es ist für den Standort das Nähere.
-  for (const n of regional.filter(usable).slice(0, 14)) {
+  for (const n of regional.filter(usable)) {
     const id = n.sophoraId ?? n.externalId ?? n.shareURL ?? '';
     if (seen.has(id)) continue;
     seen.add(id);
     raw.push({ ...n, regional: true });
   }
-  for (const n of (national.news ?? []).filter(usable).slice(0, 22)) {
+  for (const n of (national.news ?? []).filter(usable).slice(0, NATIONAL_MAX)) {
     const id = n.sophoraId ?? n.externalId ?? n.shareURL ?? '';
     if (seen.has(id)) continue;
     seen.add(id);

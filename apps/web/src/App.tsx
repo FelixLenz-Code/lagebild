@@ -916,7 +916,11 @@ export function App() {
           )}
         </Tile>
 
-        <Tile title="News" source={news.data?.source} cached={news.fromCache} wide onOpen={news.data ? () => setDetail('news') : undefined}>
+        <Tile
+          title="News"
+          badge={news.data?.data.length ? `${news.data.data.length}` : undefined}
+          badgeKind="ok"
+          source={news.data?.source} cached={news.fromCache} wide onOpen={news.data ? () => setDetail('news') : undefined}>
           <Loader state={news} empty="Keine Meldungen.">
             <ul className="news">
               {news.data?.data.slice(0, 5).map((n) => (

@@ -337,6 +337,9 @@ Wochentag, damit „morgen 09:40" nicht wie „gleich" aussieht).
 
 ## Nachrichten: regional und verortet
 
+Angezeigt werden alle Meldungen der aktuellen Ausgabe — bundesweit rund 55,
+dazu bis zu 20 je Landesprogramm. Die Zahl steht als Zähler an der Kachel.
+
 Mit Standort holt die App zusätzlich zum bundesweiten Überblick die Meldungen
 des **Regionalprogramms** — die Tagesschau-API führt hessenschau, NDR, BR, MDR,
 SWR, rbb, SR und Radio Bremen unter `?regions=<id>`. Weil die
