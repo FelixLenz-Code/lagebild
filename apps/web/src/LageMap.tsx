@@ -1452,14 +1452,16 @@ export function LageMap({
       source: 'news',
       layout: {
         'icon-image': ['get', 'icon'],
-        'icon-size': ['interpolate', ['linear'], ['zoom'], 4, 0.42, 10, 0.62],
+        // Deutlich größer als die Haltestellen — davon gibt es hunderte, von
+        // den Meldungen nur wenige, und Gefahren sollen ins Auge springen.
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 4, 0.66, 10, 0.95],
         'icon-allow-overlap': false,
         // Gefahren zuerst platzieren, damit sie beim Gedränge stehen bleiben.
         'symbol-sort-key': ['case', ['==', ['get', 'danger'], true], 0, 1],
         'text-field': ['step', ['zoom'], '', 8, ['get', 'place']],
         'text-font': ['Noto Sans Regular'],
         'text-size': 10,
-        'text-offset': [0, 1.1],
+        'text-offset': [0, 1.4],
         'text-anchor': 'top',
         'text-optional': true,
       },

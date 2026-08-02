@@ -555,7 +555,7 @@ export function NewsDetail({
       <ul className="news">
         {shown.map((n) => (
           <li className="news-item has-ico" key={n.id}>
-            <NewsIcon category={n.category} />
+            <NewsIcon category={n.category} size={20} />
             <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
             {n.summary && <p className="news-summary">{n.summary}</p>}
             <span className="tm">
