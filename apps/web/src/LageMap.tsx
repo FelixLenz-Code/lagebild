@@ -39,7 +39,7 @@ import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
 import { mufToDataUrl, MUF_BOUNDS, MUF_SCALE } from './mufGrid.js';
-import { ensureMapIcons, STOP_COLOR, STOP_ICON, WIND_CLASSES } from './mapIcons.js';
+import { ensureMapIcons, NEWS_STYLE, STOP_COLOR, STOP_ICON, WIND_CLASSES } from './mapIcons.js';
 import { WindAnimation } from './windField.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
 import { AprsTargets } from './AprsTargets.js';
@@ -203,7 +203,8 @@ function newsPopupHtml(item: NewsItem): string {
     `<div class="warn-popup news-popup">` +
     `<h4>${esc(item.title)}</h4>` +
     (item.summary ? `<p class="wp-desc">${esc(item.summary)}</p>` : '') +
-    `<div class="wp-meta">${esc(item.topic ?? 'Nachricht')}` +
+    `<div class="wp-meta">${esc(NEWS_STYLE[item.category ?? 'other']?.label ?? 'Nachricht')}` +
+    (item.topic ? ` · ${esc(item.topic)}` : '') +
     (item.publishedAt ? ` · ${esc(relativeTime(item.publishedAt))}` : '') +
     (place ? ` · ${esc(place.name)}${place.approximate ? ' (ungenau)' : ''}` : '') +
     `</div>` +
@@ -597,7 +598,6 @@ export function LageMap({
   onStopClickRef.current = onStopClick;
   /** Bereits geladene Pegelverläufe (null = Abruf fehlgeschlagen). */
   const pegelHistory = useRef<Map<string, WaterLevelHistory | null>>(new Map());
-  const newsMarkers = useRef<Marker[]>([]);
   const stopsRef = useRef(stops);
   stopsRef.current = stops;
   const pickingRef = useRef(pickingLocation);
@@ -1440,24 +1440,86 @@ export function LageMap({
     );
   }, [mufUrl, ready, styleEpoch]);
 
-  // Verortete Meldungen als Marker.
+  // Verortete Meldungen als Symbolebene — Gefahren größer und zuoberst.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('news')) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addSource('news', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'news',
+      type: 'symbol',
+      source: 'news',
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 4, 0.42, 10, 0.62],
+        'icon-allow-overlap': false,
+        // Gefahren zuerst platzieren, damit sie beim Gedränge stehen bleiben.
+        'symbol-sort-key': ['case', ['==', ['get', 'danger'], true], 0, 1],
+        'text-field': ['step', ['zoom'], '', 8, ['get', 'place']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.5,
+        'icon-opacity': ['case', ['==', ['get', 'approximate'], true], 0.75, 1],
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('news') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showNews ? news : [])
+        .filter((n) => n.place)
+        .map((n, i) => ({
+          type: 'Feature',
+          properties: {
+            index: i,
+            icon: `news-${n.category ?? 'other'}`,
+            danger: n.category === 'danger',
+            approximate: n.place!.approximate,
+            place: n.place!.name,
+          },
+          geometry: { type: 'Point', coordinates: [n.place!.lon, n.place!.lat] },
+        })),
+    });
+  }, [news, showNews, ready, styleEpoch]);
+
+  // Antippen einer Meldung öffnet ihr Popup.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    for (const m of newsMarkers.current) m.remove();
-    newsMarkers.current = [];
-    if (!showNews) return;
-    for (const item of news) {
-      if (!item.place) continue;
-      const el = markerEl(item.place.approximate ? '#8a8a8f' : '#4a5560', 13);
-      el.title = item.title;
-      const m = new maplibregl.Marker({ element: el })
-        .setLngLat([item.place.lon, item.place.lat])
-        .setPopup(new maplibregl.Popup({ offset: 12, maxWidth: '320px' }).setHTML(newsPopupHtml(item)))
-        .addTo(map);
-      newsMarkers.current.push(m);
-    }
-  }, [news, showNews, ready]);
+    const located = () => news.filter((n) => n.place);
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const item = index != null ? located()[index] : undefined;
+      if (item) warnPopup.current!.setLngLat(e.lngLat).setHTML(newsPopupHtml(item)).addTo(map);
+    };
+    const enter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const leave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+    map.on('click', 'news', onClick);
+    map.on('mouseenter', 'news', enter);
+    map.on('mouseleave', 'news', leave);
+    return () => {
+      map.off('click', 'news', onClick);
+      map.off('mouseenter', 'news', enter);
+      map.off('mouseleave', 'news', leave);
+    };
+  }, [news, ready, styleEpoch]);
 
   // Auf einen Punkt schwenken (Nachrichtenliste, Suchtreffer).
   useEffect(() => {

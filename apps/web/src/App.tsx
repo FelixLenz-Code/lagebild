@@ -17,6 +17,7 @@ import { SearchSheet } from './SearchSheet.js';
 import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
 import { HfBands, HfDetail } from './HfPanel.js';
+import { NewsIcon } from './NewsIcon.js';
 import { HfPathSheet } from './HfPathSheet.js';
 import { forecastPath } from './hfPath.js';
 import { RoutePanel, type PlanMode } from './RoutePanel.js';
@@ -924,7 +925,8 @@ export function App() {
           <Loader state={news} empty="Keine Meldungen.">
             <ul className="news">
               {news.data?.data.slice(0, 5).map((n) => (
-                <li className="news-item" key={n.id}>
+                <li className="news-item has-ico" key={n.id}>
+                  <NewsIcon category={n.category} size={16} />
                   <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
                   <span className="tm">{n.topic ? `${n.topic} · ` : ''}{relativeTime(n.publishedAt)}</span>
                 </li>

@@ -453,7 +453,25 @@ export interface NewsItem {
   place?: NewsPlace;
   /** true bei Meldungen der Regionalprogramme (hessenschau, NDR, BR …). */
   regional?: boolean;
+  /** Einordnung nach Inhalt (Schlagzeile, Anriss, Schlagworte). */
+  category?: NewsCategory;
 }
+
+/**
+ * Grobe Einordnung einer Meldung — steuert Symbol und Farbe auf der Karte.
+ * `danger` und `crime` sind die für ein Lagebild wichtigen.
+ */
+export type NewsCategory =
+  | 'danger'
+  | 'crime'
+  | 'traffic'
+  | 'weather'
+  | 'health'
+  | 'politics'
+  | 'economy'
+  | 'sport'
+  | 'culture'
+  | 'other';
 
 /** Verorteter Bezug einer Meldung. */
 export interface NewsPlace {

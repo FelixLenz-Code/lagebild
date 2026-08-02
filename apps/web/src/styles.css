@@ -758,3 +758,11 @@ svg { display: block; }
 .stop-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
 .stop-head .stop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alert-top .rp-chip { margin-left: auto; }
+
+/* Kategorie-Symbole der Nachrichten */
+.news-ico { display: inline-grid; place-items: center; border-radius: 50%; flex: none; }
+.news-item.has-ico { display: grid; grid-template-columns: auto 1fr; gap: 4px 9px; align-items: start; }
+.news-item.has-ico .news-ico { grid-row: span 3; margin-top: 2px; }
+.news-item.has-ico a { grid-column: 2; }
+.news-item.has-ico .news-summary { grid-column: 2; }
+.news-item.has-ico .tm { grid-column: 2; }

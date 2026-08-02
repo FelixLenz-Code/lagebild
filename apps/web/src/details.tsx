@@ -1,5 +1,6 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { DepartureBoard } from './Departures.js';
+import { NewsIcon } from './NewsIcon.js';
 import type {
   Coords,
   WeatherNow,
@@ -553,7 +554,8 @@ export function NewsDetail({
       </div>
       <ul className="news">
         {shown.map((n) => (
-          <li className="news-item" key={n.id}>
+          <li className="news-item has-ico" key={n.id}>
+            <NewsIcon category={n.category} />
             <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
             {n.summary && <p className="news-summary">{n.summary}</p>}
             <span className="tm">

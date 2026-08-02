@@ -368,9 +368,21 @@ Backend leitet daraus einen Ort ab und hängt ihn als `place` an die Meldung:
 * Geokodiert wird über Photon, mit langem Cache (7 Tage) und höchstens 15 neuen
   Abfragen je Aktualisierung — die Ergebnisse ändern sich ohnehin nicht.
 
+Jede Meldung wird zusätzlich in eine von zehn **Kategorien** einsortiert —
+Gefahr, Polizei & Justiz, Verkehr, Wetter, Gesundheit, Politik, Wirtschaft,
+Sport, Kultur, Sonstiges. Das geschieht über Stichwortlisten auf Schlagzeile und
+Schlagworten (der Anriss dient nur als Rückfall, sonst landet „Wiederaufbau
+eines Kirchturms" bei den Gefahren, weil im Text der Brand von damals steht).
+Bei den Stichworten wird unterschieden, ob sie ein Wort **beginnen** müssen
+(„Brand" ja, „Deichbrand-Festival" nein) oder auch in einer Zusammensetzung
+stecken dürfen — im Deutschen steht das Stichwort oft hinten
+(„Flugzeugabsturz", „Vollsperrung").
+
 Auf der Karte gibt es dafür die Ebene **„Nachrichten"** (Gruppe Lage): jede
-verortete Meldung als Marker, im Popup Schlagzeile, Ressort, Zeitpunkt und Link.
-Ungenaue Orte sind heller gezeichnet. In der Nachrichtenliste lässt sich auf
+verortete Meldung mit dem Symbol ihrer Kategorie — **Gefahrenmeldungen als
+rotes Warndreieck**, das beim Gedränge zuerst gezeichnet wird. Im Popup stehen
+Kategorie, Schlagzeile, Zeitpunkt und Link; ungenaue Orte sind blasser. Dieselben
+Symbole stehen in der Nachrichtenliste. In der Nachrichtenliste lässt sich auf
 **„Mit Ort"** umschalten, und ein Klick auf den Ortsnamen schwenkt die Karte
 dorthin.
 

@@ -135,6 +135,44 @@ const VARIANTS: Record<string, [string, string, string]> = {
   'aprs-wx': [MAST, '#0d8a8a', '#ffffff'],
 };
 
+/* Nachrichten-Symbole: je Kategorie ein Piktogramm auf farbigem Kreis.
+   Gefahrenmeldungen sollen auf der Karte sofort ins Auge fallen. */
+const GLYPH_DANGER =
+  'M16 6.5 27 25.5H5Zm-1.1 6.4v6.6h2.2v-6.6Zm0 8.2v2.2h2.2v-2.2Z';
+const GLYPH_SHIELD =
+  'M16 5.5 25 8.6v6.6c0 5-3.7 9.4-9 11-5.3-1.6-9-6-9-11V8.6Zm-1 12.1-2.7-2.7-1.6 1.6 4.3 4.3 7-7-1.6-1.6Z';
+const GLYPH_CAR =
+  'M9.6 12.2 11 8.6h10l1.4 3.6h1.7c.9 0 1.6.7 1.6 1.6v6.4c0 .6-.4 1.1-1 1.3v1.9h-2.4v-1.8H9.7v1.8H7.3v-1.9c-.6-.2-1-.7-1-1.3v-6.4c0-.9.7-1.6 1.6-1.6Zm2.6-1.4-.7 1.9h13l-.7-1.9Zm-1.9 5.4a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Zm11.4 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Z';
+const GLYPH_CLOUD =
+  'M11.5 22.5a5.5 5.5 0 0 1-.6-11 7 7 0 0 1 13.2 2.2 4.4 4.4 0 0 1-.9 8.8Z';
+const GLYPH_CROSS = 'M13.6 6.5h4.8v7.1h7.1v4.8h-7.1v7.1h-4.8v-7.1H6.5v-4.8h7.1Z';
+const GLYPH_BUILDING =
+  'M16 5.5 27 11v2.2H5V11Zm-8.4 9.7h2.6v7.6H7.6Zm5.1 0h2.6v7.6h-2.6Zm5.1 0h2.6v7.6h-2.6Zm5.1 0h2.6v7.6h-2.6ZM6 24.4h20v2.1H6Z';
+const GLYPH_CHART = 'M7 20h4v6.5H7Zm7-6h4v12.5h-4Zm7-8h4v20.5h-4Z';
+const GLYPH_BALL =
+  'M16 5.5a10.5 10.5 0 1 0 0 21 10.5 10.5 0 0 0 0-21Zm0 2.6 4.6 3.3-1.8 5.4h-5.6l-1.8-5.4Z';
+const GLYPH_NOTE =
+  'M13.5 6.5 24 8.9v3.3l-8-1.8v9.4a4 4 0 1 1-2.5-3.7Z';
+const GLYPH_PAPER =
+  'M7 7h14a1.5 1.5 0 0 1 1.5 1.5V24a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 24V8.5A1.5 1.5 0 0 1 7 7Zm2 3.4v3.2h10v-3.2Zm0 5.2v1.8h10v-1.8Zm0 3.6v1.8h6.5v-1.8ZM24 12h1.8c.4 0 .7.3.7.7V24a1.5 1.5 0 0 1-2.5 1.1Z';
+
+/**
+ * Kategorie einer Meldung → Symbol, Farbe und Bezeichnung. Wird auf der Karte
+ * und in den Listen benutzt, damit beides zusammenpasst.
+ */
+export const NEWS_STYLE: Record<string, { path: string; color: string; label: string }> = {
+  danger: { path: GLYPH_DANGER, color: '#a92318', label: 'Gefahr' },
+  crime: { path: GLYPH_SHIELD, color: '#6b3fa0', label: 'Polizei & Justiz' },
+  traffic: { path: GLYPH_CAR, color: '#c96f0f', label: 'Verkehr' },
+  weather: { path: GLYPH_CLOUD, color: '#2f6fa8', label: 'Wetter' },
+  health: { path: GLYPH_CROSS, color: '#0d8a8a', label: 'Gesundheit' },
+  politics: { path: GLYPH_BUILDING, color: '#4a5560', label: 'Politik' },
+  economy: { path: GLYPH_CHART, color: '#2c7448', label: 'Wirtschaft' },
+  sport: { path: GLYPH_BALL, color: '#6f9e2e', label: 'Sport' },
+  culture: { path: GLYPH_NOTE, color: '#b4478f', label: 'Kultur' },
+  other: { path: GLYPH_PAPER, color: '#5b5b60', label: 'Nachricht' },
+};
+
 /** Haltestellen-Symbole: Art → farbiger Kreis mit Piktogramm. */
 const STOP_BADGES: Record<string, [string, string]> = {
   bus: [GLYPH_BUS, '#1d4e73'],
@@ -164,6 +202,9 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     ...Object.entries(VARIANTS).map(([id, [path, fill, stroke]]) => draw(map, id, path, fill, stroke)),
     ...Object.entries(STOP_BADGES).map(([kind, [glyph, color]]) =>
       drawSvg(map, STOP_ICON[kind]!, badge(glyph, color)),
+    ),
+    ...Object.entries(NEWS_STYLE).map(([cat, { path, color }]) =>
+      drawSvg(map, `news-${cat}`, badge(path, color)),
     ),
   ]);
 }

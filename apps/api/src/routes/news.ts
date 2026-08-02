@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { NewsItem, NewsPlace, StateCode } from '@lagebild/shared';
+import type { NewsCategory, NewsItem, NewsPlace, StateCode } from '@lagebild/shared';
 import { FEDERAL_STATE_BOUNDS } from '@lagebild/shared';
 import { readCoords } from '../lib/geo.js';
 import { cached } from '../lib/cache.js';
@@ -24,6 +24,8 @@ interface RawNews {
   type?: string;
   /** Schlagworte — enthalten neben Themen auch Orte und Landkreise. */
   tags?: { tag?: string }[];
+  /** Dachzeile, oft das Bundesland. */
+  topline?: string;
   /** Regionskennung der Tagesschau (1 = Baden-Württemberg, alphabetisch). */
   regionId?: number;
 }
@@ -176,6 +178,105 @@ async function locate(tag: string, state: StateCode, budget: { left: number }): 
   return null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Einordnung der Meldungen                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Stichwortlisten je Kategorie, in dieser Reihenfolge geprüft: Gefahren
+ * zuerst, damit „Sturmschäden" als Gefahr und nicht als Wetter landet.
+ *
+ * **Ohne `\b` am Wortanfang** — im Deutschen steckt das Stichwort meist in
+ * einer Zusammensetzung („Flugzeugabsturz", „Unwetterwarnung"). Dafür sind die
+ * Stichworte lang genug gewählt, damit sie nicht in harmlosen Wörtern
+ * auftauchen. Das ist bewusst grob: Es soll auf der Karte das Wichtige
+ * hervorheben, nicht den Inhalt erschöpfend beschreiben.
+ */
+/**
+ * Stichwort-Regel je Kategorie.
+ *
+ * `start` muss ein Wort **beginnen** — „Brand" ja, „Deichbrand-Festival" nein.
+ * `anywhere` darf auch in einer Zusammensetzung stecken, weil das Stichwort im
+ * Deutschen oft hinten steht: „Flugzeugabsturz", „Vollsperrung",
+ * „Verkehrsunfall". Die Trennung verhindert die typischen Fehlgriffe.
+ */
+function rule(start: string[], anywhere: string[] = []): RegExp {
+  const parts: string[] = [];
+  if (start.length) parts.push(`(?<![a-zäöüß])(?:${start.join('|')})`);
+  if (anywhere.length) parts.push(`(?:${anywhere.join('|')})`);
+  return new RegExp(parts.join('|'), 'i');
+}
+
+const CATEGORY_WORDS: [NewsCategory, RegExp][] = [
+  [
+    'danger',
+    rule(
+      [
+        'brand', 'brennt', 'feuer(?!wehr)', 'angriff', 'attacke', 'alarm', 'amok', 'bombe',
+        'explosion', 'evakuier', 'vermisst', 'tote', 'getötet', 'verletzt', 'leiche',
+        'sturmtief', 'sturmflut', 'rettungseinsatz', 'rettungskräfte', 'notfall', 'warnstufe',
+      ],
+      [
+        'absturz', 'unfall', 'kollision', 'hochwasser', 'überschwemm', 'unwetter', 'waldbrand',
+        'starkregen', 'orkan', 'entgleis', 'blindgänger', 'gefahrgut', 'katastroph', 'erdbeben',
+        'schüsse', 'schießerei', 'schusswaffe', 'sprengung', 'gesperrt', 'sperrung', 'messerangriff',
+      ],
+    ),
+  ],
+  [
+    'crime',
+    rule(
+      ['polizei', 'festnahme', 'festgenommen', 'razzia', 'drogen', 'betrug', 'diebstahl', 'einbruch', 'überfall', 'urteil', 'prozess', 'gericht'],
+      ['ermittl', 'tatverdäch', 'staatsanwalt', 'kriminal', 'haftbefehl', 'missbrauch'],
+    ),
+  ],
+  [
+    'traffic',
+    rule(
+      ['stau', 'streik', 'baustelle', 'flughafen', 'fähre', 'umleitung', 'fahrplan'],
+      ['bahnverkehr', 'zugverkehr', 'verkehr', 'autobahn', 'nahverkehr', 's-bahn', 'straßenbahn', 'schienenersatz'],
+    ),
+  ],
+  ['weather', rule(['wetter', 'regen', 'hitze', 'dürre', 'schnee', 'glätte', 'sonnig', 'frost'], ['temperatur'])],
+  [
+    'health',
+    rule(['klinik', 'virus', 'grippe', 'corona', 'ärzte', 'ärztin', 'pflege', 'impf', 'patient'], ['krankenhaus', 'infektion', 'gesundheit', 'notaufnahme']),
+  ],
+  [
+    'politics',
+    rule(['wahl', 'landtag', 'bundestag', 'regierung', 'minister', 'partei', 'koalition', 'abstimmung', 'bürgermeister', 'stadtrat', 'gesetz', 'behörde', 'afd', 'cdu', 'spd', 'grüne', 'fdp']),
+  ],
+  [
+    'economy',
+    rule(['wirtschaft', 'insolvenz', 'tarif', 'gehalt', 'unternehmen', 'firma', 'konzern', 'steuer', 'preise', 'inflation', 'börse', 'handel'], ['arbeitsmarkt']),
+  ],
+  [
+    'sport',
+    rule(['fußball', 'bundesliga', 'spieltag', 'olympia', 'turnier', 'sport', 'eintracht', 'werder', 'schalke', 'stadion', 'triathlon', 'handball', 'regatta'], ['meisterschaft']),
+  ],
+  [
+    'culture',
+    rule(['festival', 'konzert', 'museum', 'theater', 'kultur', 'ausstellung', 'csd', 'kirche', 'bistum', 'kino', 'literatur'], ['jubiläum']),
+  ],
+];
+
+/**
+ * Zuerst zählt die Schlagzeile (mit den Schlagworten) — der Anriss dient nur
+ * als Rückfall. Sonst landet „Wiederaufbau eines Kirchturms" bei den Gefahren,
+ * weil im Text irgendwo der Brand von damals erwähnt wird.
+ */
+function classify(n: RawNews): NewsCategory {
+  const headline = `${n.title ?? ''} ${(n.tags ?? []).map((t) => t.tag ?? '').join(' ')}`;
+  for (const [category, re] of CATEGORY_WORDS) {
+    if (re.test(headline)) return category;
+  }
+  const body = n.firstSentence ?? '';
+  for (const [category, re] of CATEGORY_WORDS) {
+    if (re.test(body)) return category;
+  }
+  return 'other';
+}
+
 newsRoute.get('/', async (c) => {
   // Mit Standort kommen zusätzlich die Meldungen des Regionalprogramms dazu
   // (hessenschau, NDR, BR … — die Tagesschau-API führt sie unter `regions`).
@@ -263,6 +364,7 @@ newsRoute.get('/', async (c) => {
       topic: n.ressort || (n.regional && itemState ? STATE_NAME[itemState] : undefined),
       place,
       regional: n.regional,
+      category: classify(n),
     });
   }
 
