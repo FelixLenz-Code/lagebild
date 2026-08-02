@@ -350,6 +350,25 @@ solarem Fluss füllt die großen Lücken (Ozeane), und die Messwerte von rund
 Das ersetzt kein Ionosphärenmodell und ist keine Vorhersage für eine bestimmte
 Strecke — für den Überblick „welches Band trägt gerade wohin" reicht es.
 
+### Bandampel für eine Strecke
+
+Ein langes Antippen (bzw. die rechte Maustaste) auf der Karte bietet
+**„Funkstrecke prüfen"**. Die App legt dann den Großkreis vom eigenen Standort
+zum Punkt, tastet das MUF-Feld darauf ab und bewertet jedes Band:
+
+* der **schwächste Punkt** der Strecke begrenzt die Verbindung;
+* aus Länge und Sprungzahl folgt die Umrechnung von der Bezugsweite 3000 km auf
+  die tatsächliche Sprungweite — ein kurzer Sprung braucht einen steilen Winkel
+  und verträgt weniger Frequenz;
+* der Sonnenstand entlang des Weges (und der K-Index) ergibt die untere Grenze,
+  unter der die Dämpfung das Signal frisst;
+* liegt die Strecke in der Dämmerungszone, steht das als Hinweis dabei.
+
+Jede Bandzeile nennt Zustand **und Grund** im Klartext („über der MUF",
+„Dämpfung zu stark", „dicht unter der MUF, unbeständig"). Das ist eine
+Faustformel, kein VOACAP — Antenne, Leistung, Störpegel und Sporadic E kommen in
+der Wirklichkeit dazu.
+
 ### Quellen und ihre Bitten
 
 | Quelle | wofür | eingehalten |

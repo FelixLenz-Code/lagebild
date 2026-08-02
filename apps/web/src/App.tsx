@@ -17,6 +17,8 @@ import { SearchSheet } from './SearchSheet.js';
 import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
 import { HfBands, HfDetail } from './HfPanel.js';
+import { HfPathSheet } from './HfPathSheet.js';
+import { forecastPath } from './hfPath.js';
 import { RoutePanel, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
@@ -124,6 +126,8 @@ export function App() {
   const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords, refreshTick]);
   const radar = useApi('radar', () => fetchRadar(), [refreshTick]);
   // Live-Ebenen laden nur, solange sie auf der Karte eingeschaltet sind.
+  /** Gegenstelle der Funkstrecken-Bewertung (Kartenmenü). */
+  const [hfTarget, setHfTarget] = useState<Coords | null>(null);
   const [layers, setLayers] = useState<ActiveLayers>({
     radar: false,
     aircraft: false,
@@ -171,8 +175,9 @@ export function App() {
   // Funkwetter wird stündlich erneuert — häufiger abzurufen bringt nichts und
   // widerspricht der Bitte der Quelle.
   const hf = useApi('hf-space', () => fetchHfSpace(), [refreshTick], { refreshMs: 3600_000 });
+  // Das Gitter wird auch für die Streckenbewertung gebraucht, nicht nur für die Ebene.
   const muf = useApi('hf-muf', () => fetchHfMuf(), [refreshTick], {
-    enabled: layers.muf,
+    enabled: layers.muf || hfTarget !== null,
     refreshMs: 900_000,
   });
 
@@ -451,7 +456,11 @@ export function App() {
    * Punkt aus dem Kartenmenü (oder aus dem Setzen-Modus). `label` ist gesetzt,
    * wenn eine Haltestelle oder eigene Markierung angetippt wurde.
    */
-  const pickPoint = (point: Coords, kind: 'destination' | 'origin' | 'place', label?: string) => {
+  const pickPoint = (point: Coords, kind: 'destination' | 'origin' | 'place' | 'radio', label?: string) => {
+    if (kind === 'radio') {
+      setHfTarget(point);
+      return;
+    }
     const coordName = `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`;
     const name = label ?? coordName;
     if (kind === 'destination') startRouteTo({ name, ...point });
@@ -529,6 +538,12 @@ export function App() {
   const nextHours = (fc?.hourly ?? []).filter((h) => new Date(h.time).getTime() > Date.now()).slice(0, 4);
   const airNow = air.data?.data ?? null;
   const hfNow = hf.data?.data ?? null;
+  const mufGrid = muf.data?.data ?? null;
+  // Bandampel für die gewählte Strecke — reine Rechnung, kein weiterer Abruf.
+  const hfForecast = useMemo(
+    () => (hfTarget && mufGrid ? forecastPath(mufGrid, coords, hfTarget, hfNow?.kIndex ?? null) : null),
+    [hfTarget, mufGrid, coords, hfNow?.kIndex],
+  );
   const rain24h = fc
     ? Math.round(fc.hourly.slice(0, 24).reduce((sum, h) => sum + (h.precipitationMm ?? 0), 0) * 10) / 10
     : null;
@@ -625,7 +640,8 @@ export function App() {
             offlineCode={offlineCode}
             route={route}
             itinerary={profile === 'transit' ? (itineraries[itineraryIndex] ?? null) : null}
-            muf={muf.data?.data ?? null}
+            muf={mufGrid}
+            hfPath={hfForecast?.line ?? null}
             stops={stopPoints}
             stopsAvailable={online || !!stopsCode}
             onStopClick={setStopDetail}
@@ -901,6 +917,16 @@ export function App() {
           onRoute={startRouteTo}
           onSaveFavorite={saveFavorite}
           onRemoveFavorite={removeFavorite}
+        />
+      )}
+
+      {hfTarget && (
+        <HfPathSheet
+          forecast={hfForecast}
+          loading={muf.loading && !mufGrid}
+          from={place}
+          to={hfTarget}
+          onClose={() => setHfTarget(null)}
         />
       )}
 

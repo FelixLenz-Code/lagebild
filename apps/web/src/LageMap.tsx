@@ -465,7 +465,9 @@ interface Props {
   navPosition: Coords | null;
   navBearing: number | null;
   /** Punkt aus dem Kartenmenü als Ziel bzw. Start übernehmen. */
-  onPickPoint: (point: Coords, kind: 'destination' | 'origin' | 'place', label?: string) => void;
+  onPickPoint: (point: Coords, kind: 'destination' | 'origin' | 'place' | 'radio', label?: string) => void;
+  /** Großkreis der bewerteten Funkstrecke ([lon, lat]). */
+  hfPath: [number, number][] | null;
   /** Der nächste Klick setzt den Standort (Modus aus dem Standort-Menü). */
   pickingLocation: boolean;
   onViewport: (b: Bbox) => void;
@@ -539,6 +541,7 @@ export function LageMap({
   route,
   itinerary,
   muf,
+  hfPath,
   stops,
   stopsAvailable,
   onStopClick,
@@ -1408,6 +1411,29 @@ export function LageMap({
     );
   }, [mufUrl, ready, styleEpoch]);
 
+  // Großkreis der bewerteten Funkstrecke.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!map.getSource('hfpath')) {
+      map.addSource('hfpath', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'hfpath',
+        type: 'line',
+        source: 'hfpath',
+        layout: { 'line-cap': 'round' },
+        paint: { 'line-color': '#a4218c', 'line-width': 3, 'line-dasharray': [2, 1.2] },
+      });
+    }
+    const src = map.getSource('hfpath') as GeoJSONSource | undefined;
+    src?.setData({
+      type: 'FeatureCollection',
+      features: hfPath
+        ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: hfPath } }]
+        : [],
+    });
+  }, [hfPath, ready, styleEpoch]);
+
   /* ---------- ÖPNV-Verbindung ---------- */
 
   useEffect(() => {
@@ -1942,6 +1968,15 @@ export function LageMap({
               }}
             >
               Hierher wechseln
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'radio', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Funkstrecke prüfen
             </button>
           </div>
         )}
