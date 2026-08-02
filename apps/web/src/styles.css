@@ -107,6 +107,44 @@ svg { display: block; }
 }
 .mapcontrols > * { pointer-events: auto; }
 .maptools { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Abschnittsüberschrift in den Blättern (Abfahrten, Funk, Einstellungen …). */
+.sect-label {
+  font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--faint); margin: 0 0 6px;
+}
+
+/* Einstellungen: Reiter, Schalterlisten, Auswahlknöpfe, Quellenliste */
+.st-tabs { display: flex; gap: 4px; margin-bottom: 14px; background: var(--surface-2); padding: 3px; border-radius: var(--r-sm); }
+.st-tab { flex: 1; padding: 7px 6px; border: none; border-radius: calc(var(--r-sm) - 2px); background: transparent; color: var(--muted); font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.st-tab.is-on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+.st-intro { font-size: .78rem; margin: 0 0 12px; }
+.st-group + .st-group { margin-top: 16px; }
+.st-list { list-style: none; margin: 0; padding: 0; }
+.st-item {
+  width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 6px;
+  border: none; border-radius: var(--r-sm); background: transparent; color: var(--ink);
+  font: inherit; font-size: .86rem; text-align: left; cursor: pointer;
+}
+.st-item:hover { background: var(--surface-2); }
+.st-item .k { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+.st-item[aria-checked='false'] .k { opacity: .35; }
+.st-item[aria-checked='false'] .st-label { color: var(--muted); }
+.st-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.st-hint { font-size: .7rem; color: var(--faint); }
+.st-switch { width: 34px; height: 19px; border-radius: 10px; flex: none; background: var(--line-strong); position: relative; transition: background .12s ease; }
+.st-switch i { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--surface); transition: transform .12s ease; }
+.st-switch.is-on { background: var(--accent); }
+.st-switch.is-on i { transform: translateX(15px); }
+.st-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.st-choice { padding: 7px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; }
+.st-choice.is-on { border-color: var(--accent); color: var(--accent-ink, var(--accent)); }
+.src-list { list-style: none; margin: 0; padding: 0; }
+.src-list li { display: flex; flex-direction: column; gap: 1px; padding: 8px 0; border-top: 1px solid var(--line); }
+.src-list li:first-child { border-top: none; }
+.src-name { font-size: .86rem; font-weight: 650; color: var(--ink); }
+.src-use { font-size: .76rem; color: var(--muted); }
+.src-terms { font-size: .7rem; color: var(--faint); }
+
 /* Band über der Karte, solange ein Laufweg gezeichnet ist. */
 .tripbar { display: inline-flex; align-items: stretch; margin-bottom: 6px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .tripbar button { background: none; border: none; font: inherit; color: var(--ink); cursor: pointer; padding: 6px 10px; font-size: .8rem; }

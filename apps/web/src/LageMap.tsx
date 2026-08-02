@@ -64,6 +64,7 @@ import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
 import { AprsTargets } from './AprsTargets.js';
 import { loadTargets, saveTargets } from './aprsStore.js';
 import { LayerMenu, type LayerOption } from './LayerMenu.js';
+import { LAYER_CATALOG, type LayerId, type LayerRowId } from './layerCatalog.js';
 import {
   kindOfProduct,
   SEVERITY_DE,
@@ -554,6 +555,8 @@ interface Props {
   onViewport: (b: Bbox) => void;
   /** Meldet die aktiven Live-Ebenen — diese Daten werden erst dann geladen. */
   onLayersChange: (active: ActiveLayers) => void;
+  /** In den Einstellungen abgewählte Ebenen — sie erscheinen gar nicht im Menü. */
+  hiddenLayers: LayerRowId[];
 }
 
 /** Ebenen, deren Daten nur bei Bedarf geholt werden. */
@@ -579,8 +582,7 @@ export interface ActiveLayers {
   aprsTargets: string[];
 }
 
-/** Alle umschaltbaren Kartenebenen. */
-type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops' | 'muf' | 'news' | 'vehicles' | 'emergency' | 'quakes' | 'aurora' | 'fire';
+export type { LayerId, LayerRowId } from './layerCatalog.js';
 
 /**
  * Darstellung der Symbol-Ebenen. Flugzeuge erst ab Zoom 6, weil das ADS-B-Netz
@@ -662,6 +664,7 @@ export function LageMap({
   pickingLocation,
   onViewport,
   onLayersChange,
+  hiddenLayers,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -1617,6 +1620,24 @@ export function LageMap({
     };
   }, [news, ready, styleEpoch]);
 
+  // In den Einstellungen abgewählte Ebenen bleiben nicht heimlich an.
+  const hiddenKey = hiddenLayers.join(',');
+  useEffect(() => {
+    if (!hiddenLayers.length) return;
+    setOn((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const id of hiddenLayers) {
+        if (id !== 'wind-labels' && next[id]) {
+          next[id] = false;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenKey]);
+
   /* ---------- Busse und Bahnen in Bewegung ---------- */
 
   useEffect(() => {
@@ -2331,121 +2352,37 @@ export function LageMap({
   const curFrame = timeline[Math.min(radarIdx, timeline.length - 1)];
   const forecastStart = timeline.findIndex((f) => f.forecast);
 
-  // Inhalt des Ebenen-Menüs. Ebenen ohne Zugang (kein Key) tauchen gar nicht auf.
-  const layerOptions: LayerOption[] = [
-    {
-      id: 'emergency',
-      label: 'Notfallpunkte',
-      color: '#a92318',
-      group: 'Lage',
-      hint: 'Klinik, Apotheke, Polizei, Feuerwehr — offline',
-      active: showEmergency,
-    },
-    {
-      id: 'quakes',
-      label: 'Erdbeben',
-      color: '#8a4b1d',
-      group: 'Lage',
-      hint: 'letzte Woche, ab Stärke 2,5',
-      active: showQuakes,
-    },
-    {
-      id: 'fire',
-      label: 'Waldbrandgefahr',
-      color: 'linear-gradient(90deg,#3f8f4a,#e3b505,#a92318)',
-      group: 'Gefahren',
-      hint: 'DWD-Index, Stufe 1–5',
-      active: showFire,
-    },
-    {
-      id: 'aurora',
-      label: 'Polarlicht',
-      color: '#3cba7a',
-      group: 'Funk',
-      hint: 'Wahrscheinlichkeit (NOAA)',
-      active: showAurora,
-    },
-    {
-      id: 'news',
-      label: 'Nachrichten',
-      color: '#6a7580',
-      group: 'Lage',
-      hint: 'regionale Meldungen mit Ortsbezug',
-      active: showNews,
-    },
-    { id: 'warnings', label: 'Warnungen', color: SEVERITY_COLOR.severe, group: 'Gefahren', active: showWarnings },
-    { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', active: showRadar },
-    { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Strömungsbild, 10 m über Grund', active: showWind },
-    ...(showWind
-      ? [
-          {
-            id: 'wind-labels',
-            label: 'Windwerte',
-            color: '#2c7448',
-            group: 'Wetter',
-            hint: 'km/h an den Gitterpunkten',
-            active: windLabels,
-            sub: true,
-          } satisfies LayerOption,
-        ]
-      : []),
-    { id: 'night', label: 'Tag/Nacht', color: '#0b1a33', group: 'Wetter', hint: 'Dämmerungsgrenze', active: showNight },
-    ...(flowAvailable
-      ? [
-          {
-            id: 'flow',
-            label: 'Verkehrsfluss',
-            color: 'linear-gradient(90deg,#2c9e5b,#e0a90b,#c0392b)',
-            group: 'Verkehr',
-            active: showFlow,
-          } satisfies LayerOption,
-        ]
-      : []),
-    { id: 'traffic', label: 'Verkehrsmeldungen', color: 'var(--sev3)', group: 'Verkehr', active: showTraffic },
-    {
-      id: 'vehicles',
-      label: 'Busse & Bahnen',
-      color: '#a92318',
-      group: 'Verkehr',
-      hint: 'Position aus dem Fahrplan gerechnet',
-      active: showVehicles,
-    },
-    {
-      id: 'stops',
-      label: 'Haltestellen',
-      color: '#1d4e73',
-      group: 'Verkehr',
-      hint: stopsAvailable ? 'Bus, Tram, Bahn · ab Zoom 12' : 'Region unter „Offline" laden',
-      active: showStops,
-    },
-    { id: 'aircraft', label: 'Flugzeuge', color: '#1d4e73', group: 'Verkehr', hint: 'ADS-B, ab Zoom 6', active: showAircraft },
-    ...(aisAvailable
-      ? [{ id: 'vessels', label: 'Schiffe', color: '#2c7448', group: 'Verkehr', hint: 'AIS', active: showVessels } satisfies LayerOption]
-      : []),
-    ...(aprsAvailable
-      ? [
-          {
-            id: 'aprs',
-            label: 'Amateurfunk',
-            color: '#6b3fa0',
-            group: 'Verkehr',
-            hint: aprsTargets.length ? `${aprsTargets.length} Rufzeichen` : 'Rufzeichen eintragen',
-            active: showAprs,
-            onEdit: () => setAprsOpen(true),
-            editLabel: 'Rufzeichen verwalten',
-          } satisfies LayerOption,
-        ]
-      : []),
-    { id: 'pegel', label: 'Pegel', color: 'var(--accent)', group: 'Wasser', active: showPegel },
-    {
-      id: 'muf',
-      label: 'Ausbreitung (MUF)',
-      color: 'linear-gradient(90deg,#3b4a7a,#2c8f6a,#d0a71a,#a4218c)',
-      group: 'Funk',
-      hint: 'Kurzwelle: höchste brauchbare Frequenz',
-      active: showMuf,
-    },
-  ];
+  // Inhalt des Ebenen-Menüs: Namen, Farben und Gruppen stehen im Verzeichnis
+  // (layerCatalog.ts), hier kommen nur Schaltzustand und das dazu, was von
+  // Schlüsseln, geladenen Regionen oder den Einstellungen abhängt.
+  const active: Record<LayerRowId, boolean> = { ...on, 'wind-labels': windLabels };
+  const availability = { flow: flowAvailable, ais: aisAvailable, aprs: aprsAvailable };
+  const hidden = new Set(hiddenLayers);
+  const layerOptions: LayerOption[] = LAYER_CATALOG.filter((l) => {
+    if (hidden.has(l.id)) return false;
+    if (l.needs && !availability[l.needs]) return false;
+    // Die Windwerte sind eine Anzeigeoption der Windebene — ohne sie sinnlos.
+    if (l.id === 'wind-labels') return showWind;
+    return true;
+  }).map((l) => ({
+    id: l.id,
+    label: l.label,
+    color: l.color,
+    group: l.group,
+    hint:
+      l.id === 'stops' && !stopsAvailable
+        ? 'Region unter „Offline" laden'
+        : l.id === 'aprs'
+          ? aprsTargets.length
+            ? `${aprsTargets.length} Rufzeichen`
+            : 'Rufzeichen eintragen'
+          : l.hint,
+    active: active[l.id] ?? false,
+    ...(l.sub ? { sub: true } : {}),
+    ...(l.id === 'aprs'
+      ? { onEdit: () => setAprsOpen(true), editLabel: 'Rufzeichen verwalten' }
+      : {}),
+  }));
 
   return (
     <>

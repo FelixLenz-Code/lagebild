@@ -25,6 +25,8 @@ import { HfPathSheet } from './HfPathSheet.js';
 import { forecastPath } from './hfPath.js';
 import { RoutePanel, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
+import { SettingsSheet } from './SettingsSheet.js';
+import { loadSettings, saveSettings, type Settings } from './settings.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
 import { poisOffline, routeOffline, stopsOffline } from './offline/client.js';
 import { useNavigation } from './navigation.js';
@@ -80,8 +82,11 @@ export function App() {
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
     );
   }, []);
+  // Ortung beim Start ist abschaltbar (Einstellungen) — dann bleibt der
+  // zuletzt gewählte Ort stehen, bis von Hand geortet wird.
+  const locateOnStart = useRef(loadSettings().locateOnStart);
   useEffect(() => {
-    locate();
+    if (locateOnStart.current) locate();
   }, [locate]);
 
   /** Standort von Hand setzen (Karte) — nie aus der Suche. */
@@ -230,6 +235,9 @@ export function App() {
     (maps.data?.data ?? []).map((m) => [m.code, { map: m.map, route: m.route, search: m.search }]),
   );
   const [regionsOpen, setRegionsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<Settings>(() => loadSettings());
+  useEffect(() => saveSettings(settings), [settings]);
   const [offlineFiles, setOfflineFiles] = useState<Record<string, RegionFiles>>({});
   const refreshOffline = useCallback(() => {
     if (opfsSupported()) listOffline().then(setOfflineFiles).catch(() => {});
@@ -376,7 +384,7 @@ export function App() {
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(() => !loadSettings().voiceGuidance);
   /** Die gerade gewählte Variante — sie wird gefahren und angesagt. */
   const route = routes[routeIndex] ?? null;
   // Beim Start der Zielführung darf nicht neu gerechnet werden, sonst wäre die
@@ -589,6 +597,13 @@ export function App() {
     refreshOffline();
   }, [refreshOffline]);
 
+  // Selbsttätiges Aktualisieren im gewählten Takt (0 = aus).
+  useEffect(() => {
+    if (!settings.autoRefreshMin) return;
+    const id = window.setInterval(() => refreshAll(), settings.autoRefreshMin * 60_000);
+    return () => window.clearInterval(id);
+  }, [settings.autoRefreshMin, refreshAll]);
+
   const [detail, setDetail] = useState<DetailKey | null>(null);
   /** Angetippte Haltestelle auf der Karte. */
   const [stopDetail, setStopDetail] = useState<TransitStopPoint | null>(null);
@@ -688,6 +703,19 @@ export function App() {
           </svg>
         </button>
 
+        <button
+          type="button"
+          className="iconbtn"
+          onClick={() => setSettingsOpen(true)}
+          title="Einstellungen und Quellen"
+          aria-label="Einstellungen und Quellen"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" />
+          </svg>
+        </button>
+
         {opfsSupported() && (
           <button type="button" className="iconbtn" onClick={() => setRegionsOpen(true)} title="Offline-Regionen" aria-label="Offline-Regionen">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -762,6 +790,7 @@ export function App() {
             pickingLocation={pickingLocation}
             onViewport={setViewport}
             onLayersChange={setLayers}
+            hiddenLayers={settings.hiddenLayers}
           />
           {pickingLocation && (
             <div className="pickbar" role="status">
@@ -809,7 +838,13 @@ export function App() {
               onResetOrigin={() => setRouteOrigin(null)}
               onStartNav={startNavigation}
               onStopNav={() => setNavigating(false)}
-              onToggleMute={() => setMuted((m) => !m)}
+              onToggleMute={() =>
+                setMuted((m) => {
+                  // Der Knopf in der Navigationsleiste ist dieselbe Einstellung.
+                  setSettings((prev) => ({ ...prev, voiceGuidance: m }));
+                  return !m;
+                })
+              }
               onClose={stopRoute}
             />
           )}
@@ -1062,6 +1097,19 @@ export function App() {
           from={place}
           to={hfTarget}
           onClose={() => setHfTarget(null)}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsSheet
+          settings={settings}
+          onChange={setSettings}
+          available={{ flow: flowAvailable, ais: aisAvailable, aprs: aprsAvailable }}
+          onOpenRegions={() => {
+            setSettingsOpen(false);
+            setRegionsOpen(true);
+          }}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
 

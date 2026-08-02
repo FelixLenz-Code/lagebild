@@ -59,6 +59,9 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Tag/Nacht | selbst gerechnet | Dämmerungssaum, wandert minütlich mit |
 | Markieren | eigene Punkte/Flächen | Benennung direkt beim Anlegen |
 
+Nicht gebrauchte Ebenen lassen sich unter **Einstellungen → Ebenen** ganz aus
+dem Menü nehmen (siehe unten).
+
 Flug- und Schiffspositionen werden nur geladen, solange ihre Ebene an ist, und
 bewusst **nicht** offline gespeichert — sie veralten in Sekunden.
 
@@ -72,6 +75,29 @@ eingestellter Zielhöhe, Steig-/Sinkrate, Geschwindigkeiten (über Grund, IAS,
 Mach), Kurs, Wind und Temperatur in Flughöhe, Squawk und Abstand. Halter und
 **Flugroute** (Start- und Zielflughafen) holt `/api/aircraft/<icao>` beim
 Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
+
+## Einstellungen und Quellen
+
+Das Zahnrad in der Kopfzeile öffnet ein Blatt mit drei Reitern — hier wächst
+künftig alles hinein, was Einstellung ist:
+
+- **Ebenen**: jede Kartenebene lässt sich aus dem Menü „Ebenen" nehmen. Wer
+  Amateurfunk oder Erdbeben nie braucht, blendet sie aus; die Ebene wird dabei
+  ausgeschaltet. Jede Zeile nennt gleich mit, woher ihre Daten kommen. Die
+  Auswahl liegt im localStorage und überlebt den Neustart.
+- **App**: selbsttätiges Aktualisieren (aus, 5, 15, 30 Minuten — ohne Verbindung
+  passiert nichts), Ortung beim Start, Ansagen bei der Zielführung (derselbe
+  Schalter wie in der Navigationsleiste, nur dauerhaft), Verweis auf die
+  Offline-Regionen und ein kurzes Wort dazu, dass alle Daten auf dem Gerät
+  bleiben.
+- **Quellen**: alle Datenanbieter mit Rücklink und der jeweiligen Bedingung
+  bzw. Bitte (Lizenz, Schlüsselpflicht, Cache-Zusage), dazu die verwendeten
+  freien Projekte (MapLibre, PMTiles, React, Vite, Hono, Dexie, MOTIS …).
+
+Die Ebenenliste hat nur **eine** Quelle: `layerCatalog.ts`. Sowohl das Menü auf
+der Karte als auch die Einstellungen bauen daraus ihre Zeilen — sonst driften
+Namen und Gruppen auseinander. `sources.ts` hält die Anbieterliste, `settings.ts`
+den kleinen Speicher.
 
 ## Wetter & Regenradar
 
