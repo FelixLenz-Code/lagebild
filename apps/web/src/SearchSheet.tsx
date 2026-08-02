@@ -4,6 +4,7 @@ import { Sheet } from './Sheet.js';
 import { fetchGeocode } from './api.js';
 import { searchOffline } from './offline/client.js';
 import { CategoryIcon } from './CategoryIcon.js';
+import { parseCoords, formatDegMin, formatUtm } from './coords.js';
 import { loadDraw, type DrawFeature } from './drawStore.js';
 import { distanceM } from './offline/graph.js';
 import type { Place } from './places.js';
@@ -72,6 +73,13 @@ export function SearchSheet(props: Props) {
   const [indexLoading, setIndexLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runId = useRef(0);
+  /**
+   * Sieht die Eingabe nach einer Koordinate aus? Dann steht sie als eigener
+   * Treffer ganz oben — in allen Schreibweisen, die die App auch ausgibt
+   * (Dezimalgrad, Grad/Minuten, UTM, MGRS).
+   */
+  const coordHit = useMemo(() => parseCoords(q), [q]);
+
   // Eigene Markierungen liegen im localStorage — beim Öffnen einmal lesen.
   const drawings = useMemo(() => loadDraw(), []);
 
@@ -190,11 +198,26 @@ export function SearchSheet(props: Props) {
           type="search"
           value={q}
           autoFocus
-          placeholder={'Adresse, Ort oder z.B. „Tankstelle" …'}
+          placeholder={'Adresse, Ort, „Tankstelle" oder Koordinaten …'}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Ziel suchen"
         />
       </div>
+
+      {coordHit && (
+        <>
+          <div className="sect-label">Koordinate</div>
+          <div className="pp-results">
+            {row(
+              'coord',
+              { name: formatDegMin(coordHit), lat: coordHit.lat, lon: coordHit.lon },
+              formatUtm(coordHit) ?? 'Koordinate',
+              'place',
+              { distanceM: distanceM(props.coords.lat, props.coords.lon, coordHit.lat, coordHit.lon) },
+            )}
+          </div>
+        </>
+      )}
 
       {ownMatches.length > 0 && (
         <>

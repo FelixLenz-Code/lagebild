@@ -40,7 +40,10 @@ import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from '
 import { poisOffline, routeOffline, stopsOffline } from './offline/client.js';
 import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
-import { loadFavorites, saveFavorites, type Place } from './places.js';
+import { loadFavorites, saveFavorites, pointInGeometry, type Place } from './places.js';
+import { AlertBanner, collectAlerts } from './AlertBanner.js';
+import { TrackPanel, useTrackRecorder } from './TrackPanel.js';
+import { type Track } from './trackStore.js';
 import { Sheet } from './Sheet.js';
 import {
   WeatherDetail,
@@ -289,6 +292,40 @@ export function App() {
     refreshMs: 900_000,
   });
 
+  /*
+   * Warnungen **am Standort** — unabhängig vom Kartenausschnitt und von den
+   * Ebenen, denn das Banner soll auch dann erscheinen, wenn die Karte gerade
+   * woanders steht. Ein kleines Rechteck um den Punkt genügt; die genaue
+   * Prüfung macht danach der Flächentest.
+   */
+  const homeBox = useMemo<Bbox>(
+    () => ({
+      west: coords.lon - 0.06,
+      south: coords.lat - 0.04,
+      east: coords.lon + 0.06,
+      north: coords.lat + 0.04,
+    }),
+    [coords],
+  );
+  const homeWarnings = useApi(
+    `home-warn:${geoKey}`,
+    () => fetchWarnings(homeBox),
+    [geoKey, refreshTick],
+    { refreshMs: 300_000 },
+  );
+  const homeCivil = useApi(`home-nina:${geoKey}`, () => fetchNina(homeBox), [geoKey, refreshTick], {
+    refreshMs: 300_000,
+  });
+  /** Nur was den Standort wirklich überdeckt — die Rechtecke sind großzügig. */
+  const alerts = useMemo(
+    () =>
+      collectAlerts(
+        (homeWarnings.data?.data ?? []).filter((w) => pointInGeometry(coords, w.geometry)),
+        (homeCivil.data?.data ?? []).filter((w) => pointInGeometry(coords, w.geometry)),
+      ),
+    [homeWarnings.data, homeCivil.data, coords],
+  );
+
   const news = useApi(`news:${geoKey}`, () => fetchNews(coords), [coords, refreshTick]);
   // Pollenflug erneuert der DWD einmal täglich — stündlich nachfragen genügt.
   const pollen = useApi(`pollen:${geoKey}`, () => fetchPollen(coords), [coords, refreshTick], {
@@ -308,6 +345,18 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   useEffect(() => saveSettings(settings), [settings]);
+
+  /* ---------- Spuraufzeichnung ---------- */
+  const recorder = useTrackRecorder();
+  const [trackOpen, setTrackOpen] = useState(false);
+  /** Welche gespeicherte Spur liegt gerade auf der Karte? */
+  const [shownTrack, setShownTrack] = useState<Track | null>(null);
+  // Während der Aufzeichnung zeigt die Karte die laufende Spur, sonst die
+  // ausgewählte gespeicherte.
+  const trackLine = useMemo<[number, number][]>(() => {
+    const source = recorder.recording ? recorder.points : (shownTrack?.points ?? []);
+    return source.map((p) => [p.lon, p.lat] as [number, number]);
+  }, [recorder.recording, recorder.points, shownTrack]);
 
   /* ---------- Gespeicherte Karten und Diashow ---------- */
   const [presets, setPresets] = useState<MapPreset[]>(() => loadPresets().presets);
@@ -856,6 +905,20 @@ export function App() {
 
         <button
           type="button"
+          className={`iconbtn${recorder.recording ? ' is-rec' : ''}`}
+          onClick={() => setTrackOpen(true)}
+          title={recorder.recording ? 'Aufzeichnung läuft' : 'Spur aufzeichnen'}
+          aria-label="Spur aufzeichnen"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 19c3-1 3-6 6-6s3 4 6 3 2-6 2-6" />
+            <circle cx="5" cy="19" r="1.8" fill="currentColor" stroke="none" />
+            <circle cx="19" cy="10" r="1.8" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
           className="iconbtn"
           onClick={() => setSettingsOpen(true)}
           title="Einstellungen und Quellen"
@@ -883,6 +946,8 @@ export function App() {
           {(!online || anyCached) && ' · letzter Stand'}
         </span>
       </div>
+
+      {alerts.length > 0 && <AlertBanner alerts={alerts} onOpen={(d) => setDetail(d)} />}
 
       <div className="layout">
         <div className="map-col">
@@ -953,6 +1018,8 @@ export function App() {
             onPickPoint={pickPoint}
             pickingLocation={pickingLocation}
             onViewport={setViewport}
+            track={trackLine}
+            trackLive={recorder.recording}
             onLayersChange={setLayers}
             hiddenLayers={settings.hiddenLayers}
             onActiveLayers={setActiveLayers}
@@ -1330,6 +1397,34 @@ export function App() {
             />
           )}
         </div>
+      )}
+
+      {trackOpen && (
+        <TrackPanel
+          tracks={recorder.tracks}
+          onTracks={recorder.setTracks}
+          live={recorder.points}
+          recording={recorder.recording}
+          error={recorder.error}
+          onStart={recorder.start}
+          onStop={() => {
+            const name = window.prompt(
+              'Name der Spur',
+              `Spur ${new Date().toLocaleDateString('de-DE')}`,
+            );
+            // Abbrechen im Namensdialog beendet die Aufzeichnung trotzdem —
+            // die Punkte gingen sonst verloren.
+            const saved = recorder.stop(name ?? '');
+            if (saved) setShownTrack(saved);
+          }}
+          onShow={setShownTrack}
+          onBackToStart={(point, name) => {
+            startRouteTo({ name: `Start von ${name}`, ...point });
+            setTrackOpen(false);
+          }}
+          shownId={shownTrack?.id ?? null}
+          onClose={() => setTrackOpen(false)}
+        />
       )}
 
       {settingsOpen && (

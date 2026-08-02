@@ -85,6 +85,60 @@ Mach), Kurs, Wind und Temperatur in Flughöhe, Squawk und Abstand. Halter und
 **Flugroute** (Start- und Zielflughafen) holt `/api/aircraft/<icao>` beim
 Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
 
+## Warnstreifen am eigenen Standort
+
+Gilt am **eigenen Standort** eine ernste Warnung, steht sie als farbiger
+Streifen zwischen Kopfzeile und Karte — mit Stufe, Herkunft, Schlagzeile und
+vor allem der **Handlungsanweisung**; ein Tipp öffnet die Liste.
+
+Zwei bewusst unterschiedliche Regeln: Vom DWD zählen nur `severe` und
+`extreme` — sonst wäre der Streifen bei jedem Wind zu sehen und würde
+ignoriert. **Behördenwarnungen** (MoWaS, KATWARN, Polizei …) stehen unabhängig
+von ihrer eingetragenen Stufe drin, weil es sie nur gibt, wenn tatsächlich
+etwas vorgefallen ist.
+
+Abgefragt wird ein kleines Rechteck **um den Standort**, unabhängig vom
+Kartenausschnitt und von den Ebenen — sonst verschwände die Warnung, sobald man
+die Karte verschiebt. Ob eine Fläche den Punkt wirklich überdeckt, entscheidet
+danach ein Strahlverfahren (`pointInGeometry`). Wegklicken gilt für die
+laufende Sitzung; beim nächsten Start ist die Warnung wieder da, solange sie
+gilt.
+
+## Koordinaten in allen Schreibweisen
+
+Das Standort-Blatt zeigt die eigene Position in **Dezimalgrad**, **Grad/
+Dezimalminuten**, **Grad/Minuten/Sekunden**, **UTM** und **MGRS** — jede Zeile
+kopiert sich per Tipp. Leitstellen verlangen Grad und Dezimalminuten, Behörden
+und Hilfsorganisationen arbeiten mit UTM oder MGRS, Apps wollen Dezimalgrad.
+
+Die Umrechnung steht in `coords.ts` und kommt ohne Bibliothek aus
+(Krüger-Reihe vierter Ordnung auf dem WGS84-Ellipsoid), inklusive der
+Sonderzonen für Norwegen und Spitzbergen. Geprüft gegen `pyproj` an sieben
+Punkten von Bremen bis Sydney: Abweichung unter einem Zentimeter, Rückrechnung
+im Millimeterbereich.
+
+Die **Suche** nimmt Koordinaten ebenfalls entgegen — „52.5163, 13.3777",
+„N 52 30.978 E 13 22.662", „33U 389918 5819702" oder „33U UU 89918 19702".
+Passt die Eingabe, steht die Koordinate als eigener Treffer ganz oben und lässt
+sich wie jedes andere Ziel anfahren.
+
+## Spur aufzeichnen
+
+Der Knopf mit der Wegelinie in der Kopfzeile öffnet die **Spuraufzeichnung**.
+Zweck ist nicht der Sportnachweis, sondern der **Rückweg**: Wer im Wald oder im
+Nebel umkehren muss, folgt der eigenen Spur zurück. Während der Aufzeichnung
+liegt sie als Linie auf der Karte (Startpunkt gefüllt, Endpunkt hohl), der
+Knopf blinkt rot.
+
+Gespeicherte Spuren lassen sich einzeln auf die Karte legen, als **GPX**
+herunterladen (das Format, das jede Wander- und Radsoftware liest) und mit
+„Zum Start zurück" direkt in die Routenplanung geben. Alles bleibt im Browser.
+
+**Ausdünnung:** Beim Stehen liefert die Ortung weiter Punkte, die nur um die
+Messgenauigkeit herumspringen. Übernommen wird deshalb nur, was mindestens 8 m
+entfernt oder 30 s später kommt — sonst wüchse die Spur ins Unendliche und die
+Länge wäre zu groß.
+
 ## Einstellungen und Quellen
 
 Das Zahnrad in der Kopfzeile öffnet ein Blatt mit drei Reitern — hier wächst

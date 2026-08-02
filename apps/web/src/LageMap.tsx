@@ -790,6 +790,10 @@ interface Props {
   webcams: WebcamSpot[];
   /** Rettungspunkte (nummerierte Schilder). */
   rescue: RescuePoint[];
+  /** Aufgezeichnete bzw. angezeigte Spur ([lon, lat]). */
+  track: [number, number][];
+  /** true, solange aufgezeichnet wird (dann kein Endpunkt). */
+  trackLive: boolean;
   /** Polarlicht-Gitter und Waldbrandgefahr als Flächen. */
   aurora: AuroraGrid | null;
   fire: FireDangerGrid | null;
@@ -946,6 +950,8 @@ export function LageMap({
   rest,
   webcams,
   rescue,
+  track,
+  trackLive,
   aurora,
   fire,
   flyTo,
@@ -2492,6 +2498,64 @@ export function LageMap({
       map.off('click', 'webcams', onCam);
     };
   }, [rest, webcams, ready, styleEpoch]);
+
+  /* ---------- Eigene Spur ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!map.getSource('track')) {
+      map.addSource('track', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'track-line',
+        type: 'line',
+        source: 'track',
+        filter: ['==', ['geometry-type'], 'LineString'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#0d9488',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3, 16, 6],
+          'line-opacity': 0.9,
+        },
+      });
+      // Anfang und Ende: sonst weiß man später nicht, wo die Spur begann.
+      map.addLayer({
+        id: 'track-ends',
+        type: 'circle',
+        source: 'track',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': ['case', ['==', ['get', 'kind'], 'start'], '#0d9488', '#ffffff'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#0d9488',
+        },
+      });
+    }
+    const src = map.getSource('track') as GeoJSONSource | undefined;
+    if (!src) return;
+    const features: GeoJSON.Feature[] = [];
+    if (track.length > 1) {
+      features.push({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: track },
+      });
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'start' },
+        geometry: { type: 'Point', coordinates: track[0]! },
+      });
+      if (!trackLive) {
+        features.push({
+          type: 'Feature',
+          properties: { kind: 'end' },
+          geometry: { type: 'Point', coordinates: track[track.length - 1]! },
+        });
+      }
+    }
+    src.setData({ type: 'FeatureCollection', features });
+  }, [track, trackLive, ready, styleEpoch]);
 
   /* ---------- Rettungspunkte ---------- */
 

@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { Coords } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
+import { allFormats } from './coords.js';
 
 interface Props {
   /** Name des aktuellen Standorts (Anzeige in der Topbar). */
@@ -28,6 +30,8 @@ export function LocationSheet(props: Props) {
         </div>
       </div>
 
+      <CoordinateList coords={props.coords} />
+
       <div className="pp-actions">
         <button type="button" className="pp-action" onClick={props.onUseGeolocation}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -48,8 +52,46 @@ export function LocationSheet(props: Props) {
 
       <p className="sr-hint">
         Der Standort steuert Wetter, Warnungen und die Kacheln. Ziele zum Anfahren findest du
-        über die Suche.
+        über die Suche — dort lassen sich auch Koordinaten eingeben.
       </p>
     </Sheet>
+  );
+}
+
+/**
+ * Die eigene Position in allen gängigen Schreibweisen, jede zum Kopieren.
+ *
+ * Wer eine Leitstelle anruft, braucht Grad und Dezimalminuten; Behörden und
+ * Hilfsorganisationen arbeiten mit UTM oder MGRS; Apps wollen Dezimalgrad.
+ * Deshalb steht hier alles untereinander statt einer Umschaltung.
+ */
+export function CoordinateList({ coords }: { coords: Coords }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      window.setTimeout(() => setCopied(null), 1500);
+    } catch {
+      /* ohne Zwischenablage bleibt der Wert wenigstens lesbar */
+    }
+  };
+  return (
+    <div className="coord-list">
+      <div className="sect-label">Koordinaten</div>
+      {allFormats(coords).map(({ label, value }) => (
+        <button
+          key={label}
+          type="button"
+          className="coord-row"
+          onClick={() => copy(label, value)}
+          title="In die Zwischenablage kopieren"
+        >
+          <span className="cr-label">{label}</span>
+          <span className="cr-value mono">{value}</span>
+          <span className="cr-copy">{copied === label ? 'kopiert' : '⧉'}</span>
+        </button>
+      ))}
+    </div>
   );
 }

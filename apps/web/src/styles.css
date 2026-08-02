@@ -107,6 +107,66 @@ svg { display: block; }
 }
 .mapcontrols > * { pointer-events: auto; }
 .maptools { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Spuraufzeichnung */
+.iconbtn.is-rec { color: var(--sev3); position: relative; }
+.iconbtn.is-rec::after {
+  content: ''; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--sev3); animation: rec-blink 1.6s ease-in-out infinite;
+}
+@keyframes rec-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .iconbtn.is-rec::after { animation: none; } }
+.tr-live { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.tr-stats { display: flex; flex-direction: column; gap: 2px; }
+.tr-big { font-size: 1.8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tr-sub { font-size: .78rem; color: var(--muted); }
+.tr-list { list-style: none; margin: 0; padding: 0; }
+.tr-list li { padding: 10px 0; border-top: 1px solid var(--line); }
+.tr-list li.is-shown { border-left: 3px solid #0d9488; padding-left: 9px; }
+.tr-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.tr-meta { font-size: .74rem; color: var(--muted); }
+.tr-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.tr-del:hover { color: var(--sev3); }
+
+/* Koordinaten in allen Schreibweisen (Standort-Blatt, Punktmenü) */
+.coord-list { margin: 14px 0 4px; }
+.coord-row {
+  width: 100%; display: flex; align-items: baseline; gap: 10px; padding: 7px 6px;
+  border: none; border-radius: var(--r-sm); background: transparent; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.coord-row + .coord-row { border-top: 1px solid var(--line); }
+.coord-row:hover { background: var(--surface-2); }
+.cr-label { flex: none; width: 108px; font-size: .74rem; color: var(--muted); }
+.cr-value { flex: 1; min-width: 0; font-size: .82rem; font-weight: 600; }
+.cr-copy { flex: none; font-size: .7rem; color: var(--faint); }
+
+/* Warnstreifen über der Karte: gilt eine ernste Warnung am eigenen Standort,
+   soll sie nicht in einer Kachel versteckt sein. */
+.alertbar {
+  display: flex; align-items: stretch; gap: 0; margin: 0 14px 8px; flex: none;
+  border: 1px solid; border-left-width: 5px; border-radius: var(--r-sm);
+  background: var(--surface); overflow: hidden;
+}
+.ab-sev {
+  flex: none; align-self: stretch; display: flex; align-items: center; padding: 0 10px;
+  color: #fff; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+}
+.ab-body {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 8px 12px; border: none; background: transparent; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.ab-body:hover { background: var(--surface-2); }
+.ab-head { font-size: .88rem; font-weight: 650; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ab-origin { font-size: .68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.ab-instr { font-size: .78rem; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ab-more, .ab-close {
+  flex: none; border: none; background: transparent; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: .8rem; font-weight: 700; padding: 0 12px;
+}
+.ab-more:hover, .ab-close:hover { background: var(--surface-2); color: var(--ink); }
+@media (max-width: 640px) { .alertbar { margin: 0 8px 6px; } .ab-instr { -webkit-line-clamp: 3; } }
+
 /* Pollenflug im Wetterblatt */
 .pollen { width: 100%; border-collapse: collapse; font-size: .78rem; }
 .pollen th, .pollen td { text-align: left; padding: 6px 8px 6px 0; vertical-align: top; }
