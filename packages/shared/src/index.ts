@@ -451,6 +451,8 @@ export interface NewsItem {
   topic?: string;
   /** Ort der Meldung, sofern sie einem Ort zugeordnet werden konnte. */
   place?: NewsPlace;
+  /** true bei Meldungen der Regionalprogramme (hessenschau, NDR, BR …). */
+  regional?: boolean;
 }
 
 /** Verorteter Bezug einer Meldung. */

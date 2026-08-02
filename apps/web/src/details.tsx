@@ -520,29 +520,36 @@ export function NewsDetail({
   /** Meldung auf der Karte zeigen (nur bei verorteten Meldungen). */
   onShowOnMap?: (lat: number, lon: number) => void;
 }) {
-  const [onlyPlaced, setOnlyPlaced] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'placed' | 'regional'>('all');
   const placed = list.filter((n) => n.place).length;
-  const shown = onlyPlaced ? list.filter((n) => n.place) : list;
+  const regional = list.filter((n) => n.regional).length;
+  const shown =
+    filter === 'placed'
+      ? list.filter((n) => n.place)
+      : filter === 'regional'
+        ? list.filter((n) => n.regional)
+        : list;
   if (list.length === 0) return <p className="muted">Keine Meldungen.</p>;
   return (
     <>
       <div className="news-filter">
-        <button
-          type="button"
-          className={`rp-chip${onlyPlaced ? '' : ' is-on'}`}
-          aria-pressed={!onlyPlaced}
-          onClick={() => setOnlyPlaced(false)}
-        >
-          Alle ({list.length})
-        </button>
-        <button
-          type="button"
-          className={`rp-chip${onlyPlaced ? ' is-on' : ''}`}
-          aria-pressed={onlyPlaced}
-          onClick={() => setOnlyPlaced(true)}
-        >
-          Mit Ort ({placed})
-        </button>
+        {(
+          [
+            ['all', `Alle (${list.length})`],
+            ['regional', `Aus der Region (${regional})`],
+            ['placed', `Mit Ort (${placed})`],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={`rp-chip${filter === key ? ' is-on' : ''}`}
+            aria-pressed={filter === key}
+            onClick={() => setFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <ul className="news">
         {shown.map((n) => (

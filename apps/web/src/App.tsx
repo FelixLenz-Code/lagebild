@@ -189,7 +189,7 @@ export function App() {
     refreshMs: 900_000,
   });
 
-  const news = useApi('news', () => fetchNews(), [refreshTick]);
+  const news = useApi(`news:${geoKey}`, () => fetchNews(coords), [coords, refreshTick]);
   const health = useApi('health', () => fetchHealth(), [refreshTick]);
   const flowAvailable = health.data?.features?.flow ?? false;
   const aisAvailable = health.data?.features?.ais ?? false;

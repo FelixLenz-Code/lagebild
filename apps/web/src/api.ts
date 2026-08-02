@@ -54,7 +54,9 @@ export const fetchWeather = (c: Coords): Promise<ApiEnvelope<WeatherNow>> =>
 export const fetchForecast = (c: Coords): Promise<ApiEnvelope<WeatherForecast>> =>
   getJson(`/api/weather/forecast?${q(c)}`);
 
-export const fetchNews = (): Promise<ApiEnvelope<NewsItem[]>> => getJson(`/api/news`);
+/** Nachrichten; mit Standort kommen die Meldungen des Regionalprogramms dazu. */
+export const fetchNews = (near?: Coords): Promise<ApiEnvelope<NewsItem[]>> =>
+  getJson(`/api/news${near ? `?${q(near)}` : ''}`);
 
 export const fetchAir = (c: Coords): Promise<ApiEnvelope<AirQuality>> =>
   getJson(`/api/air?${q(c)}`);

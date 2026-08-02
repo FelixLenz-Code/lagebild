@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { NewsItem, NewsPlace, StateCode } from '@lagebild/shared';
 import { FEDERAL_STATE_BOUNDS } from '@lagebild/shared';
+import { readCoords } from '../lib/geo.js';
 import { cached } from '../lib/cache.js';
 import { fetchJson } from '../lib/http.js';
 import { envelope } from '../lib/envelope.js';
@@ -67,6 +68,56 @@ const STATE_NAME: Record<StateCode, string> = {
 };
 
 const ALL_STATE_NAMES = new Set(Object.values(STATE_NAME));
+/** Umgekehrte Zuordnung: unser Ländercode → Regionskennung der Tagesschau. */
+const STATE_TO_REGION: Record<string, number> = Object.fromEntries(
+  Object.entries(REGION_TO_STATE).map(([region, code]) => [code, Number(region)]),
+);
+/** Kürzel der Rundfunkanstalten — Schlagworte, aber keine Orte. */
+const BROADCASTERS = new Set(['HR', 'NDR', 'WDR', 'BR', 'MDR', 'SWR', 'RBB', 'SR', 'RB', 'ARD', 'ZDF']);
+
+/**
+ * Welche Landesprogramme passen zum Standort? Die Rechtecke überlappen sich
+ * (Bremen liegt in Niedersachsen, Wiesbaden im rheinland-pfälzischen Rechteck)
+ * — bei Nachrichten ist das kein Problem, sondern erwünscht: wer in Bremen
+ * sitzt, interessiert sich auch für das Umland. Deshalb bis zu zwei Programme,
+ * das am besten passende zuerst.
+ */
+function statesOf(point: { lat: number; lon: number }): StateCode[] {
+  const hits: { code: StateCode; margin: number }[] = [];
+  for (const [code, b] of Object.entries(FEDERAL_STATE_BOUNDS) as [StateCode, number[]][]) {
+    if (point.lon < b[0]! || point.lon > b[2]! || point.lat < b[1]! || point.lat > b[3]!) continue;
+    hits.push({
+      code,
+      margin: Math.min(point.lon - b[0]!, b[2]! - point.lon, point.lat - b[1]!, b[3]! - point.lat),
+    });
+  }
+  // Kleine Länder zuerst: ein Stadtstaat ist der nähere Bezug als das Flächenland.
+  hits.sort((a, b) => {
+    const areaA = area(a.code);
+    const areaB = area(b.code);
+    return areaA - areaB;
+  });
+  return hits.slice(0, 2).map((h) => h.code);
+}
+
+function area(code: StateCode): number {
+  const b = FEDERAL_STATE_BOUNDS[code];
+  return (b[2] - b[0]) * (b[3] - b[1]);
+}
+
+/**
+ * Ortsname aus der Schlagzeile raten: „CSD **in Schlüchtern**", „Landesstraße
+ * **bei Penkun**". Der Treffer wird ohnehin gegen das Bundesland geprüft, ein
+ * Fehlgriff fällt also durch das Raster.
+ */
+function placeFromTitle(title: string): string | null {
+  const m = title.match(
+    /\b(?:in|bei|aus|nahe|um|vor)\s+([A-ZÄÖÜ][\wäöüß.-]{2,}(?:\s[A-ZÄÖÜ][\wäöüß.-]{2,})?)/,
+  );
+  const found = m?.[1]?.trim();
+  if (!found || ALL_STATE_NAMES.has(found)) return null;
+  return found;
+}
 
 /**
  * Orte aus den Schlagworten bestimmen.
@@ -123,27 +174,65 @@ async function locate(tag: string, state: StateCode, budget: { left: number }): 
 }
 
 newsRoute.get('/', async (c) => {
-  const cache = cached<NewsItem[]>('news:tagesschau', 300);
+  // Mit Standort kommen zusätzlich die Meldungen des Regionalprogramms dazu
+  // (hessenschau, NDR, BR … — die Tagesschau-API führt sie unter `regions`).
+  const coords = readCoords(c);
+  const states = coords ? statesOf(coords) : [];
+
+  const cache = cached<NewsItem[]>(`news:tagesschau:${states.join('-') || 'de'}`, 300);
   if (cache.hit) return c.json(envelope(cache.hit, 'Tagesschau', true));
 
-  const body = await fetchJson<{ news?: RawNews[] }>('https://www.tagesschau.de/api2u/news');
-  const raw = (body.news ?? []).filter((n) => n.title && (n.shareURL || n.detailsweb)).slice(0, 30);
+  const national = await fetchJson<{ news?: RawNews[] }>('https://www.tagesschau.de/api2u/news');
+  const regional: RawNews[] = [];
+  for (const state of states) {
+    const region = STATE_TO_REGION[state];
+    if (!region) continue;
+    try {
+      const res = await fetchJson<{ news?: RawNews[] }>(
+        `https://www.tagesschau.de/api2u/news?regions=${region}`,
+        { timeoutMs: 9000 },
+      );
+      regional.push(...(res.news ?? []).filter((n) => n.regionId === region).slice(0, 8));
+    } catch {
+      /* ohne Regionalteil bleibt die bundesweite Liste */
+    }
+  }
+
+  const usable = (n: RawNews) => Boolean(n.title && (n.shareURL || n.detailsweb));
+  const seen = new Set<string>();
+  const raw: (RawNews & { regional?: boolean })[] = [];
+  // Regionales zuerst — es ist für den Standort das Nähere.
+  for (const n of regional.filter(usable).slice(0, 14)) {
+    const id = n.sophoraId ?? n.externalId ?? n.shareURL ?? '';
+    if (seen.has(id)) continue;
+    seen.add(id);
+    raw.push({ ...n, regional: true });
+  }
+  for (const n of (national.news ?? []).filter(usable).slice(0, 22)) {
+    const id = n.sophoraId ?? n.externalId ?? n.shareURL ?? '';
+    if (seen.has(id)) continue;
+    seen.add(id);
+    raw.push(n);
+  }
 
   const budget = { left: MAX_LOOKUPS };
   const items: NewsItem[] = [];
   for (const n of raw) {
-    const state = n.regionId ? REGION_TO_STATE[n.regionId] : undefined;
+    const itemState = n.regionId ? REGION_TO_STATE[n.regionId] : undefined;
     let place: NewsPlace | undefined;
-    if (state) {
+    if (itemState) {
       // Zuerst die genaueren Schlagworte: Landkreise und Städte vor dem
       // Landesnamen, der ohnehin nur den Mittelpunkt liefern würde.
-      const candidates = (n.tags ?? [])
-        .map((t) => t.tag?.trim() ?? '')
-        // Landesnamen (egal welches) taugen nicht als genauer Ort.
-        .filter((t) => t.length >= 3 && !ALL_STATE_NAMES.has(t))
-        .slice(0, TAGS_PER_ITEM);
+      const fromTitle = placeFromTitle(n.title ?? '');
+      const candidates = [
+        ...(n.tags ?? [])
+          .map((t) => t.tag?.trim() ?? '')
+          // Landesnamen und Senderkürzel taugen nicht als genauer Ort.
+          .filter((t) => t.length >= 3 && !ALL_STATE_NAMES.has(t) && !BROADCASTERS.has(t)),
+        ...(fromTitle ? [fromTitle] : []),
+      ].slice(0, TAGS_PER_ITEM);
       for (const tag of candidates) {
-        const hit = await locate(tag, state, budget);
+        const hit = await locate(tag, itemState, budget);
         if (hit && !hit.approximate) {
           place = hit;
           break;
@@ -151,12 +240,12 @@ newsRoute.get('/', async (c) => {
       }
       if (!place) {
         // Wenigstens das Bundesland — als solches gekennzeichnet.
-        const b = FEDERAL_STATE_BOUNDS[state];
+        const b = FEDERAL_STATE_BOUNDS[itemState];
         place = {
-          name: STATE_NAME[state],
+          name: STATE_NAME[itemState],
           lat: (b[1] + b[3]) / 2,
           lon: (b[0] + b[2]) / 2,
-          state,
+          state: itemState,
           approximate: true,
         };
       }
@@ -167,8 +256,10 @@ newsRoute.get('/', async (c) => {
       summary: n.firstSentence || undefined,
       url: (n.shareURL ?? n.detailsweb) as string,
       publishedAt: n.date ?? null,
-      topic: n.ressort || undefined,
+      // Regionalmeldungen haben kein Ressort — dort steht das Land als Herkunft.
+      topic: n.ressort || (n.regional && itemState ? STATE_NAME[itemState] : undefined),
       place,
+      regional: n.regional,
     });
   }
 

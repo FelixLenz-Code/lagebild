@@ -335,7 +335,16 @@ nur eine Zugabe, keine alleinige Information. Angezeigt werden nur Abfahrten der
 hat ein Halt nichts Näheres, bleiben zwei Einträge als Hinweis stehen (mit
 Wochentag, damit „morgen 09:40" nicht wie „gleich" aussieht).
 
-## Nachrichten mit Ortsbezug
+## Nachrichten: regional und verortet
+
+Mit Standort holt die App zusätzlich zum bundesweiten Überblick die Meldungen
+des **Regionalprogramms** — die Tagesschau-API führt hessenschau, NDR, BR, MDR,
+SWR, rbb, SR und Radio Bremen unter `?regions=<id>`. Weil die
+Bundesland-Rechtecke sich überlappen (Bremen liegt in Niedersachsen, Wiesbaden
+im rheinland-pfälzischen Rechteck), werden bis zu **zwei Programme** geladen,
+das kleinere Land zuerst — für Nachrichten ist der Nachbar ohnehin
+interessant. Regionales steht in der Liste vorn, und der Filter „Aus der
+Region" blendet alles andere aus.
 
 Die Tagesschau-API liefert je Meldung Schlagworte und eine Regionskennung. Das
 Backend leitet daraus einen Ort ab und hängt ihn als `place` an die Meldung:
@@ -349,6 +358,10 @@ Backend leitet daraus einen Ort ab und hängt ihn als `place` an die Meldung:
 * Bleibt nichts übrig, wird der **Mittelpunkt des Bundeslandes** genommen und als
   „ungenau" gekennzeichnet. Meldungen ohne Region (bundesweit, Ausland) bekommen
   gar keinen Ort.
+* Regionalmeldungen tragen als Schlagwort nur das Land („HR", „Hessen"). Den
+  genauen Ort verrät oft die Schlagzeile — „CSD **in Schlüchtern**", „Landesstraße
+  **bei Penkun**" —, deshalb wird auch daraus ein Kandidat gebildet. Auch er muss
+  die Bundeslandprüfung bestehen.
 * Geokodiert wird über Photon, mit langem Cache (7 Tage) und höchstens 15 neuen
   Abfragen je Aktualisierung — die Ergebnisse ändern sich ohnehin nicht.
 
