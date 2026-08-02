@@ -142,7 +142,12 @@ svg { display: block; }
 
 /* Gespeicherte Karten in den Einstellungen */
 .ps-list { list-style: none; margin: 0; padding: 0; }
-.ps-list li { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 10px; margin-bottom: 8px; }
+.ps-list li { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 10px; margin-bottom: 8px; background: var(--surface); }
+.ps-list li.is-dragging { opacity: .45; }
+/* Zielmarke beim Ziehen — eine Linie, keine Farbfläche. */
+.ps-list li.is-over { border-color: var(--accent); box-shadow: inset 0 3px 0 -1px var(--accent); }
+.ps-grip { flex: none; cursor: grab; color: var(--faint); font-size: .95rem; line-height: 1; padding: 2px 1px; user-select: none; }
+.ps-grip:active { cursor: grabbing; }
 .ps-head { display: flex; align-items: center; gap: 8px; }
 .ps-num { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: .7rem; font-weight: 700; }
 .ps-name { flex: 1; min-width: 0; padding: 5px 7px; font: inherit; font-size: .86rem; font-weight: 600; color: var(--ink); background: var(--surface); border: 1px solid transparent; border-radius: var(--r-sm); }
@@ -151,7 +156,30 @@ svg { display: block; }
 .ps-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
 .ps-btn:disabled { opacity: .3; cursor: default; }
 .ps-btn.ps-del:hover { color: var(--sev3); }
-.ps-layers { font-size: .72rem; color: var(--faint); margin: 5px 0 6px; padding-left: 28px; }
+.ps-layers {
+  display: flex; align-items: center; gap: 8px; width: calc(100% - 28px); margin: 5px 0 6px 28px;
+  padding: 4px 6px; border: none; border-radius: var(--r-sm); background: transparent;
+  font: inherit; font-size: .72rem; color: var(--faint); text-align: left; cursor: pointer;
+}
+.ps-layers:hover { background: var(--surface-2); color: var(--muted); }
+.ps-layers > span:first-child { flex: 1; min-width: 0; }
+.ps-caret { flex: none; font-size: .7rem; }
+/* Ebenenauswahl einer Karte */
+.ps-pick { margin: 2px 0 8px 28px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.ps-pick-group + .ps-pick-group { margin-top: 10px; }
+.ps-pick-row {
+  width: 100%; display: flex; align-items: center; gap: 9px; padding: 6px 4px;
+  border: none; border-radius: var(--r-sm); background: transparent; color: var(--ink);
+  font: inherit; font-size: .82rem; text-align: left; cursor: pointer;
+}
+.ps-pick-row:hover { background: var(--surface); }
+.ps-pick-row .k { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.ps-pick-row[aria-checked='false'] .k { opacity: .35; }
+.ps-pick-row[aria-checked='false'] .st-label { color: var(--muted); }
+.ps-pick-row .st-switch { width: 30px; height: 17px; }
+.ps-pick-row .st-switch i { width: 13px; height: 13px; }
+.ps-pick-row .st-switch.is-on i { transform: translateX(13px); }
+.ps-pick .ps-foot { padding-left: 0; margin-top: 8px; }
 .ps-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-left: 28px; }
 .ps-secs { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; color: var(--muted); }
 .ps-secs select { padding: 4px 6px; font: inherit; font-size: .74rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }

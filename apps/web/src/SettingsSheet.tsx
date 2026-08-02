@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Sheet } from './Sheet.js';
-import { ALWAYS_SHOWN, LAYER_CATALOG, type LayerRowId } from './layerCatalog.js';
+import { ALWAYS_SHOWN, LAYER_CATALOG, type LayerInfo, type LayerRowId } from './layerCatalog.js';
 import { PROJECTS, SOURCE_BY_KEY, SOURCE_GROUPS } from './sources.js';
 import { REFRESH_CHOICES, type Settings } from './settings.js';
 import {
@@ -150,6 +150,7 @@ export function SettingsSheet(props: Props) {
 
       {tab === 'diashow' && (
         <SlideshowTab
+          usable={usable}
           presets={props.presets}
           onPresets={props.onPresets}
           slideshow={props.slideshow}
@@ -307,6 +308,8 @@ export function SettingsSheet(props: Props) {
  * wird gesichert. Das erspart eine zweite Ebenen-Auswahl an dieser Stelle.
  */
 function SlideshowTab(props: {
+  /** Ebenen, die überhaupt zur Wahl stehen (Schlüssel vorhanden). */
+  usable: LayerInfo[];
   presets: MapPreset[];
   onPresets: (next: MapPreset[]) => void;
   slideshow: SlideshowSettings;
@@ -316,29 +319,46 @@ function SlideshowTab(props: {
   onPreview: (preset: MapPreset) => void;
   onStart: () => void;
 }) {
-  const { presets } = props;
-  const nameOf = (id: LayerRowId) => LAYER_CATALOG.find((l) => l.id === id)?.label ?? id;
+  const { presets, usable } = props;
+  /** Welche Karte hat gerade ihre Ebenenauswahl offen? */
+  const [editing, setEditing] = useState<string | null>(null);
+  /** Ziehen: welche Karte hängt am Zeiger, über welcher schwebt sie? */
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  const nameOf = (id: LayerRowId) => usable.find((l) => l.id === id)?.label ?? id;
   /** Ausgeblendete Ebenen gehören nicht in eine Karte — man fände sie nicht wieder. */
   const pickable = () => props.activeLayers.filter((id) => !props.hidden.has(id));
 
   const update = (id: string, patch: Partial<MapPreset>) =>
     props.onPresets(presets.map((p) => (p.id === id ? { ...p, ...patch } : p)));
 
-  const move = (index: number, by: number) => {
-    const to = index + by;
-    if (to < 0 || to >= presets.length) return;
+  /** Karte von `from` an die Stelle von `to` setzen (Ziehen und ↑/↓ teilen sich das). */
+  const reorder = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= presets.length) return;
     const next = [...presets];
-    const [moved] = next.splice(index, 1);
+    const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved!);
     props.onPresets(next);
   };
 
-  const addCurrent = () =>
+  const addPreset = (layers: LayerRowId[], open: boolean) => {
+    const id = newPresetId();
     props.onPresets([
       ...presets,
-      { id: newPresetId(), name: `Karte ${presets.length + 1}`, layers: pickable(), seconds: DEFAULT_SECONDS },
+      { id, name: `Karte ${presets.length + 1}`, layers, seconds: DEFAULT_SECONDS },
     ]);
+    if (open) setEditing(id);
+  };
 
+  const toggleLayerOf = (preset: MapPreset, layer: LayerRowId) => {
+    const has = preset.layers.includes(layer);
+    update(preset.id, {
+      layers: has ? preset.layers.filter((l) => l !== layer) : [...preset.layers, layer],
+    });
+  };
+
+  const groups = [...new Set(usable.map((l) => l.group))];
   const total = presets.reduce((sum, p) => sum + p.seconds, 0);
 
   return (
@@ -346,12 +366,15 @@ function SlideshowTab(props: {
       <p className="muted st-intro">
         Eine <b>Karte</b> ist eine Zusammenstellung von Ebenen. Mehrere Karten in eine Reihenfolge
         gebracht und mit Standzeit versehen ergeben eine Diashow — gedacht für einen großen
-        Monitor, der ohne Zutun durchläuft.
+        Monitor, der ohne Zutun durchläuft. Die Reihenfolge lässt sich mit der Maus ziehen.
       </p>
 
       <div className="rp-actions" style={{ marginBottom: 14 }}>
-        <button type="button" className="btn-primary" onClick={addCurrent}>
-          Aktuelle Ansicht als Karte sichern
+        <button type="button" className="btn-primary" onClick={() => addPreset([], true)}>
+          Neue Karte zusammenstellen
+        </button>
+        <button type="button" className="btn-quiet" onClick={() => addPreset(pickable(), false)}>
+          Aktuelle Ansicht sichern
         </button>
         {presets.length > 1 && (
           <button type="button" className="btn-quiet" onClick={props.onStart}>
@@ -362,8 +385,8 @@ function SlideshowTab(props: {
 
       {!presets.length && (
         <p className="muted">
-          Noch keine Karte gesichert. Ebenen auf der Karte einschalten, hierher zurückkommen und
-          sichern — so entsteht die erste.
+          Noch keine Karte. „Neue Karte zusammenstellen" öffnet gleich die Ebenenauswahl;
+          „Aktuelle Ansicht sichern" übernimmt, was gerade auf der Karte liegt.
         </p>
       )}
 
@@ -374,8 +397,45 @@ function SlideshowTab(props: {
           </div>
           <ol className="ps-list">
             {presets.map((p, i) => (
-              <li key={p.id}>
+              <li
+                key={p.id}
+                draggable={dragId === p.id}
+                className={`${dragId === p.id ? 'is-dragging' : ''}${overId === p.id && dragId !== p.id ? ' is-over' : ''}`}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  // Firefox zieht nur mit gesetzten Daten.
+                  e.dataTransfer.setData('text/plain', p.id);
+                }}
+                onDragEnd={() => {
+                  setDragId(null);
+                  setOverId(null);
+                }}
+                onDragOver={(e) => {
+                  if (!dragId || dragId === p.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setOverId(p.id);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const from = presets.findIndex((x) => x.id === dragId);
+                  if (from >= 0) reorder(from, i);
+                  setDragId(null);
+                  setOverId(null);
+                }}
+              >
                 <div className="ps-head">
+                  {/* Ziehen erst ab dem Griff — sonst ließe sich der Name nicht
+                      mehr markieren. */}
+                  <span
+                    className="ps-grip"
+                    title="Zum Sortieren ziehen"
+                    aria-hidden="true"
+                    onMouseDown={() => setDragId(p.id)}
+                    onTouchStart={() => setDragId(p.id)}
+                  >
+                    ⠿
+                  </span>
                   <span className="ps-num">{i + 1}</span>
                   <input
                     className="ps-name"
@@ -386,7 +446,7 @@ function SlideshowTab(props: {
                   <button
                     type="button"
                     className="ps-btn"
-                    onClick={() => move(i, -1)}
+                    onClick={() => reorder(i, i - 1)}
                     disabled={i === 0}
                     aria-label="Nach oben"
                     title="Nach oben"
@@ -396,7 +456,7 @@ function SlideshowTab(props: {
                   <button
                     type="button"
                     className="ps-btn"
-                    onClick={() => move(i, 1)}
+                    onClick={() => reorder(i, i + 1)}
                     disabled={i === presets.length - 1}
                     aria-label="Nach unten"
                     title="Nach unten"
@@ -413,9 +473,72 @@ function SlideshowTab(props: {
                     ✕
                   </button>
                 </div>
-                <div className="ps-layers">
-                  {p.layers.length ? p.layers.map(nameOf).join(' · ') : 'ohne Ebenen (leere Karte)'}
-                </div>
+
+                <button
+                  type="button"
+                  className="ps-layers"
+                  aria-expanded={editing === p.id}
+                  onClick={() => setEditing(editing === p.id ? null : p.id)}
+                >
+                  <span>
+                    {p.layers.length
+                      ? p.layers.map(nameOf).join(' · ')
+                      : 'noch keine Ebene gewählt'}
+                  </span>
+                  <span className="ps-caret" aria-hidden="true">
+                    {editing === p.id ? '▴' : '▾'}
+                  </span>
+                </button>
+
+                {editing === p.id && (
+                  <div className="ps-pick">
+                    {groups.map((group) => (
+                      <div key={group} className="ps-pick-group">
+                        <div className="sect-label">{group}</div>
+                        {usable
+                          .filter((l) => l.group === group)
+                          .map((l) => {
+                            const on = p.layers.includes(l.id);
+                            return (
+                              <button
+                                key={l.id}
+                                type="button"
+                                className="ps-pick-row"
+                                role="switch"
+                                aria-checked={on}
+                                onClick={() => toggleLayerOf(p, l.id)}
+                              >
+                                <span className="k" style={{ background: l.color }} />
+                                <span className="st-label">{l.label}</span>
+                                <span className={`st-switch${on ? ' is-on' : ''}`} aria-hidden="true">
+                                  <i />
+                                </span>
+                              </button>
+                            );
+                          })}
+                      </div>
+                    ))}
+                    <div className="ps-foot">
+                      <button
+                        type="button"
+                        className="btn-quiet"
+                        onClick={() => update(p.id, { layers: pickable() })}
+                        title="Die gerade eingeschalteten Ebenen übernehmen"
+                      >
+                        Aktuelle Ansicht übernehmen
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-quiet"
+                        onClick={() => update(p.id, { layers: [] })}
+                        disabled={!p.layers.length}
+                      >
+                        Alle abwählen
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="ps-foot">
                   <label className="ps-secs">
                     Standzeit
@@ -432,14 +555,6 @@ function SlideshowTab(props: {
                   </label>
                   <button type="button" className="btn-quiet" onClick={() => props.onPreview(p)}>
                     Auf der Karte zeigen
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-quiet"
-                    onClick={() => update(p.id, { layers: pickable() })}
-                    title="Die gerade eingeschalteten Ebenen übernehmen"
-                  >
-                    Ebenen übernehmen
                   </button>
                 </div>
               </li>

@@ -104,12 +104,16 @@ den kleinen Speicher.
 
 ### Diashow für den großen Monitor
 
-Eine **Karte** ist eine gespeicherte Zusammenstellung von Ebenen. Angelegt wird
-sie aus der aktuellen Ansicht: Ebenen einschalten, in den Einstellungen auf
-„Diashow" wechseln, **„Aktuelle Ansicht als Karte sichern"**. Danach lassen sich
-die Karten umbenennen, mit ↑/↓ ordnen, ihre **Standzeit** wählen (10 s bis
-2 min) und einzeln zur Kontrolle auf die Karte legen; „Ebenen übernehmen"
-aktualisiert eine bestehende Karte auf die gerade sichtbaren Ebenen.
+Eine **Karte** ist eine gespeicherte Zusammenstellung von Ebenen. Zwei Wege
+führen dorthin: **„Neue Karte zusammenstellen"** öffnet gleich die
+Ebenenauswahl im Menü (alle Ebenen nach Gruppen, einzeln an- und abschaltbar),
+**„Aktuelle Ansicht sichern"** übernimmt, was gerade auf der Karte liegt. Die
+Auswahl einer bestehenden Karte lässt sich jederzeit über ihre Ebenenzeile
+wieder aufklappen und ändern.
+
+Karten lassen sich umbenennen, per **Ziehen am Griff (⠿)** sortieren — ↑/↓
+bleiben für die Bedienung ohne Maus —, mit einer **Standzeit** versehen (10 s
+bis 2 min) und einzeln zur Kontrolle auf die Karte legen.
 
 „Diashow starten" schaltet dann selbsttätig weiter. Dabei blendet die App auf
 Wunsch alles außer der Karte aus (Kopfzeile und Kachelspalte verschwinden) —
