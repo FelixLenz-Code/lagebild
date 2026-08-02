@@ -33,6 +33,7 @@ import type {
   CivilWarning,
   FireDetection,
   RadiationStation,
+  RadiationHistory,
   RestFacility,
   WebcamSpot,
   GeoJsonGeometry,
@@ -43,7 +44,12 @@ import type {
   TransitItinerary,
   TransitStopPoint,
 } from '@lagebild/shared';
-import { fetchAircraftDetails, fetchPegelHistory, type Bbox } from './api.js';
+import {
+  fetchAircraftDetails,
+  fetchPegelHistory,
+  fetchRadiationHistory,
+  type Bbox,
+} from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
 import { getOfflineFile } from './offlineMaps.js';
 import { DrawList } from './DrawList.js';
@@ -160,27 +166,52 @@ function trafficPopupHtml(t: TrafficIncident): string {
 }
 
 /** Verlaufskurve als SVG — die Popups sind reines HTML, also wird sie gezeichnet. */
-function pegelSparkline(h: WaterLevelHistory): string {
+/**
+ * Kleine Verlaufskurve fürs Popup (Pegel, Strahlung …).
+ *
+ * `min`/`max` kommen von außen, damit die Kurve dieselbe Spanne zeigt, die im
+ * Text daneben steht. `span` sorgt dafür, dass eine flache Reihe nicht als
+ * wildes Zickzack erscheint: Unterhalb dieser Mindestspanne wird die Skala
+ * aufgeweitet.
+ */
+function sparkline(
+  points: { t: string; v: number }[],
+  min: number,
+  max: number,
+  color: string,
+  minSpan = 1,
+): string {
   const W = 276;
   const H = 62;
   const pad = 5;
-  const pts = h.points;
-  if (pts.length < 2) return '';
-  const span = Math.max(1, h.maxCm - h.minCm);
-  const x = (i: number) => pad + (i / (pts.length - 1)) * (W - 2 * pad);
-  const y = (v: number) => pad + (1 - (v - h.minCm) / span) * (H - 2 * pad);
-  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
-  const area = `${line} L${x(pts.length - 1).toFixed(1)},${H - pad} L${x(0).toFixed(1)},${H - pad} Z`;
-  const lastX = x(pts.length - 1).toFixed(1);
-  const lastY = y(pts[pts.length - 1]!.v).toFixed(1);
+  if (points.length < 2) return '';
+  const mid = (min + max) / 2;
+  const span = Math.max(minSpan, max - min);
+  const lo = max - min >= minSpan ? min : mid - span / 2;
+  const x = (i: number) => pad + (i / (points.length - 1)) * (W - 2 * pad);
+  const y = (v: number) => pad + (1 - (v - lo) / span) * (H - 2 * pad);
+  const line = points
+    .map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`)
+    .join(' ');
+  const area = `${line} L${x(points.length - 1).toFixed(1)},${H - pad} L${x(0).toFixed(1)},${H - pad} Z`;
+  const lastX = x(points.length - 1).toFixed(1);
+  const lastY = y(points[points.length - 1]!.v).toFixed(1);
+  const rgb = color
+    .replace('#', '')
+    .match(/../g)!
+    .map((h) => parseInt(h, 16))
+    .join(',');
   return (
     `<svg class="pg-spark" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" aria-hidden="true">` +
-    `<path d="${area}" fill="rgba(29,78,115,.14)"/>` +
-    `<path d="${line}" fill="none" stroke="#1d4e73" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>` +
-    `<circle cx="${lastX}" cy="${lastY}" r="3" fill="#1d4e73"/>` +
+    `<path d="${area}" fill="rgba(${rgb},.14)"/>` +
+    `<path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>` +
+    `<circle cx="${lastX}" cy="${lastY}" r="3" fill="${color}"/>` +
     `</svg>`
   );
 }
+
+const pegelSparkline = (h: WaterLevelHistory): string =>
+  sparkline(h.points, h.minCm, h.maxCm, '#1d4e73');
 
 const TREND_ARROW: Record<string, string> = { rising: '▲', falling: '▼', steady: '▬' };
 
@@ -370,8 +401,17 @@ function firePopupHtml(f: FireDetection): string {
   );
 }
 
-/** Popup einer Strahlungsmessstelle samt Einordnung des Werts. */
-function radiationPopupHtml(s: RadiationStation): string {
+/**
+ * Popup einer Strahlungsmessstelle samt Einordnung des Werts.
+ *
+ * Der Verlauf der letzten Tage wird beim Öffnen nachgeladen — er sagt mehr als
+ * der Einzelwert, weil jede Sonde ihren eigenen Untergrund hat.
+ */
+function radiationPopupHtml(
+  s: RadiationStation,
+  history?: RadiationHistory | null,
+  loading = false,
+): string {
   const num = (v: number) => v.toFixed(3).replace('.', ',');
   const v = s.microSievertPerHour;
   // Einordnung im Klartext, nicht nur über die Farbe.
@@ -383,6 +423,22 @@ function radiationPopupHtml(s: RadiationStation): string {
     ...(s.cosmic != null ? [['davon kosmisch', `${num(s.cosmic)} µSv/h`]] : []),
     ...(s.terrestrial != null ? [['davon terrestrisch', `${num(s.terrestrial)} µSv/h`]] : []),
   ];
+
+  let chart = '';
+  if (loading) {
+    chart = '<div class="pg-note">Verlauf wird geladen …</div>';
+  } else if (history && history.points.length > 1) {
+    const first = history.points[0]!;
+    const last = history.points[history.points.length - 1]!;
+    // Mindestspanne 0,02 µSv/h: sonst bläst das Rauschen einer ruhigen Sonde
+    // die Kurve zu einem dramatischen Zickzack auf.
+    chart =
+      sparkline(history.points, history.min, history.max, '#7a5cc0', 0.02) +
+      `<div class="pg-axis"><span>${formatDateTime(first.t)}</span><span>${timeHM(last.t)}</span></div>` +
+      `<div class="pg-range">Spanne ${num(history.min)}–${num(history.max)} · Mittel ${num(history.average)} µSv/h</div>`;
+  } else if (history) {
+    chart = '<div class="pg-note">Kein Verlauf verfügbar.</div>';
+  }
   return (
     `<div class="warn-popup">` +
     `<h4>${esc(s.name || 'Messstelle')}</h4>` +
@@ -392,6 +448,7 @@ function radiationPopupHtml(s: RadiationStation): string {
       .map(([k, val]) => `<span class="ac-k">${esc(k!)}</span><span class="ac-v">${esc(val!)}</span>`)
       .join('') +
     `</div>` +
+    chart +
     (s.measuredAt ? `<div class="wp-time">Messung ${formatDateTime(s.measuredAt)}</div>` : '') +
     `<div class="wp-meta">Bundesamt für Strahlenschutz${s.validated ? '' : ' · noch nicht geprüft'}</div>` +
     `</div>`
@@ -890,6 +947,10 @@ export function LageMap({
   onStopClickRef.current = onStopClick;
   const onVehicleClickRef = useRef(onVehicleClick);
   onVehicleClickRef.current = onVehicleClick;
+  /** Gelesene Verläufe je Sonde (null = kein Verlauf vorhanden). */
+  const radiationHistory = useRef<Map<string, RadiationHistory | null>>(new Map());
+  /** Welche Sonde ist gerade offen? Ordnet die späte Antwort zu. */
+  const openRadiation = useRef<string | null>(null);
   const onActiveLayersRef = useRef(onActiveLayers);
   onActiveLayersRef.current = onActiveLayers;
   /** Bereits geladene Pegelverläufe (null = Abruf fehlgeschlagen). */
@@ -2511,7 +2572,29 @@ export function LageMap({
       if (drawModeRef.current !== 'off' || pickingRef.current) return;
       const index = e.features?.[0]?.properties?.index as number | undefined;
       const s = index != null ? radiation[index] : undefined;
-      if (s) warnPopup.current!.setLngLat(e.lngLat).setHTML(radiationPopupHtml(s)).addTo(map);
+      if (!s) return;
+      const popup = warnPopup.current!;
+      const known = radiationHistory.current.get(s.id);
+      popup
+        .setLngLat(e.lngLat)
+        .setHTML(radiationPopupHtml(s, known, known === undefined))
+        .addTo(map);
+      if (known !== undefined) return;
+      // Der Verlauf ist ein eigener Abruf — erst holen, wenn jemand hinschaut.
+      openRadiation.current = s.id;
+      fetchRadiationHistory(s.id)
+        .then((res) => {
+          radiationHistory.current.set(s.id, res.data);
+          if (openRadiation.current === s.id && popup.isOpen()) {
+            popup.setHTML(radiationPopupHtml(s, res.data));
+          }
+        })
+        .catch(() => {
+          radiationHistory.current.set(s.id, null);
+          if (openRadiation.current === s.id && popup.isOpen()) {
+            popup.setHTML(radiationPopupHtml(s, null));
+          }
+        });
     };
     map.on('click', 'radiation', onClick);
     return () => {

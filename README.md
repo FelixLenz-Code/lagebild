@@ -535,6 +535,17 @@ das Popup nennt den Messwert, eine Einordnung im Klartext („im normalen
 Bereich", „leicht erhöht", „deutlich erhöht") und den natürlichen Anteil aus
 kosmischer und terrestrischer Strahlung.
 
+Genau deshalb steht darunter der **Verlauf der letzten drei Tage** als Kurve,
+wie beim Pegel: erst er zeigt, ob ein Wert zur Sonde passt.
+`/api/radiation/history?id=…` liest dafür die Stundenwerte aus der WFS-Ebene
+`odlinfo_timeseries_odl_1h` (Filter über die Sondenkennung, absteigend sortiert)
+und wird beim Öffnen des Popups nachgeladen. Zwei Feinheiten: Nachgereichte
+Einzelwerte hängen sonst als weit zurückliegender Punkt an der Kurve — die
+Route beschneidet deshalb hart auf das Zeitfenster; und die Kurve hat eine
+**Mindestspanne von 0,02 µSv/h**, damit das Rauschen einer ruhigen Sonde nicht
+wie ein dramatischer Ausschlag aussieht. Ein echter Regenwaschausschlag (0,074
+auf 0,132 µSv/h) bleibt dabei deutlich sichtbar.
+
 ## Pollenflug (DWD)
 
 Im Wetterblatt steht unten der **Pollenflug-Gefahrenindex** des DWD: acht Arten

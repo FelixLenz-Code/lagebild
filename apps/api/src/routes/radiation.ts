@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { RadiationStation } from '@lagebild/shared';
+import type { RadiationHistory, RadiationPoint, RadiationStation } from '@lagebild/shared';
 import { readBbox } from '../lib/geo.js';
 import { cached } from '../lib/cache.js';
 import { fetchJson } from '../lib/http.js';
@@ -22,6 +22,7 @@ export const radiationRoute = new Hono();
 
 const WFS = process.env.BFS_WFS ?? 'https://www.imis.bfs.de/ogc/opendata/ows';
 const LAYER = 'opendata:odlinfo_odl_1h_latest';
+const TIMESERIES = 'opendata:odlinfo_timeseries_odl_1h';
 
 interface WfsFeature {
   geometry?: { type?: string; coordinates?: [number, number] };
@@ -94,4 +95,52 @@ radiationRoute.get('/', async (c) => {
     : all;
 
   return c.json(envelope(data, 'Bundesamt für Strahlenschutz (ODL-Messnetz)'));
+});
+
+/**
+ *   GET /api/radiation/history?id=DEZ2860[&days=3]
+ *
+ * Stundenwerte einer Sonde für die Kurve im Popup. Das BfS führt dafür eine
+ * eigene WFS-Ebene (`odlinfo_timeseries_odl_1h`); gefiltert wird über die
+ * Kennung der Sonde, sortiert nach Messende absteigend.
+ */
+radiationRoute.get('/history', async (c) => {
+  const id = (c.req.query('id') ?? '').trim();
+  if (!/^[A-Za-z0-9_-]{3,20}$/.test(id)) return c.json({ error: 'id erforderlich' }, 400);
+  const days = Math.min(Math.max(Number(c.req.query('days') ?? 3) || 3, 1), 7);
+
+  const cache = cached<RadiationHistory>(`radiation-hist:${id}:${days}`, 1800);
+  if (cache.hit) return c.json(envelope(cache.hit, 'Bundesamt für Strahlenschutz (ODL-Messnetz)', true));
+
+  const url =
+    `${WFS}?service=WFS&version=2.0.0&request=GetFeature` +
+    `&typeNames=${encodeURIComponent(TIMESERIES)}&outputFormat=application/json` +
+    `&count=${days * 24}&sortBy=end_measure+D` +
+    `&CQL_FILTER=${encodeURIComponent(`id='${id}'`)}`;
+
+  const empty: RadiationHistory = { points: [], min: 0, max: 0, average: 0 };
+  try {
+    const data = await fetchJson<{ features?: WfsFeature[] }>(url, { timeoutMs: 20000 });
+    // Nachgereichte Einzelwerte hängen sonst als weit zurückliegender Punkt an
+    // der Kurve — deshalb hart auf das angefragte Fenster beschneiden.
+    const cutoff = Date.now() - days * 86_400_000;
+    const points: RadiationPoint[] = (data.features ?? [])
+      .map((f) => ({ t: f.properties?.end_measure ?? '', v: Number(f.properties?.value) }))
+      .filter((p) => p.t && Number.isFinite(p.v) && Date.parse(p.t) >= cutoff)
+      // Die Antwort kommt neueste zuerst — für die Kurve andersherum.
+      .reverse();
+    if (!points.length) return c.json(envelope(empty, 'Bundesamt für Strahlenschutz (ODL-Messnetz)'));
+
+    const values = points.map((p) => p.v);
+    const history: RadiationHistory = {
+      points,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      average: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 1000) / 1000,
+    };
+    cache.set(history);
+    return c.json(envelope(history, 'Bundesamt für Strahlenschutz (ODL-Messnetz)'));
+  } catch {
+    return c.json(envelope(empty, 'Bundesamt für Strahlenschutz (ODL-Messnetz)'));
+  }
 });

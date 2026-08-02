@@ -671,6 +671,21 @@ export interface RadiationStation {
   validated: boolean;
 }
 
+/** Ein Stundenwert der Ortsdosisleistung. */
+export interface RadiationPoint {
+  t: string;
+  /** µSv/h */
+  v: number;
+}
+
+/** Verlauf einer Sonde für die Kurve im Popup. */
+export interface RadiationHistory {
+  points: RadiationPoint[];
+  min: number;
+  max: number;
+  average: number;
+}
+
 /** Pollenarten des DWD-Gefahrenindex. */
 export type PollenKind =
   | 'Hasel'
