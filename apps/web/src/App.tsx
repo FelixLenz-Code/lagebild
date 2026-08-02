@@ -6,12 +6,14 @@ import type {
   Severity,
   TransitItinerary,
   TransitLeg,
+  TransitDeparture,
   TransitStopPoint,
+  TransitTrip,
   TransitVehicle,
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { STOP_COLOR } from './mapIcons.js';
@@ -177,6 +179,7 @@ export function App() {
     radiation: false,
     rest: false,
     webcams: false,
+    rescue: false,
     aurora: false,
     fire: false,
     aprsTargets: [],
@@ -260,6 +263,11 @@ export function App() {
     [viewKey, refreshTick],
     { enabled: layers.webcams, refreshMs: 3600_000 },
   );
+  // Rettungspunkte sind praktisch unveränderlich — nur bei aktiver Ebene und
+  // ohne eigenes Nachladen; der Server rastert und cacht die Overpass-Abfrage.
+  const rescue = useApi(`rescue:${viewKey}`, () => fetchRescue(viewport), [viewKey, refreshTick], {
+    enabled: layers.rescue,
+  });
   const quakes = useApi('quakes', () => fetchQuakes(), [refreshTick], {
     enabled: layers.quakes,
     refreshMs: 600_000,
@@ -462,14 +470,33 @@ export function App() {
 
 
   /**
-   * Angetipptes Fahrzeug: Fahrplan (Laufweg) dazu holen. Die Fahrt wird alle
+   * Angetipptes Fahrzeug: Fahrplan (Fahrtweg) dazu holen. Die Fahrt wird alle
    * 30 s aufgefrischt, solange das Blatt offen ist — Verspätungen ändern sich.
    */
   const [vehicle, setVehicle] = useState<TransitVehicle | null>(null);
-  /** Blatt zu, Laufweg bleibt: die Fahrt ist weiter gewählt. */
+  /** Blatt zu, Fahrtweg bleibt: die Fahrt ist weiter gewählt. */
   const [vehicleSheet, setVehicleSheet] = useState(false);
-  /** Zählt hoch, wenn der Laufweg ins Bild gerückt werden soll. */
+  /** Zählt hoch, wenn der Fahrtweg ins Bild gerückt werden soll. */
   const [tripFit, setTripFit] = useState(0);
+  /**
+   * Fahrtweg, der aus einer **Abfahrtstafel** stammt (Haltestelle oder
+   * ÖPNV-Kachel). Anders als beim angetippten Fahrzeug gibt es dazu keine
+   * Position, also auch keinen „schon gefahren"-Teil.
+   */
+  const [stopTrip, setStopTrip] = useState<
+    { geometry: [number, number][]; label: string; color: string } | null
+  >(null);
+  const showTripOnMap = useCallback((departure: TransitDeparture, trip: TransitTrip) => {
+    setStopTrip({
+      geometry: trip.geometry,
+      label: departure.line || trip.line,
+      color: STOP_COLOR[kindOfProduct(departure.product ?? trip.product)] ?? '#1d4e73',
+    });
+    setVehicle(null);
+    setStopDetail(null);
+    setDetail(null);
+    setTripFit((n) => n + 1);
+  }, []);
   const selectVehicle = useCallback((v: TransitVehicle) => {
     setVehicle(v);
     setVehicleSheet(true);
@@ -484,7 +511,7 @@ export function App() {
     [vehicle?.id],
     { enabled: !!vehicle, refreshMs: 30000, cache: false },
   );
-  // Die Marke wandert weiter — der Laufweg wird an der jeweils aktuellen
+  // Die Marke wandert weiter — der Fahrtweg wird an der jeweils aktuellen
   // Position getrennt, damit „schon gefahren" stimmt.
   const vehicleNow = useMemo(
     () => (vehicle ? (vehicles.data?.data.find((v) => v.id === vehicle.id) ?? vehicle) : null),
@@ -884,8 +911,11 @@ export function App() {
             stops={stopPoints}
             vehicles={vehicles.data?.data ?? []}
             onVehicleClick={selectVehicle}
-            onTripOpen={() => setVehicleSheet(true)}
-            onTripClear={() => setVehicle(null)}
+            onTripOpen={() => (vehicle ? setVehicleSheet(true) : setTripFit((n) => n + 1))}
+            onTripClear={() => {
+              setVehicle(null);
+              setStopTrip(null);
+            }}
             vehicleTrip={
               vehicleNow && vehicleTripState.data?.geometry.length
                 ? {
@@ -895,7 +925,9 @@ export function App() {
                     label: vehicleNow.line,
                     fitKey: tripFit,
                   }
-                : null
+                : stopTrip
+                  ? { ...stopTrip, fitKey: tripFit }
+                  : null
             }
             emergency={layers.emergency ? (emergencyState.data ?? []) : []}
             quakes={quakes.data?.data ?? []}
@@ -905,6 +937,7 @@ export function App() {
             radiation={radiation.data?.data ?? []}
             rest={rest.data?.data ?? []}
             webcams={webcams.data?.data ?? []}
+            rescue={rescue.data?.data ?? []}
             lightningAvailable={lightningAvailable}
             aurora={aurora.data?.data ?? null}
             fire={fire.data?.data ?? null}
@@ -1152,7 +1185,7 @@ export function App() {
                       <path d="M14 3l3 3-3 3" />
                       <circle cx="9" cy="20" r="1.6" />
                     </svg>
-                    Hinfahren
+                    Navigieren
                   </button>
                 )}
               </div>
@@ -1364,6 +1397,7 @@ export function App() {
             setRouteOrigin({ name: stopDetail.name, lat: stopDetail.lat, lon: stopDetail.lon });
             setStopDetail(null);
           }}
+          onShowRoute={showTripOnMap}
           onClose={() => setStopDetail(null)}
         />
       )}
@@ -1402,6 +1436,7 @@ export function App() {
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
           {detail === 'transit' && (
             <TransitDetail
+              onShowRoute={showTripOnMap}
               stops={transitStops}
               onRoute={(name, lat, lon) => startRouteTo({ name, lat, lon })}
             />

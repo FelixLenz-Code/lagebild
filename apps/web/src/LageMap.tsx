@@ -36,6 +36,7 @@ import type {
   RadiationHistory,
   RestFacility,
   WebcamSpot,
+  RescuePoint,
   GeoJsonGeometry,
   AuroraGrid,
   FireDangerGrid,
@@ -326,6 +327,34 @@ function lightningPopupHtml(s: LightningStrike): string {
     `<div class="wp-meta">${esc(relativeTime(s.time))} · ${esc(formatDateTime(s.time))}</div>` +
     `<div class="wp-meta">${s.stations} Empfangsstationen${accuracy ? ` · ${esc(accuracy)}` : ''}</div>` +
     `<div class="wp-meta">Blitzortung.org (ehrenamtliches Netz)</div>` +
+    `</div>`
+  );
+}
+
+/**
+ * Popup eines Rettungspunkts.
+ *
+ * Hier zählt, was man am Telefon vorlesen kann: zuerst die Kennung vom Schild,
+ * darunter die Koordinaten in der Schreibweise, die Leitstellen erwarten.
+ */
+function rescuePopupHtml(p: RescuePoint): string {
+  const dms = (v: number, pos: string, neg: string) => {
+    const dir = v >= 0 ? pos : neg;
+    const abs = Math.abs(v);
+    const deg = Math.floor(abs);
+    const min = (abs - deg) * 60;
+    return `${deg}° ${min.toFixed(3).replace('.', ',')}' ${dir}`;
+  };
+  return (
+    `<div class="warn-popup">` +
+    `<h4>${esc(p.ref ? `Rettungspunkt ${p.ref}` : 'Rettungspunkt')}</h4>` +
+    (p.name ? `<div class="wp-region">${esc(p.name)}</div>` : '') +
+    `<div class="wp-rows">` +
+    `<span class="ac-k">Koordinaten</span><span class="ac-v">${p.lat.toFixed(5).replace('.', ',')}, ${p.lon.toFixed(5).replace('.', ',')}</span>` +
+    `<span class="ac-k">Grad/Minuten</span><span class="ac-v">${dms(p.lat, 'N', 'S')} ${dms(p.lon, 'E', 'W')}</span>` +
+    (p.operator ? `<span class="ac-k">Betreiber</span><span class="ac-v">${esc(p.operator)}</span>` : '') +
+    `</div>` +
+    `<p class="wp-desc">Im Notfall die Kennung durchgeben — die Leitstelle kennt den Punkt. Notruf ${esc(p.phone || '112')}.</p>` +
     `</div>`
   );
 }
@@ -728,19 +757,20 @@ interface Props {
   vehicles: TransitVehicle[];
   /** Antippen eines Fahrzeugs öffnet dessen Fahrplan. */
   onVehicleClick: (vehicle: TransitVehicle) => void;
-  /** Laufweg der geöffneten Fahrt — gefahrener Teil blass, Rest kräftig. */
+  /** Fahrtweg der geöffneten Fahrt — gefahrener Teil blass, Rest kräftig. */
   vehicleTrip: {
     geometry: [number, number][];
-    at: Coords;
+    /** Aktuelle Position des Fahrzeugs — fehlt bei einer Fahrt aus dem Fahrplan. */
+    at?: Coords | null;
     color: string;
-    /** Aufschrift des Bandes, das den Laufweg wieder abwählbar macht. */
+    /** Aufschrift des Bandes, das den Fahrtweg wieder abwählbar macht. */
     label: string;
     /** Zählt hoch, wenn der Rest der Fahrt ins Bild gerückt werden soll. */
     fitKey: number;
   } | null;
   /** Fahrplan der gewählten Fahrt wieder öffnen. */
   onTripOpen: () => void;
-  /** Laufweg von der Karte nehmen. */
+  /** Fahrtweg von der Karte nehmen. */
   onTripClear: () => void;
   /** Notfallpunkte aus dem Offline-Index (Krankenhaus, Apotheke …). */
   emergency: GeoResult[];
@@ -758,6 +788,8 @@ interface Props {
   rest: RestFacility[];
   /** Standorte öffentlicher Webcams. */
   webcams: WebcamSpot[];
+  /** Rettungspunkte (nummerierte Schilder). */
+  rescue: RescuePoint[];
   /** Polarlicht-Gitter und Waldbrandgefahr als Flächen. */
   aurora: AuroraGrid | null;
   fire: FireDangerGrid | null;
@@ -815,9 +847,10 @@ export interface ActiveLayers {
   /** Satelliten-Feuer und Strahlungsmessnetz. */
   fires: boolean;
   radiation: boolean;
-  /** Rastanlagen/Ladepunkte und Webcam-Standorte. */
+  /** Rastanlagen/Ladepunkte, Webcam-Standorte und Rettungspunkte. */
   rest: boolean;
   webcams: boolean;
+  rescue: boolean;
   aurora: boolean;
   fire: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
@@ -864,6 +897,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   nina: false,
   rest: false,
   webcams: false,
+  rescue: false,
   fires: false,
   radiation: false,
   lightning: false,
@@ -911,6 +945,7 @@ export function LageMap({
   radiation,
   rest,
   webcams,
+  rescue,
   aurora,
   fire,
   flyTo,
@@ -1000,6 +1035,7 @@ export function LageMap({
     radiation: showRadiation,
     rest: showRest,
     webcams: showWebcams,
+    rescue: showRescue,
     aurora: showAurora,
     fire: showFire,
   } = on;
@@ -1049,6 +1085,7 @@ export function LageMap({
         radiation: showRadiation,
         rest: showRest,
         webcams: showWebcams,
+        rescue: showRescue,
         aurora: showAurora,
         fire: showFire,
         aprsTargets,
@@ -1056,7 +1093,7 @@ export function LageMap({
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
-      showAurora, showFire, showRest, showWebcams, aprsTargets,
+      showAurora, showFire, showRest, showWebcams, showRescue, aprsTargets,
       onLayersChange,
     ],
   );
@@ -2021,7 +2058,7 @@ export function LageMap({
     };
   }, [vehicles, ready, styleEpoch]);
 
-  // Laufweg der geöffneten Fahrt: bis zum Fahrzeug blass, danach kräftig.
+  // Fahrtweg der geöffneten Fahrt: bis zum Fahrzeug blass, danach kräftig.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -2053,15 +2090,18 @@ export function LageMap({
       src.setData({ type: 'FeatureCollection', features: [] });
       return;
     }
-    // Trennpunkt ist der Stützpunkt, der dem Fahrzeug am nächsten liegt.
+    // Trennpunkt ist der Stützpunkt, der dem Fahrzeug am nächsten liegt. Ohne
+    // Fahrzeug (Fahrt aus der Abfahrtstafel) wird der ganze Weg kräftig gezeichnet.
     const { geometry, at, color } = vehicleTrip;
     let split = 0;
-    let best = Infinity;
-    for (let i = 0; i < geometry.length; i++) {
-      const d = (geometry[i]![0] - at.lon) ** 2 + (geometry[i]![1] - at.lat) ** 2;
-      if (d < best) {
-        best = d;
-        split = i;
+    if (at) {
+      let best = Infinity;
+      for (let i = 0; i < geometry.length; i++) {
+        const d = (geometry[i]![0] - at.lon) ** 2 + (geometry[i]![1] - at.lat) ** 2;
+        if (d < best) {
+          best = d;
+          split = i;
+        }
       }
     }
     const features: GeoJSON.Feature[] = [];
@@ -2452,6 +2492,68 @@ export function LageMap({
       map.off('click', 'webcams', onCam);
     };
   }, [rest, webcams, ready, styleEpoch]);
+
+  /* ---------- Rettungspunkte ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('rescue')) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addSource('rescue', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'rescue',
+      type: 'symbol',
+      source: 'rescue',
+      // Erst ab Zoom 11: bundesweit sind es rund 47.000 Punkte.
+      minzoom: 11,
+      layout: {
+        'icon-image': 'rescue-point',
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 0.34, 16, 0.58],
+        'icon-allow-overlap': false,
+        // Die Kennung ist der eigentliche Zweck — sie steht so früh wie möglich.
+        'text-field': ['step', ['zoom'], '', 12, ['get', 'ref']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'text-offset': [0, 1.05],
+        'text-anchor': 'top',
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.6,
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('rescue') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showRescue ? rescue : []).map((p, i) => ({
+        type: 'Feature',
+        properties: { index: i, ref: p.ref ?? '' },
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+      })),
+    });
+  }, [rescue, showRescue, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const p = index != null ? rescue[index] : undefined;
+      if (p) warnPopup.current!.setLngLat(e.lngLat).setHTML(rescuePopupHtml(p)).addTo(map);
+    };
+    map.on('click', 'rescue', onClick);
+    return () => {
+      map.off('click', 'rescue', onClick);
+    };
+  }, [rescue, ready, styleEpoch]);
 
   /* ---------- Feuer aus dem Satellitenblick ---------- */
 
@@ -3126,14 +3228,14 @@ export function LageMap({
         <div ref={containerRef} className="lagemap" />
         <div className="mapcontrols">
         {vehicleTrip && (
-          // Solange ein Laufweg auf der Karte liegt, muss er auch wieder
+          // Solange ein Fahrtweg auf der Karte liegt, muss er auch wieder
           // wegzubekommen sein — sonst bleibt die Linie für immer stehen.
           <div className="tripbar">
             <button type="button" className="tb-open" onClick={onTripOpen}>
               <span className="tb-dot" style={{ background: vehicleTrip.color }} />
-              Laufweg {vehicleTrip.label}
+              Fahrtweg {vehicleTrip.label}
             </button>
-            <button type="button" className="tb-clear" onClick={onTripClear} aria-label="Laufweg ausblenden">
+            <button type="button" className="tb-clear" onClick={onTripClear} aria-label="Fahrtweg ausblenden">
               ✕
             </button>
           </div>

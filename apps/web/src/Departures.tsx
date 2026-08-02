@@ -11,7 +11,12 @@ import { departureTime, kindOfProduct } from './format.js';
  * nennt die Art im Klartext (Bus, Tram, Regionalzug …), damit die Information
  * nicht allein an der Farbe hängt.
  */
-export function DepartureBoard(props: { departures: TransitDeparture[]; stopName?: string }) {
+export function DepartureBoard(props: {
+  departures: TransitDeparture[];
+  stopName?: string;
+  /** Fahrtweg dieser Fahrt auf die Karte legen (schließt das Blatt). */
+  onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
+}) {
   const [open, setOpen] = useState<TransitDeparture | null>(null);
   const [trip, setTrip] = useState<TransitTrip | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,6 +50,7 @@ export function DepartureBoard(props: { departures: TransitDeparture[]; stopName
         failed={failed}
         stopName={props.stopName}
         onBack={() => setOpen(null)}
+        onShowRoute={props.onShowRoute}
       />
     );
   }
@@ -88,7 +94,7 @@ export function DepartureBoard(props: { departures: TransitDeparture[]; stopName
   );
 }
 
-/** Restlicher Laufweg einer Fahrt ab dem gewählten Halt. */
+/** Restlicher Fahrtweg einer Fahrt ab dem gewählten Halt. */
 function TripView(props: {
   departure: TransitDeparture;
   trip: TransitTrip | null;
@@ -96,6 +102,7 @@ function TripView(props: {
   failed: boolean;
   stopName?: string;
   onBack: () => void;
+  onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
 }) {
   const { departure, trip } = props;
   const kind = kindOfProduct(departure.product);
@@ -127,8 +134,20 @@ function TripView(props: {
         <span className="trip-dir">→ {departure.direction}</span>
       </div>
 
-      {props.loading && <p className="muted">Laufweg wird geladen …</p>}
-      {props.failed && <p className="muted">Für diese Fahrt liegt kein Laufweg vor.</p>}
+      {!!trip?.geometry.length && props.onShowRoute && (
+        <div className="rp-actions" style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => props.onShowRoute!(departure, trip)}
+          >
+            Fahrtweg auf der Karte
+          </button>
+        </div>
+      )}
+
+      {props.loading && <p className="muted">Fahrtweg wird geladen …</p>}
+      {props.failed && <p className="muted">Für diese Fahrt liegt kein Fahrtweg vor.</p>}
       {!props.loading && !props.failed && ahead.length > 0 && (
         <>
           <div className="sect-label">

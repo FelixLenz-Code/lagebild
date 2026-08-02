@@ -60,6 +60,7 @@ Ebenen und „Alle aus"; das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Amateurfunk | aprs.fi (APRS) | nur mit `APRSFI_KEY`, feste Rufzeichenliste |
 | Busse & Bahnen | transitous.org (MOTIS) | Fahrzeuge in Bewegung, ab Zoom 10 |
 | Notfallpunkte | Offline-Suchindex (OSM) | Klinik, Apotheke, Polizei, Feuerwehr — ohne Netz |
+| Rettungspunkte | OpenStreetMap (Overpass) | nummerierte Schilder für den Notruf, ab Zoom 11 |
 | Blitze | Blitzortung.org | Entladungen der letzten 30 Minuten |
 | Erdbeben | USGS | letzte Woche, ab Stärke 2,5 |
 | Waldbrandgefahr | DWD | Stufe 1–5, Deutschland |
@@ -389,8 +390,13 @@ Ort voranstellen („Bremen Fürther Straße"), wird ein im Ausschnitt dominiere
 Ortsname für die Kartenbeschriftung weggelassen. Ohne Netz springt der
 Offline-Suchindex (OSM) ein, damit die Ebene auch dann etwas zeigt.
 
-In der Kachel **Bahn / ÖPNV** und in ihrer Detailliste führt „Hinfahren" jede
+In der Kachel **Bahn / ÖPNV** und in ihrer Detailliste führt „Navigieren" jede
 Haltestelle direkt in die Routenplanung.
+
+Auch aus einer **Abfahrt** heraus lässt sich der ganze Weg dieser Fahrt auf die
+Karte legen: „Fahrtweg auf der Karte" zeichnet ihn wie beim angetippten
+Fahrzeug, nur ohne den „schon gefahren"-Teil — den gibt es erst, wenn eine
+Position bekannt ist. Das Band oben links nimmt ihn wieder weg.
 
 Ein Tipp auf eine Haltestelle öffnet ihre **nächsten Abfahrten** (alle Steige
 zusammen, mit Echtzeit) samt „Route hierher" und „Als Start setzen". Eigene
@@ -610,6 +616,25 @@ eine je Browser), baut sie mit wachsendem Abstand wieder auf, hält die Treffer
 nur 30 Minuten im Arbeitsspeicher (keine Archivierung) und nennt die Quelle in
 Popup, Ebenen-Menü und Quellenliste. Ohne eingehende Blitze erscheint die Ebene
 gar nicht erst im Menü (`features.lightning` in `/api/health`).
+
+## Rettungspunkte
+
+Die Ebene **„Rettungspunkte"** (Gruppe Lage, ab Zoom 11) zeigt die
+nummerierten Schilder im Wald, an Wegen und in Naherholungsgebieten — die
+Kennung darauf gibt man dem Rettungsdienst durch, wenn man den eigenen Standort
+nicht benennen kann. Das Popup nennt sie groß, dazu die Koordinaten in
+Dezimalgrad **und** in Grad/Minuten, wie Leitstellen sie erwarten.
+
+Quelle ist OpenStreetMap (`highway=emergency_access_point`) über die
+**Overpass-API**: rund **47.000** Punkte in Deutschland, die Kennung steht im
+`ref`. Die forstlichen GPX-Sammlungen der Länder enthalten dieselben Punkte,
+sind aber je Bundesland anders lizenziert und ohne einheitliche Schnittstelle;
+OSM steht unter der ODbL und ist hier ohnehin die Kartengrundlage.
+
+**Rücksicht auf Overpass** (ein gespendeter Dienst): abgefragt wird nur der
+Kartenausschnitt, auf ein 0,25°-Raster aufgerundet, damit benachbarte
+Ausschnitte denselben Cache treffen; höchstens 1,5° Spanne, Ergebnis zwölf
+Stunden gültig. Die Punkte ändern sich in Jahren.
 
 ## Notfallpunkte, Erdbeben, Waldbrand und Polarlicht
 

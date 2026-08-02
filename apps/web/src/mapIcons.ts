@@ -179,6 +179,8 @@ const GLYPH_PARKING =
 /** Ladepunkt: Stecker mit zwei Stiften. */
 const GLYPH_PLUG =
   'M12 6h2.6v4.4H12Zm5.4 0H20v4.4h-2.6Zm-6.6 6h10.4v3.2a5.2 5.2 0 0 1-3.6 4.95V26h-3.2v-5.85a5.2 5.2 0 0 1-3.6-4.95Z';
+/** Rettungspunkt: Kreuz im Kreis (wie das Schild). */
+const GLYPH_RESCUE = 'M13.4 7h5.2v6.4H25v5.2h-6.4V25h-5.2v-6.4H7v-5.2h6.4Z';
 /** Webcam: Gehäuse mit Objektiv. */
 const GLYPH_CAMERA =
   'M6 11.5h13.5v9H6Zm15.5 2.6 4.5-2.6v9l-4.5-2.6ZM9 21.5h5v2.2H9Z';
@@ -257,6 +259,7 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     ),
     drawSvg(map, 'rest-parking', badge(GLYPH_PARKING, '#1d4e73')),
     drawSvg(map, 'rest-charging', badge(GLYPH_PLUG, '#2c7448')),
+    drawSvg(map, 'rescue-point', badge(GLYPH_RESCUE, '#1f8a4c')),
     drawSvg(map, 'webcam-spot', badge(GLYPH_CAMERA, '#5b5b60')),
     drawSvg(map, 'webcam-off', badge(GLYPH_CAMERA, '#9a9aa0')),
     // Behördenwarnung: Dreieck je Warnstufe, damit die Stufe nicht allein an

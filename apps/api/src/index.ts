@@ -31,6 +31,7 @@ import { radiationRoute } from './routes/radiation.js';
 import { pollenRoute } from './routes/pollen.js';
 import { restRoute } from './routes/rest.js';
 import { webcamsRoute } from './routes/webcams.js';
+import { rescueRoute } from './routes/rescue.js';
 
 const app = new Hono();
 
@@ -77,6 +78,7 @@ app.route('/api/radiation', radiationRoute);
 app.route('/api/pollen', pollenRoute);
 app.route('/api/rest', restRoute);
 app.route('/api/webcams', webcamsRoute);
+app.route('/api/rescue', rescueRoute);
 // Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
 app.use(
   '/api/maps/*',

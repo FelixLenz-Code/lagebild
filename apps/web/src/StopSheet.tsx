@@ -1,4 +1,4 @@
-import type { Coords, TransitDeparture, TransitStopPoint } from '@lagebild/shared';
+import type { Coords, TransitDeparture, TransitStopPoint, TransitTrip } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
 import { DepartureBoard } from './Departures.js';
 import { distanceM } from './offline/graph.js';
@@ -13,6 +13,8 @@ interface Props {
   onRoute: () => void;
   onOrigin: () => void;
   onClose: () => void;
+  /** Fahrtweg einer Abfahrt auf die Karte legen. */
+  onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
 }
 
 const KIND_DE: Record<string, string> = {
@@ -49,7 +51,11 @@ export function StopSheet(props: Props) {
         <p className="muted">Zurzeit keine Abfahrten gemeldet.</p>
       )}
       {!!props.departures?.length && (
-        <DepartureBoard departures={props.departures} stopName={stop.name} />
+        <DepartureBoard
+          departures={props.departures}
+          stopName={stop.name}
+          onShowRoute={props.onShowRoute}
+        />
       )}
       <p className="sr-hint" style={{ marginTop: 12 }}>
         Fahrplan und Echtzeit von{' '}

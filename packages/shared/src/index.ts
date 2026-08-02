@@ -627,6 +627,22 @@ export interface RestFacility {
   features: string[];
 }
 
+/**
+ * Rettungspunkt: festes, nummeriertes Schild, dessen Kennung man dem
+ * Rettungsdienst durchgibt.
+ */
+export interface RescuePoint {
+  id: string;
+  /** Kennung auf dem Schild, z. B. „DA-703". */
+  ref: string | null;
+  name: string | null;
+  operator: string | null;
+  /** Notrufnummer, falls am Schild vermerkt. */
+  phone: string | null;
+  lat: number;
+  lon: number;
+}
+
 /** Standort einer öffentlichen Webcam (Bild bleibt auf der Betreiberseite). */
 export interface WebcamSpot {
   id: string;

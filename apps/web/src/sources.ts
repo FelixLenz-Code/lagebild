@@ -219,6 +219,14 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         terms: '© OpenStreetMap-Mitwirkende, ODbL',
       },
       {
+        key: 'osm-overpass',
+        name: 'OpenStreetMap über Overpass',
+        use: 'Rettungspunkte (highway=emergency_access_point) mit ihrer Kennung',
+        url: 'https://overpass-api.de/',
+        terms:
+          'gespendeter Dienst — nur der Kartenausschnitt, gerastert abgefragt und 12 Stunden zwischengespeichert',
+      },
+      {
         key: 'geofabrik',
         name: 'Geofabrik',
         use: 'Länderauszüge (PBF), aus denen Routing und Suche gebaut werden',

@@ -13,6 +13,8 @@ import type {
   AirQuality,
   PollenForecast,
   TransitStop,
+  TransitDeparture,
+  TransitTrip,
 } from '@lagebild/shared';
 import {
   relativeTime,
@@ -571,10 +573,13 @@ export function PegelDetail({ list }: { list: WaterLevel[] }) {
 export function TransitDetail({
   stops,
   onRoute,
+  onShowRoute,
 }: {
   stops: TransitStop[];
   /** Halt anfahren (Routenplanung übernimmt ihn als Ziel). */
   onRoute?: (name: string, lat: number, lon: number) => void;
+  /** Fahrtweg einer Abfahrt auf die Karte legen. */
+  onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
 }) {
   const withData = stops.filter((s) => s.departures.length > 0);
   if (withData.length === 0)
@@ -598,11 +603,11 @@ export function TransitDetail({
                   <path d="M14 3l3 3-3 3" />
                   <circle cx="9" cy="20" r="1.6" />
                 </svg>
-                Hinfahren
+                Navigieren
               </button>
             )}
           </div>
-          <DepartureBoard departures={s.departures} stopName={s.name} />
+          <DepartureBoard departures={s.departures} stopName={s.name} onShowRoute={onShowRoute} />
         </div>
       ))}
     </div>

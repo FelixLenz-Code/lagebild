@@ -21,6 +21,7 @@ import type {
   RadiationHistory,
   RestFacility,
   WebcamSpot,
+  RescuePoint,
   PollenForecast,
   EarthquakeItem,
   AuroraGrid,
@@ -95,7 +96,7 @@ export const fetchPlan = (
       `${time ? `&time=${encodeURIComponent(time)}` : ''}${arriveBy ? '&arriveBy=1' : ''}`,
   );
 
-/** Laufweg einer Fahrt (alle Halte mit Zeiten). */
+/** Fahrtweg einer Fahrt (alle Halte mit Zeiten). */
 export const fetchTrip = (tripId: string): Promise<ApiEnvelope<TransitTrip | null>> =>
   getJson(`/api/stops/trip?id=${encodeURIComponent(tripId)}`);
 
@@ -140,6 +141,10 @@ export const fetchRadiationHistory = (
 /** Rastanlagen und Ladepunkte an Autobahnen im Ausschnitt. */
 export const fetchRest = (b: Bbox): Promise<ApiEnvelope<RestFacility[]>> =>
   getJson(`/api/rest?${bboxQ(b)}`);
+
+/** Rettungspunkte im Ausschnitt (OSM über Overpass). */
+export const fetchRescue = (b: Bbox): Promise<ApiEnvelope<RescuePoint[]>> =>
+  getJson(`/api/rescue?${bboxQ(b)}`);
 
 /** Standorte öffentlicher Webcams im Ausschnitt. */
 export const fetchWebcams = (b: Bbox): Promise<ApiEnvelope<WebcamSpot[]>> =>

@@ -8,14 +8,14 @@ interface Props {
   loading: boolean;
   failed: boolean;
   onClose: () => void;
-  /** Blatt schließen, Laufweg aber auf der Karte lassen und einpassen. */
+  /** Blatt schließen, Fahrtweg aber auf der Karte lassen und einpassen. */
   onShowOnMap: () => void;
   /** Einen Halt der Fahrt ansteuern. */
   onRouteToStop: (stop: { name: string; lat: number; lon: number }) => void;
 }
 
 /**
- * Ein angetipptes Fahrzeug: Linie, Verspätung und der ganze Laufweg.
+ * Ein angetipptes Fahrzeug: Linie, Verspätung und der ganze Fahrtweg.
  *
  * Wichtig für das Verständnis der Daten: Die Karte zeigt **keine
  * GPS-Ortung**. transitous liefert Soll- und Echtzeit-Fahrplan; die Position
@@ -56,7 +56,7 @@ export function VehicleSheet(props: Props) {
       {!!trip?.geometry.length && (
         <div className="rp-actions" style={{ marginBottom: 14 }}>
           <button type="button" className="btn-primary" onClick={props.onShowOnMap}>
-            Laufweg auf der Karte
+            Fahrtweg auf der Karte
           </button>
         </div>
       )}
@@ -67,7 +67,7 @@ export function VehicleSheet(props: Props) {
       {!!trip?.stops.length && (
         <>
           <div className="sect-label">
-            Laufweg ({trip.stops.length} Halte)
+            Fahrtweg ({trip.stops.length} Halte)
             {nextIndex > 0 ? ` · noch ${trip.stops.length - nextIndex}` : ''}
           </div>
           <ol className="trip-stops">
