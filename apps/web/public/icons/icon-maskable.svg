@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Maskierbare Fassung: Android schneidet daraus Kreise, Rundecken oder
+       Tropfen. Alles Wesentliche liegt deshalb in der Sicherheitszone
+       (Kreis mit 40 % Radius um die Mitte), der Hintergrund geht randlos durch. -->
+  <rect width="512" height="512" fill="#1d4e73"/>
+  <path d="M256 146l96 34.3v75.4c0 60.3-41.2 109.7-96 130.3-54.8-20.6-96-70-96-130.3v-75.4L256 146Z"
+        fill="none" stroke="#ffffff" stroke-width="24" stroke-linejoin="round"/>
+  <path d="M215 256l28 28 55-55" fill="none" stroke="#ffffff" stroke-width="24"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

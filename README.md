@@ -521,6 +521,27 @@ der Wirklichkeit dazu.
 
 Umstellbar über `HAMQSL_URL` und `KC2G_URL`.
 
+## App-Symbol und Installierbarkeit
+
+Die PWA lässt sich installieren (Android/Chrome, iOS „Zum Home-Bildschirm",
+Desktop): Manifest mit Name, `start_url`, `display: standalone` und Symbolen in
+192 und 512 Pixeln, dazu **maskierbare** Fassungen für Android (dort schneidet
+das System Kreise oder Tropfen aus, deshalb liegt in der Vorlage
+`icon-maskable.svg` nichts Wesentliches am Rand) und ein `apple-touch-icon`
+für iOS.
+
+Vorlagen sind `apps/web/public/icons/icon.svg` und `icon-maskable.svg` — das
+Schild mit Haken aus der Kopfzeile. Die PNG-Größen liegen fertig im
+Repository; wer das Symbol ändert, erzeugt sie neu mit
+
+```bash
+node scripts/build-icons.mjs
+```
+
+Gerastert wird mit dem Chromium, den Playwright ohnehin mitbringt — keine
+Bildbibliothek als Abhängigkeit. Für den reinen Bau der App wird das Skript
+nicht gebraucht.
+
 ## Deployment
 
 Läuft hinter einem eigenen Reverse-Proxy (TLS dort terminieren). Installation und

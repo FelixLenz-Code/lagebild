@@ -33,7 +33,20 @@ export default defineConfig({
         background_color: '#0f0f10',
         display: 'standalone',
         lang: 'de',
-        icons: [],
+        start_url: '/',
+        scope: '/',
+        orientation: 'any',
+        categories: ['navigation', 'weather', 'travel'],
+        // Ohne Symbole gilt eine PWA als nicht installierbar. `maskable` gibt
+        // Android die Freiheit, den Rand nach eigener Form zu beschneiden —
+        // dort liegt deshalb nichts Wesentliches.
+        icons: [
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+        ],
       },
     }),
   ],
