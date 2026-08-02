@@ -26,7 +26,8 @@ export type LayerId =
   | 'emergency'
   | 'quakes'
   | 'aurora'
-  | 'fire';
+  | 'fire'
+  | 'lightning';
 
 /** Zusätzlich zu den Ebenen: eingerückte Anzeigeoptionen. */
 export type LayerRowId = LayerId | 'wind-labels';
@@ -41,7 +42,7 @@ export interface LayerInfo {
   /** Eingerückte Unteroption der Ebene darüber. */
   sub?: boolean;
   /** Nur sichtbar, wenn der Server diese Möglichkeit meldet. */
-  needs?: 'flow' | 'ais' | 'aprs';
+  needs?: 'flow' | 'ais' | 'aprs' | 'lightning';
   /** Woher die Daten kommen — als Schlüssel in `SOURCES`. */
   source?: string;
 }
@@ -53,6 +54,7 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'news', label: 'Nachrichten', color: '#6a7580', group: 'Lage', hint: 'regionale Meldungen mit Ortsbezug', source: 'tagesschau' },
   { id: 'warnings', label: 'Warnungen', color: '#a92318', group: 'Gefahren', hint: 'amtliche Unwetterwarnungen', source: 'dwd-geo' },
   { id: 'fire', label: 'Waldbrandgefahr', color: 'linear-gradient(90deg,#3f8f4a,#e3b505,#a92318)', group: 'Gefahren', hint: 'DWD-Index, Stufe 1–5', source: 'dwd-open' },
+  { id: 'lightning', label: 'Blitze', color: '#e3b505', group: 'Gefahren', hint: 'Entladungen der letzten 30 Minuten', needs: 'lightning', source: 'blitzortung' },
   { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', hint: 'Messung und Vorhersage bis +2 h', source: 'brightsky' },
   { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Strömungsbild, 10 m über Grund', source: 'openmeteo' },
   { id: 'wind-labels', label: 'Windwerte', color: '#2c7448', group: 'Wetter', hint: 'km/h an den Gitterpunkten', sub: true },

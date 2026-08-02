@@ -572,6 +572,17 @@ export interface TransitVehicle {
   realTime: boolean;
 }
 
+/** Eine Blitzentladung (Blitzortung.org). */
+export interface LightningStrike {
+  time: string;
+  lat: number;
+  lon: number;
+  /** Wie viele Empfangsstationen den Blitz gehört haben. */
+  stations: number;
+  /** Ortungsgenauigkeit in Metern (soweit gemeldet). */
+  accuracyM: number | null;
+}
+
 /** Ein Erdbeben (USGS). */
 export interface EarthquakeItem {
   id: string;

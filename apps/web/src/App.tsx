@@ -11,7 +11,7 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { STOP_COLOR } from './mapIcons.js';
@@ -27,6 +27,13 @@ import { RoutePanel, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { SettingsSheet } from './SettingsSheet.js';
 import { loadSettings, saveSettings, type Settings } from './settings.js';
+import {
+  loadPresets,
+  savePresets,
+  type MapPreset,
+  type SlideshowSettings,
+} from './mapPresets.js';
+import type { LayerRowId } from './layerCatalog.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
 import { poisOffline, routeOffline, stopsOffline } from './offline/client.js';
 import { useNavigation } from './navigation.js';
@@ -156,6 +163,7 @@ export function App() {
     vehicles: false,
     emergency: false,
     quakes: false,
+    lightning: false,
     aurora: false,
     fire: false,
     aprsTargets: [],
@@ -203,6 +211,13 @@ export function App() {
   );
   // Erdbeben, Polarlicht und Waldbrandgefahr gelten weltweit bzw. landesweit —
   // sie hängen nicht am Ausschnitt und werden selten erneuert.
+  // Blitze folgen dem Ausschnitt und veralten schnell — kurz takten, nicht cachen.
+  const lightning = useApi(
+    `lightning:${viewKey}`,
+    () => fetchLightning(viewport, 30),
+    [viewKey, refreshTick],
+    { enabled: layers.lightning, refreshMs: 20000, cache: false },
+  );
   const quakes = useApi('quakes', () => fetchQuakes(), [refreshTick], {
     enabled: layers.quakes,
     refreshMs: 600_000,
@@ -229,6 +244,7 @@ export function App() {
   const flowAvailable = health.data?.features?.flow ?? false;
   const aisAvailable = health.data?.features?.ais ?? false;
   const aprsAvailable = health.data?.features?.aprs ?? false;
+  const lightningAvailable = health.data?.features?.lightning ?? false;
 
   const maps = useApi('maps', () => fetchMaps(), [refreshTick]);
   const availableMap: Record<string, RegionFiles> = Object.fromEntries(
@@ -238,6 +254,67 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   useEffect(() => saveSettings(settings), [settings]);
+
+  /* ---------- Gespeicherte Karten und Diashow ---------- */
+  const [presets, setPresets] = useState<MapPreset[]>(() => loadPresets().presets);
+  const [slideshow, setSlideshow] = useState<SlideshowSettings>(() => loadPresets().slideshow);
+  useEffect(() => savePresets({ presets, slideshow }), [presets, slideshow]);
+  /** Gerade eingeschaltete Ebenen (meldet die Karte). */
+  const [activeLayers, setActiveLayers] = useState<LayerRowId[]>([]);
+  /** Von außen gesetzte Ebenen — Vorschau oder laufende Diashow. */
+  const [applyLayers, setApplyLayers] = useState<{ layers: LayerRowId[]; key: number } | null>(null);
+  const showPreset = useCallback((p: MapPreset) => {
+    setApplyLayers({ layers: p.layers, key: Date.now() });
+  }, []);
+  /** Läuft die Diashow? Dann steht hier, welche Karte gerade dran ist. */
+  const [showIndex, setShowIndex] = useState<number | null>(null);
+  const [showPaused, setShowPaused] = useState(false);
+  const running = showIndex !== null && presets.length > 0;
+
+  // Die laufende Diashow schaltet die Ebenen und stellt nach der Standzeit weiter.
+  useEffect(() => {
+    if (!running) return;
+    const current = presets[showIndex!];
+    if (!current) {
+      setShowIndex(null);
+      return;
+    }
+    setApplyLayers({ layers: current.layers, key: Date.now() });
+    if (showPaused) return;
+    const id = window.setTimeout(() => {
+      setShowIndex((i) => {
+        const next = (i ?? 0) + 1;
+        if (next < presets.length) return next;
+        // Am Ende: von vorn oder aufhören.
+        return slideshow.loop ? 0 : null;
+      });
+    }, Math.max(3, current.seconds) * 1000);
+    return () => window.clearTimeout(id);
+  }, [running, showIndex, showPaused, presets, slideshow.loop]);
+
+  // Escape beendet die Diashow — der Weg zurück muss auch am großen Monitor
+  // ohne Menü funktionieren.
+  useEffect(() => {
+    if (!running) return;
+    const onKey = (e: KeyboardEvent) => {
+      // Escape schließt zuerst offene Menüs und Blätter — erst wenn nichts
+      // mehr offen ist, beendet es die Diashow. Der Lauscher hängt deshalb in
+      // der **Erfassungsphase**: React räumt das Menü sonst schon aus dem DOM,
+      // bevor ein gewöhnlicher Lauscher überhaupt drankommt.
+      if (e.key === 'Escape') {
+        if (!document.querySelector('.scrim, .lm-panel, .pointmenu')) setShowIndex(null);
+        return;
+      }
+      if (e.key === ' ') {
+        e.preventDefault();
+        setShowPaused((p) => !p);
+      }
+      if (e.key === 'ArrowRight') setShowIndex((i) => ((i ?? 0) + 1) % presets.length);
+      if (e.key === 'ArrowLeft') setShowIndex((i) => ((i ?? 0) - 1 + presets.length) % presets.length);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [running, presets.length]);
   const [offlineFiles, setOfflineFiles] = useState<Record<string, RegionFiles>>({});
   const refreshOffline = useCallback(() => {
     if (opfsSupported()) listOffline().then(setOfflineFiles).catch(() => {});
@@ -649,7 +726,7 @@ export function App() {
     : null;
 
   return (
-    <div className="app">
+    <div className={`app${running && slideshow.mapOnly ? ' is-show' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <div className="mark" aria-hidden="true">
@@ -775,6 +852,8 @@ export function App() {
             }
             emergency={layers.emergency ? (emergencyState.data ?? []) : []}
             quakes={quakes.data?.data ?? []}
+            lightning={lightning.data?.data ?? []}
+            lightningAvailable={lightningAvailable}
             aurora={aurora.data?.data ?? null}
             fire={fire.data?.data ?? null}
             stopsAvailable={online || !!stopsCode}
@@ -791,6 +870,8 @@ export function App() {
             onViewport={setViewport}
             onLayersChange={setLayers}
             hiddenLayers={settings.hiddenLayers}
+            onActiveLayers={setActiveLayers}
+            applyLayers={applyLayers}
           />
           {pickingLocation && (
             <div className="pickbar" role="status">
@@ -968,6 +1049,13 @@ export function App() {
               loading={layers.aprs && aprs.loading}
               hint={!layers.aprs ? 'Ebene ausgeschaltet' : undefined}
             />
+            <CountCell
+              label="Blitze"
+              value={layers.lightning ? (lightning.data?.data.length ?? null) : null}
+              loading={layers.lightning && lightning.loading}
+              color={lightning.data?.data.length ? 'var(--sev2)' : undefined}
+              hint={layers.lightning ? 'letzte 30 Minuten' : 'Ebene ausgeschaltet'}
+            />
           </div>
         </Tile>
 
@@ -1100,14 +1188,84 @@ export function App() {
         />
       )}
 
+      {running && (
+        <div className="showbar" role="status">
+          <span className="sb-pos">
+            {(showIndex ?? 0) + 1}/{presets.length}
+          </span>
+          <span className="sb-name">{presets[showIndex ?? 0]?.name}</span>
+          <span className="sb-layers">
+            {(presets[showIndex ?? 0]?.layers.length ?? 0) === 0
+              ? 'ohne Ebenen'
+              : `${presets[showIndex ?? 0]!.layers.length} Ebenen`}
+          </span>
+          <div className="sb-actions">
+            <button
+              type="button"
+              onClick={() => setShowIndex((i) => ((i ?? 0) - 1 + presets.length) % presets.length)}
+              aria-label="Vorige Karte"
+              title="Vorige Karte (←)"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPaused((p) => !p)}
+              aria-label={showPaused ? 'Weiter' : 'Anhalten'}
+              title={showPaused ? 'Weiter (Leertaste)' : 'Anhalten (Leertaste)'}
+            >
+              {showPaused ? '▶' : '❚❚'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowIndex((i) => ((i ?? 0) + 1) % presets.length)}
+              aria-label="Nächste Karte"
+              title="Nächste Karte (→)"
+            >
+              ›
+            </button>
+            <button type="button" onClick={() => setShowIndex(null)} aria-label="Diashow beenden" title="Beenden (Esc)">
+              ✕
+            </button>
+          </div>
+          {/* Fortschritt der Standzeit — Schlüssel erzwingt den Neustart je Karte. */}
+          {!showPaused && (
+            <i
+              key={`${showIndex}-${presets[showIndex ?? 0]?.id}`}
+              className="sb-bar"
+              style={{ animationDuration: `${Math.max(3, presets[showIndex ?? 0]?.seconds ?? 20)}s` }}
+            />
+          )}
+        </div>
+      )}
+
       {settingsOpen && (
         <SettingsSheet
           settings={settings}
           onChange={setSettings}
-          available={{ flow: flowAvailable, ais: aisAvailable, aprs: aprsAvailable }}
+          available={{
+            flow: flowAvailable,
+            ais: aisAvailable,
+            aprs: aprsAvailable,
+            lightning: lightningAvailable,
+          }}
           onOpenRegions={() => {
             setSettingsOpen(false);
             setRegionsOpen(true);
+          }}
+          presets={presets}
+          onPresets={setPresets}
+          slideshow={slideshow}
+          onSlideshow={setSlideshow}
+          activeLayers={activeLayers}
+          onPreview={(p) => {
+            showPreset(p);
+            setSettingsOpen(false);
+          }}
+          onStart={() => {
+            setSettingsOpen(false);
+            setShowPaused(false);
+            setShowIndex(0);
           }}
           onClose={() => setSettingsOpen(false)}
         />

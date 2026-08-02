@@ -25,6 +25,7 @@ import { windRoute } from './routes/wind.js';
 import { hfRoute } from './routes/hf.js';
 import { vehiclesRoute } from './routes/vehicles.js';
 import { hazardsRoute } from './routes/hazards.js';
+import { lightningRoute, startLightningCollector, lightningUsable } from './routes/lightning.js';
 
 const app = new Hono();
 
@@ -37,7 +38,12 @@ app.get('/api/health', async (c) =>
     ok: true,
     service: 'lagebild-api',
     ts: new Date().toISOString(),
-    features: { flow: await flowUsable(), ais: aisUsable(), aprs: aprsUsable() },
+    features: {
+      flow: await flowUsable(),
+      ais: aisUsable(),
+      aprs: aprsUsable(),
+      lightning: lightningUsable(),
+    },
   }),
 );
 app.route('/api/weather', weatherRoute);
@@ -60,6 +66,7 @@ app.route('/api/wind', windRoute);
 app.route('/api/hf', hfRoute);
 app.route('/api/vehicles', vehiclesRoute);
 app.route('/api/hazards', hazardsRoute);
+app.route('/api/lightning', lightningRoute);
 // Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
 app.use(
   '/api/maps/*',
@@ -75,6 +82,8 @@ if (existsSync(config.webRoot)) {
 
 // AIS kommt als Push-Stream — der Sammler läuft ab Start im Hintergrund.
 startAisCollector();
+// Blitzortung braucht keinen Schlüssel — eine Verbindung für den ganzen Server.
+startLightningCollector();
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   console.log(`lagebild-api läuft auf http://${config.host}:${info.port}`);

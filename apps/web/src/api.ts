@@ -14,6 +14,7 @@ import type {
   HfSpaceWeather,
   HfMufGrid,
   TransitVehicle,
+  LightningStrike,
   EarthquakeItem,
   AuroraGrid,
   FireDangerGrid,
@@ -106,6 +107,10 @@ export const fetchRadarForecast = (c: Coords): Promise<ApiEnvelope<RadarForecast
 export const fetchVehicles = (b: Bbox): Promise<ApiEnvelope<TransitVehicle[]>> =>
   getJson(`/api/vehicles?${bboxQ(b)}`);
 
+/** Blitzentladungen im Ausschnitt (Blitzortung.org, letzte Minuten). */
+export const fetchLightning = (b: Bbox, minutes = 30): Promise<ApiEnvelope<LightningStrike[]>> =>
+  getJson(`/api/lightning?${bboxQ(b)}&minutes=${minutes}`);
+
 /** Erdbeben der letzten Woche ab Stärke 2,5. */
 export const fetchQuakes = (): Promise<ApiEnvelope<EarthquakeItem[]>> =>
   getJson(`/api/hazards/quakes`);
@@ -128,7 +133,7 @@ export const fetchGeocode = (query: string, near?: Coords): Promise<ApiEnvelope<
 
 export interface Health {
   ok: boolean;
-  features?: { flow?: boolean; ais?: boolean; aprs?: boolean };
+  features?: { flow?: boolean; ais?: boolean; aprs?: boolean; lightning?: boolean };
 }
 export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
 

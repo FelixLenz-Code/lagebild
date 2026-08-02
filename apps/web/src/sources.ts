@@ -56,6 +56,14 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         url: 'https://www.rainviewer.com/api.html',
       },
       {
+        key: 'blitzortung',
+        name: 'Blitzortung.org',
+        use: 'Blitzentladungen in Echtzeit',
+        url: 'https://www.blitzortung.org/',
+        terms:
+          'ehrenamtliches Empfängernetz — private, nicht gewerbliche Nutzung; eine Verbindung für alle, keine Archivierung',
+      },
+      {
         key: 'usgs',
         name: 'USGS Earthquake Hazards Program',
         use: 'Erdbeben der letzten Woche',

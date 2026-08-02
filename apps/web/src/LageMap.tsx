@@ -29,6 +29,7 @@ import type {
   GeoResult,
   TransitVehicle,
   EarthquakeItem,
+  LightningStrike,
   AuroraGrid,
   FireDangerGrid,
   HfMufGrid,
@@ -229,6 +230,24 @@ function newsPopupHtml(item: NewsItem): string {
     (place ? ` · ${esc(place.name)}${place.approximate ? ' (ungenau)' : ''}` : '') +
     `</div>` +
     `<a class="wp-link" href="${esc(item.url)}" target="_blank" rel="noreferrer">Zur Meldung</a>` +
+    `</div>`
+  );
+}
+
+/** Popup eines Blitzes: Zeitpunkt, Ortungsgüte, Zahl der Stationen. */
+function lightningPopupHtml(s: LightningStrike): string {
+  const accuracy =
+    s.accuracyM == null
+      ? ''
+      : s.accuracyM >= 1000
+        ? `± ${(s.accuracyM / 1000).toFixed(1)} km`
+        : `± ${s.accuracyM} m`;
+  return (
+    `<div class="warn-popup">` +
+    `<h4>Blitz</h4>` +
+    `<div class="wp-meta">${esc(relativeTime(s.time))} · ${esc(formatDateTime(s.time))}</div>` +
+    `<div class="wp-meta">${s.stations} Empfangsstationen${accuracy ? ` · ${esc(accuracy)}` : ''}</div>` +
+    `<div class="wp-meta">Blitzortung.org (ehrenamtliches Netz)</div>` +
     `</div>`
   );
 }
@@ -490,6 +509,8 @@ interface Props {
   aisAvailable: boolean;
   /** true, wenn ein aprs.fi-Key hinterlegt ist. */
   aprsAvailable: boolean;
+  /** true, sobald der Server Blitze empfängt. */
+  lightningAvailable: boolean;
   /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt online. */
   offlineCode: string | null;
   /** Berechnete Route (offline) — Linie, Start- und Zielmarke. */
@@ -522,6 +543,8 @@ interface Props {
   emergency: GeoResult[];
   /** Erdbeben der letzten Woche. */
   quakes: EarthquakeItem[];
+  /** Blitzentladungen der letzten Minuten. */
+  lightning: LightningStrike[];
   /** Polarlicht-Gitter und Waldbrandgefahr als Flächen. */
   aurora: AuroraGrid | null;
   fire: FireDangerGrid | null;
@@ -557,6 +580,13 @@ interface Props {
   onLayersChange: (active: ActiveLayers) => void;
   /** In den Einstellungen abgewählte Ebenen — sie erscheinen gar nicht im Menü. */
   hiddenLayers: LayerRowId[];
+  /** Meldet **alle** eingeschalteten Zeilen — Grundlage für gespeicherte Karten. */
+  onActiveLayers?: (ids: LayerRowId[]) => void;
+  /**
+   * Von außen gesetzte Ebenen (gespeicherte Karte, Diashow): genau diese an,
+   * alle anderen aus. `key` zählt hoch, damit dieselbe Karte erneut greifen kann.
+   */
+  applyLayers?: { layers: LayerRowId[]; key: number } | null;
 }
 
 /** Ebenen, deren Daten nur bei Bedarf geholt werden. */
@@ -566,6 +596,7 @@ export interface ActiveLayers {
   vehicles: boolean;
   emergency: boolean;
   quakes: boolean;
+  lightning: boolean;
   aurora: boolean;
   fire: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
@@ -609,6 +640,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   aprs: false,
   wind: false,
   night: false,
+  lightning: false,
   stops: false,
   muf: false,
   news: false,
@@ -634,6 +666,7 @@ export function LageMap({
   flowAvailable,
   aisAvailable,
   aprsAvailable,
+  lightningAvailable,
   offlineCode,
   route,
   itinerary,
@@ -646,6 +679,7 @@ export function LageMap({
   onTripClear,
   emergency,
   quakes,
+  lightning,
   aurora,
   fire,
   flyTo,
@@ -665,6 +699,8 @@ export function LageMap({
   onViewport,
   onLayersChange,
   hiddenLayers,
+  onActiveLayers,
+  applyLayers,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -680,6 +716,8 @@ export function LageMap({
   onStopClickRef.current = onStopClick;
   const onVehicleClickRef = useRef(onVehicleClick);
   onVehicleClickRef.current = onVehicleClick;
+  const onActiveLayersRef = useRef(onActiveLayers);
+  onActiveLayersRef.current = onActiveLayers;
   /** Bereits geladene Pegelverläufe (null = Abruf fehlgeschlagen). */
   const pegelHistory = useRef<Map<string, WaterLevelHistory | null>>(new Map());
   const stopsRef = useRef(stops);
@@ -721,6 +759,7 @@ export function LageMap({
     vehicles: showVehicles,
     emergency: showEmergency,
     quakes: showQuakes,
+    lightning: showLightning,
     aurora: showAurora,
     fire: showFire,
   } = on;
@@ -764,15 +803,41 @@ export function LageMap({
         vehicles: showVehicles,
         emergency: showEmergency,
         quakes: showQuakes,
+        lightning: showLightning,
         aurora: showAurora,
         fire: showFire,
         aprsTargets,
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
-      showVehicles, showEmergency, showQuakes, showAurora, showFire, aprsTargets, onLayersChange,
+      showVehicles, showEmergency, showQuakes, showLightning, showAurora, showFire, aprsTargets,
+      onLayersChange,
     ],
   );
+
+  // Vollständige Liste der eingeschalteten Zeilen — die Einstellungen machen
+  // daraus auf Wunsch eine gespeicherte Karte.
+  const activeIds: LayerRowId[] = [
+    ...(Object.keys(on) as LayerId[]).filter((id) => on[id]),
+    ...(windLabels ? (['wind-labels'] as const) : []),
+  ];
+  const activeKey = activeIds.join(',');
+  useEffect(() => {
+    onActiveLayersRef.current?.(activeKey ? (activeKey.split(',') as LayerRowId[]) : []);
+  }, [activeKey]);
+
+  // Eine gespeicherte Karte anwenden: genau ihre Ebenen an, der Rest aus.
+  useEffect(() => {
+    if (!applyLayers) return;
+    const wanted = new Set(applyLayers.layers);
+    setOn(() => {
+      const next = { ...ALL_LAYERS_OFF };
+      for (const id of wanted) if (id !== 'wind-labels') next[id as LayerId] = true;
+      return next;
+    });
+    setWindLabels(wanted.has('wind-labels'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyLayers?.key]);
 
   // Nachschlagetabellen für die Klick-Popups
   const aircraftById = useRef<Map<string, Aircraft>>(new Map());
@@ -1871,6 +1936,88 @@ export function LageMap({
     };
   }, [ready, styleEpoch]);
 
+  /* ---------- Blitze ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('lightning')) return;
+    map.addSource('lightning', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    // Zwei Ebenen: ein heller Kern und ein weicher Schein — so sind auch
+    // einzelne Entladungen auf hellem wie dunklem Grund zu sehen.
+    map.addLayer({
+      id: 'lightning-glow',
+      type: 'circle',
+      source: 'lightning',
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 'age'], 0, 13, 1, 5],
+        'circle-color': '#e3b505',
+        'circle-opacity': ['interpolate', ['linear'], ['get', 'age'], 0, 0.35, 1, 0.06],
+        'circle-blur': 0.9,
+      },
+    });
+    map.addLayer({
+      id: 'lightning',
+      type: 'circle',
+      source: 'lightning',
+      paint: {
+        // Frische Blitze sind größer und weiß-gelb, ältere klein und blass —
+        // die Alterung ist damit auch ohne Farbsehen erkennbar.
+        'circle-radius': ['interpolate', ['linear'], ['get', 'age'], 0, 5, 1, 2],
+        'circle-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'age'],
+          0,
+          '#fff6c9',
+          0.25,
+          '#e3b505',
+          1,
+          '#8a6a12',
+        ],
+        'circle-opacity': ['interpolate', ['linear'], ['get', 'age'], 0, 1, 1, 0.45],
+        'circle-stroke-width': ['interpolate', ['linear'], ['get', 'age'], 0, 1.4, 1, 0],
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('lightning') as GeoJSONSource | undefined;
+    if (!src) return;
+    const now = Date.now();
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showLightning ? lightning : []).map((s, i) => ({
+        type: 'Feature',
+        properties: {
+          index: i,
+          // 0 = eben erst, 1 = am Ende des Zeitfensters (30 Minuten).
+          age: Math.max(0, Math.min(1, (now - Date.parse(s.time)) / (30 * 60_000))),
+        },
+        geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+      })),
+    });
+  }, [lightning, showLightning, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const s = index != null ? lightning[index] : undefined;
+      if (s) warnPopup.current!.setLngLat(e.lngLat).setHTML(lightningPopupHtml(s)).addTo(map);
+    };
+    map.on('click', 'lightning', onClick);
+    return () => {
+      map.off('click', 'lightning', onClick);
+    };
+  }, [lightning, ready, styleEpoch]);
+
   /* ---------- Erdbeben ---------- */
 
   useEffect(() => {
@@ -2356,7 +2503,12 @@ export function LageMap({
   // (layerCatalog.ts), hier kommen nur Schaltzustand und das dazu, was von
   // Schlüsseln, geladenen Regionen oder den Einstellungen abhängt.
   const active: Record<LayerRowId, boolean> = { ...on, 'wind-labels': windLabels };
-  const availability = { flow: flowAvailable, ais: aisAvailable, aprs: aprsAvailable };
+  const availability = {
+    flow: flowAvailable,
+    ais: aisAvailable,
+    aprs: aprsAvailable,
+    lightning: lightningAvailable,
+  };
   const hidden = new Set(hiddenLayers);
   const layerOptions: LayerOption[] = LAYER_CATALOG.filter((l) => {
     if (hidden.has(l.id)) return false;
@@ -2597,6 +2749,25 @@ export function LageMap({
                     {step.label}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+          {showLightning && (
+            <div className="legend" aria-label="Blitze nach Alter">
+              <span className="legend-title">Blitze</span>
+              <div className="radar-scale">
+                <span className="rs-step">
+                  <i style={{ background: '#fff6c9', border: '1px solid #b58a10' }} />
+                  eben
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: '#e3b505' }} />
+                  10 min
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: '#8a6a12' }} />
+                  30 min
+                </span>
               </div>
             </div>
           )}

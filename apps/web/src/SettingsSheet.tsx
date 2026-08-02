@@ -3,23 +3,44 @@ import { Sheet } from './Sheet.js';
 import { ALWAYS_SHOWN, LAYER_CATALOG, type LayerRowId } from './layerCatalog.js';
 import { PROJECTS, SOURCE_BY_KEY, SOURCE_GROUPS } from './sources.js';
 import { REFRESH_CHOICES, type Settings } from './settings.js';
+import {
+  DEFAULT_SECONDS,
+  newPresetId,
+  type MapPreset,
+  type SlideshowSettings,
+} from './mapPresets.js';
 
 interface Props {
   settings: Settings;
   onChange: (next: Settings) => void;
   /** Welche Ebenen der Server überhaupt anbietet (Schlüssel vorhanden). */
-  available: { flow: boolean; ais: boolean; aprs: boolean };
+  available: { flow: boolean; ais: boolean; aprs: boolean; lightning: boolean };
   onOpenRegions: () => void;
   onClose: () => void;
+  /* --- Diashow --- */
+  presets: MapPreset[];
+  onPresets: (next: MapPreset[]) => void;
+  slideshow: SlideshowSettings;
+  onSlideshow: (next: SlideshowSettings) => void;
+  /** Gerade eingeschaltete Ebenen — Vorlage für „Aktuelle Ansicht sichern". */
+  activeLayers: LayerRowId[];
+  /** Eine Karte zur Ansicht auf die Karte legen. */
+  onPreview: (preset: MapPreset) => void;
+  /** Diashow starten (schließt das Blatt). */
+  onStart: () => void;
 }
 
-type Tab = 'ebenen' | 'app' | 'quellen';
+type Tab = 'ebenen' | 'diashow' | 'app' | 'quellen';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'ebenen', label: 'Ebenen' },
+  { id: 'diashow', label: 'Diashow' },
   { id: 'app', label: 'App' },
   { id: 'quellen', label: 'Quellen' },
 ];
+
+/** Standzeiten zur Auswahl (Sekunden). */
+const DWELL_CHOICES = [10, 20, 30, 60, 120];
 
 /**
  * Einstellungen und Herkunft der Daten.
@@ -125,6 +146,19 @@ export function SettingsSheet(props: Props) {
             </div>
           ))}
         </>
+      )}
+
+      {tab === 'diashow' && (
+        <SlideshowTab
+          presets={props.presets}
+          onPresets={props.onPresets}
+          slideshow={props.slideshow}
+          onSlideshow={props.onSlideshow}
+          activeLayers={props.activeLayers}
+          hidden={hidden}
+          onPreview={props.onPreview}
+          onStart={props.onStart}
+        />
       )}
 
       {tab === 'app' && (
@@ -262,5 +296,197 @@ export function SettingsSheet(props: Props) {
         </>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * Reiter „Diashow": Karten anlegen, ordnen, Standzeit setzen, starten.
+ *
+ * Eine „Karte" ist nichts weiter als eine Liste eingeschalteter Ebenen. Sie
+ * entsteht deshalb aus der aktuellen Ansicht — was man auf der Karte sieht,
+ * wird gesichert. Das erspart eine zweite Ebenen-Auswahl an dieser Stelle.
+ */
+function SlideshowTab(props: {
+  presets: MapPreset[];
+  onPresets: (next: MapPreset[]) => void;
+  slideshow: SlideshowSettings;
+  onSlideshow: (next: SlideshowSettings) => void;
+  activeLayers: LayerRowId[];
+  hidden: Set<LayerRowId>;
+  onPreview: (preset: MapPreset) => void;
+  onStart: () => void;
+}) {
+  const { presets } = props;
+  const nameOf = (id: LayerRowId) => LAYER_CATALOG.find((l) => l.id === id)?.label ?? id;
+  /** Ausgeblendete Ebenen gehören nicht in eine Karte — man fände sie nicht wieder. */
+  const pickable = () => props.activeLayers.filter((id) => !props.hidden.has(id));
+
+  const update = (id: string, patch: Partial<MapPreset>) =>
+    props.onPresets(presets.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+
+  const move = (index: number, by: number) => {
+    const to = index + by;
+    if (to < 0 || to >= presets.length) return;
+    const next = [...presets];
+    const [moved] = next.splice(index, 1);
+    next.splice(to, 0, moved!);
+    props.onPresets(next);
+  };
+
+  const addCurrent = () =>
+    props.onPresets([
+      ...presets,
+      { id: newPresetId(), name: `Karte ${presets.length + 1}`, layers: pickable(), seconds: DEFAULT_SECONDS },
+    ]);
+
+  const total = presets.reduce((sum, p) => sum + p.seconds, 0);
+
+  return (
+    <>
+      <p className="muted st-intro">
+        Eine <b>Karte</b> ist eine Zusammenstellung von Ebenen. Mehrere Karten in eine Reihenfolge
+        gebracht und mit Standzeit versehen ergeben eine Diashow — gedacht für einen großen
+        Monitor, der ohne Zutun durchläuft.
+      </p>
+
+      <div className="rp-actions" style={{ marginBottom: 14 }}>
+        <button type="button" className="btn-primary" onClick={addCurrent}>
+          Aktuelle Ansicht als Karte sichern
+        </button>
+        {presets.length > 1 && (
+          <button type="button" className="btn-quiet" onClick={props.onStart}>
+            Diashow starten
+          </button>
+        )}
+      </div>
+
+      {!presets.length && (
+        <p className="muted">
+          Noch keine Karte gesichert. Ebenen auf der Karte einschalten, hierher zurückkommen und
+          sichern — so entsteht die erste.
+        </p>
+      )}
+
+      {!!presets.length && (
+        <>
+          <div className="sect-label">
+            {presets.length} Karten · Durchlauf {Math.round(total / 6) / 10} min
+          </div>
+          <ol className="ps-list">
+            {presets.map((p, i) => (
+              <li key={p.id}>
+                <div className="ps-head">
+                  <span className="ps-num">{i + 1}</span>
+                  <input
+                    className="ps-name"
+                    value={p.name}
+                    aria-label={`Name der ${i + 1}. Karte`}
+                    onChange={(e) => update(p.id, { name: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="ps-btn"
+                    onClick={() => move(i, -1)}
+                    disabled={i === 0}
+                    aria-label="Nach oben"
+                    title="Nach oben"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="ps-btn"
+                    onClick={() => move(i, 1)}
+                    disabled={i === presets.length - 1}
+                    aria-label="Nach unten"
+                    title="Nach unten"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="ps-btn ps-del"
+                    onClick={() => props.onPresets(presets.filter((x) => x.id !== p.id))}
+                    aria-label="Karte löschen"
+                    title="Karte löschen"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="ps-layers">
+                  {p.layers.length ? p.layers.map(nameOf).join(' · ') : 'ohne Ebenen (leere Karte)'}
+                </div>
+                <div className="ps-foot">
+                  <label className="ps-secs">
+                    Standzeit
+                    <select
+                      value={DWELL_CHOICES.includes(p.seconds) ? p.seconds : DEFAULT_SECONDS}
+                      onChange={(e) => update(p.id, { seconds: Number(e.target.value) })}
+                    >
+                      {DWELL_CHOICES.map((sec) => (
+                        <option key={sec} value={sec}>
+                          {sec < 60 ? `${sec} s` : `${sec / 60} min`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" className="btn-quiet" onClick={() => props.onPreview(p)}>
+                    Auf der Karte zeigen
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-quiet"
+                    onClick={() => update(p.id, { layers: pickable() })}
+                    title="Die gerade eingeschalteten Ebenen übernehmen"
+                  >
+                    Ebenen übernehmen
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div className="sect-label" style={{ marginTop: 18 }}>
+            Ablauf
+          </div>
+          <ul className="st-list">
+            <li>
+              <button
+                type="button"
+                className="st-item"
+                role="switch"
+                aria-checked={props.slideshow.mapOnly}
+                onClick={() => props.onSlideshow({ ...props.slideshow, mapOnly: !props.slideshow.mapOnly })}
+              >
+                <span className="st-label">
+                  Nur die Karte zeigen
+                  <span className="st-hint">Kachelspalte ausblenden — für den großen Monitor</span>
+                </span>
+                <span className={`st-switch${props.slideshow.mapOnly ? ' is-on' : ''}`} aria-hidden="true">
+                  <i />
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="st-item"
+                role="switch"
+                aria-checked={props.slideshow.loop}
+                onClick={() => props.onSlideshow({ ...props.slideshow, loop: !props.slideshow.loop })}
+              >
+                <span className="st-label">
+                  Endlos wiederholen
+                  <span className="st-hint">sonst endet die Diashow nach der letzten Karte</span>
+                </span>
+                <span className={`st-switch${props.slideshow.loop ? ' is-on' : ''}`} aria-hidden="true">
+                  <i />
+                </span>
+              </button>
+            </li>
+          </ul>
+        </>
+      )}
+    </>
   );
 }

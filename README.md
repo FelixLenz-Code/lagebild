@@ -53,6 +53,7 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Amateurfunk | aprs.fi (APRS) | nur mit `APRSFI_KEY`, feste Rufzeichenliste |
 | Busse & Bahnen | transitous.org (MOTIS) | Fahrzeuge in Bewegung, ab Zoom 10 |
 | Notfallpunkte | Offline-Suchindex (OSM) | Klinik, Apotheke, Polizei, Feuerwehr — ohne Netz |
+| Blitze | Blitzortung.org | Entladungen der letzten 30 Minuten |
 | Erdbeben | USGS | letzte Woche, ab Stärke 2,5 |
 | Waldbrandgefahr | DWD | Stufe 1–5, Deutschland |
 | Polarlicht | NOAA SWPC (OVATION) | Wahrscheinlichkeit weltweit |
@@ -81,6 +82,8 @@ Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
 Das Zahnrad in der Kopfzeile öffnet ein Blatt mit drei Reitern — hier wächst
 künftig alles hinein, was Einstellung ist:
 
+- **Diashow**: gespeicherte „Karten" (Ebenen-Zusammenstellungen) in eine
+  Reihenfolge bringen und ablaufen lassen — siehe unten.
 - **Ebenen**: jede Kartenebene lässt sich aus dem Menü „Ebenen" nehmen. Wer
   Amateurfunk oder Erdbeben nie braucht, blendet sie aus; die Ebene wird dabei
   ausgeschaltet. Jede Zeile nennt gleich mit, woher ihre Daten kommen. Die
@@ -98,6 +101,26 @@ Die Ebenenliste hat nur **eine** Quelle: `layerCatalog.ts`. Sowohl das Menü auf
 der Karte als auch die Einstellungen bauen daraus ihre Zeilen — sonst driften
 Namen und Gruppen auseinander. `sources.ts` hält die Anbieterliste, `settings.ts`
 den kleinen Speicher.
+
+### Diashow für den großen Monitor
+
+Eine **Karte** ist eine gespeicherte Zusammenstellung von Ebenen. Angelegt wird
+sie aus der aktuellen Ansicht: Ebenen einschalten, in den Einstellungen auf
+„Diashow" wechseln, **„Aktuelle Ansicht als Karte sichern"**. Danach lassen sich
+die Karten umbenennen, mit ↑/↓ ordnen, ihre **Standzeit** wählen (10 s bis
+2 min) und einzeln zur Kontrolle auf die Karte legen; „Ebenen übernehmen"
+aktualisiert eine bestehende Karte auf die gerade sichtbaren Ebenen.
+
+„Diashow starten" schaltet dann selbsttätig weiter. Dabei blendet die App auf
+Wunsch alles außer der Karte aus (Kopfzeile und Kachelspalte verschwinden) —
+gedacht für einen Monitor, der ohne Zutun durchläuft. Die Leiste oben zeigt
+Position, Name und einen Fortschrittsbalken der Standzeit und lässt sich
+bedienen: ‹ › blättern, ❚❚ hält an, ✕ beendet. Per Tastatur: **Pfeiltasten**
+blättern, **Leertaste** hält an, **Esc** beendet — Esc schließt allerdings
+zuerst offene Menüs, deshalb hängt der Lauscher in der Erfassungsphase.
+
+Karten und Ablauf liegen im localStorage (`mapPresets.ts`) und überleben den
+Neustart.
 
 ## Wetter & Regenradar
 
@@ -440,6 +463,28 @@ Kategorie, Schlagzeile, Zeitpunkt und Link; ungenaue Orte sind blasser. Dieselbe
 Symbole stehen in der Nachrichtenliste. In der Nachrichtenliste lässt sich auf
 **„Mit Ort"** umschalten, und ein Klick auf den Ortsnamen schwenkt die Karte
 dorthin.
+
+## Blitze (Blitzortung.org)
+
+Die Ebene **„Blitze"** (Gruppe Gefahren) zeigt die Entladungen der letzten
+30 Minuten: ein heller Kern mit weichem Schein, der mit dem Alter kleiner und
+blasser wird (frisch = weiß-gelb und groß, 30 min = klein und dunkel). Das
+Popup nennt Zeitpunkt, Zahl der Empfangsstationen und die gemeldete
+Ortungsgenauigkeit; die Kachel „Im Ausschnitt" zählt sie mit.
+
+Quelle ist das ehrenamtliche Empfängernetz von
+[Blitzortung.org](https://www.blitzortung.org/), dessen Live-Karte ihre Daten
+über einen WebSocket bezieht — genau den nutzt `/api/lightning`. Die Nachrichten
+sind wörterbuchkomprimiert (LZW-Abkömmling) und werden serverseitig
+entpackt.
+
+**Bitten des Betreibers (eingehalten):** Die Daten stammen von Freiwilligen und
+sind für private, nicht gewerbliche Nutzung gedacht, Quellenangabe erwünscht.
+Deshalb hält der Server **eine einzige** Verbindung für alle Besucher (nicht
+eine je Browser), baut sie mit wachsendem Abstand wieder auf, hält die Treffer
+nur 30 Minuten im Arbeitsspeicher (keine Archivierung) und nennt die Quelle in
+Popup, Ebenen-Menü und Quellenliste. Ohne eingehende Blitze erscheint die Ebene
+gar nicht erst im Menü (`features.lightning` in `/api/health`).
 
 ## Notfallpunkte, Erdbeben, Waldbrand und Polarlicht
 
