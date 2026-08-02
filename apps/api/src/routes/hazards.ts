@@ -1,15 +1,17 @@
 import { Hono } from 'hono';
-import type { AuroraGrid, EarthquakeItem, FireDangerGrid } from '@lagebild/shared';
+import type { AuroraGrid, EarthquakeItem, FireDangerGrid, FireDetection } from '@lagebild/shared';
 import { cached } from '../lib/cache.js';
 import { fetchJson, fetchText } from '../lib/http.js';
 import { envelope } from '../lib/envelope.js';
 import { mapPool } from '../lib/pool.js';
+import { readBbox } from '../lib/geo.js';
 
 /**
  * Weitere Gefahrenlagen für die Karte:
  *
  *   GET /api/hazards/quakes   Erdbeben der letzten Tage (USGS, gemeinfrei)
  *   GET /api/hazards/aurora   Polarlicht-Wahrscheinlichkeit (NOAA OVATION)
+ *   GET /api/hazards/fires    Wärmeanomalien aus dem Satellitenblick (NASA FIRMS)
  *   GET /api/hazards/fire     Waldbrandgefahr in Deutschland (DWD)
  */
 export const hazardsRoute = new Hono();
@@ -228,4 +230,99 @@ hazardsRoute.get('/fire', async (c) => {
       ),
     );
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* Feuer aus dem Satellitenblick (NASA FIRMS)                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Wärmeanomalien der VIIRS-Instrumente auf Suomi-NPP und NOAA-20.
+ *
+ * Der Waldbrandgefahren-Index sagt, wie leicht es brennen *könnte*; hier steht,
+ * wo es tatsächlich heiß ist. NASA/FIRMS veröffentlicht die Detektionen der
+ * letzten 24 Stunden je Kontinent als offene CSV — ohne Schlüssel, das
+ * schlüsselpflichtige API braucht es dafür nicht.
+ *
+ * **Zur Einordnung gehört dazu:** Eine Detektion ist ein heißer Bildpunkt von
+ * ~375 m Kantenlänge, kein bestätigter Brand. Industrieanlagen, Fackeln und
+ * frisch abgeerntete Felder erscheinen ebenso. Deshalb wandern Vertrauensgrad
+ * und Strahlungsleistung mit in die Antwort.
+ */
+const FIRMS_SOURCES = [
+  {
+    satellite: 'Suomi-NPP',
+    url: 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Europe_24h.csv',
+  },
+  {
+    satellite: 'NOAA-20',
+    url: 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Europe_24h.csv',
+  },
+];
+
+/** Zeile der FIRMS-CSV → Detektion. */
+function parseFires(csv: string, satellite: string): FireDetection[] {
+  const lines = csv.split('\n');
+  const head = (lines[0] ?? '').trim().split(',');
+  const col = (name: string) => head.indexOf(name);
+  const iLat = col('latitude');
+  const iLon = col('longitude');
+  const iDate = col('acq_date');
+  const iTime = col('acq_time');
+  const iConf = col('confidence');
+  const iFrp = col('frp');
+  const iDay = col('daynight');
+  if (iLat < 0 || iLon < 0) return [];
+
+  const out: FireDetection[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i]!.split(',');
+    if (parts.length < head.length) continue;
+    const lat = Number(parts[iLat]);
+    const lon = Number(parts[iLon]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    // Zeit kommt als „0117" (UTC) neben dem Datum.
+    const hhmm = (parts[iTime] ?? '').padStart(4, '0');
+    const at = `${parts[iDate]}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`;
+    out.push({
+      lat,
+      lon,
+      at,
+      satellite,
+      confidence: (parts[iConf] ?? 'nominal').trim(),
+      frpMW: Number(parts[iFrp]) || 0,
+      night: (parts[iDay] ?? '').trim() === 'N',
+    });
+  }
+  return out;
+}
+
+hazardsRoute.get('/fires', async (c) => {
+  const bbox = readBbox(c);
+
+  // FIRMS erneuert die Dateien wenige Male am Tag — halbstündlich reicht.
+  const cache = cached<FireDetection[]>('hazards:fires', 1800);
+  let all = cache.hit;
+  if (!all) {
+    const parts = await Promise.all(
+      FIRMS_SOURCES.map(async (s) => {
+        try {
+          return parseFires(await fetchText(s.url, { timeoutMs: 20000 }), s.satellite);
+        } catch {
+          return [] as FireDetection[];
+        }
+      }),
+    );
+    all = cache.set(parts.flat());
+  }
+
+  let list = all;
+  if (bbox) {
+    list = list.filter(
+      (f) => f.lon >= bbox.west && f.lon <= bbox.east && f.lat >= bbox.south && f.lat <= bbox.north,
+    );
+  }
+  // Die stärksten zuerst — bei Flächenbränden hängen tausende Punkte zusammen.
+  const data = [...list].sort((a, b) => b.frpMW - a.frpMW).slice(0, 1500);
+  return c.json(envelope(data, 'NASA FIRMS (VIIRS)'));
 });

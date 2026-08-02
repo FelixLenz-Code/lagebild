@@ -11,7 +11,7 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { STOP_COLOR } from './mapIcons.js';
@@ -40,12 +40,20 @@ import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
 import { loadFavorites, saveFavorites, type Place } from './places.js';
 import { Sheet } from './Sheet.js';
-import { WeatherDetail, WarningsDetail, TrafficDetail, PegelDetail, NewsDetail, TransitDetail } from './details.js';
+import {
+  WeatherDetail,
+  WarningsDetail,
+  CivilWarningsDetail,
+  TrafficDetail,
+  PegelDetail,
+  NewsDetail,
+  TransitDetail,
+} from './details.js';
 import { kindOfProduct, relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
 import { WeatherIcon } from './WeatherIcon.js';
 import { sunAltitude } from './sun.js';
 
-type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'transit' | 'hf';
+type DetailKey = 'weather' | 'warnings' | 'nina' | 'traffic' | 'pegel' | 'news' | 'transit' | 'hf';
 
 /** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
 function boxAround(c: { lat: number; lon: number }): Bbox {
@@ -164,6 +172,9 @@ export function App() {
     emergency: false,
     quakes: false,
     lightning: false,
+    nina: false,
+    fires: false,
+    radiation: false,
     aurora: false,
     fire: false,
     aprsTargets: [],
@@ -218,6 +229,24 @@ export function App() {
     [viewKey, refreshTick],
     { enabled: layers.lightning, refreshMs: 20000, cache: false },
   );
+  // Behördenwarnungen folgen dem Ausschnitt; sie ändern sich selten, sollen im
+  // Ernstfall aber zügig erscheinen.
+  const nina = useApi(`nina:${viewKey}`, () => fetchNina(viewport), [viewKey, refreshTick], {
+    enabled: layers.nina,
+    refreshMs: 120000,
+  });
+  // Satelliten-Feuer und Strahlungsmessnetz folgen dem Ausschnitt; beide
+  // Quellen erneuern sich langsam (FIRMS wenige Male am Tag, ODL stündlich).
+  const fires = useApi(`fires:${viewKey}`, () => fetchFires(viewport), [viewKey, refreshTick], {
+    enabled: layers.fires,
+    refreshMs: 1800_000,
+  });
+  const radiation = useApi(
+    `radiation:${viewKey}`,
+    () => fetchRadiation(viewport),
+    [viewKey, refreshTick],
+    { enabled: layers.radiation, refreshMs: 900_000 },
+  );
   const quakes = useApi('quakes', () => fetchQuakes(), [refreshTick], {
     enabled: layers.quakes,
     refreshMs: 600_000,
@@ -240,6 +269,10 @@ export function App() {
   });
 
   const news = useApi(`news:${geoKey}`, () => fetchNews(coords), [coords, refreshTick]);
+  // Pollenflug erneuert der DWD einmal täglich — stündlich nachfragen genügt.
+  const pollen = useApi(`pollen:${geoKey}`, () => fetchPollen(coords), [coords, refreshTick], {
+    refreshMs: 3600_000,
+  });
   const health = useApi('health', () => fetchHealth(), [refreshTick]);
   const flowAvailable = health.data?.features?.flow ?? false;
   const aisAvailable = health.data?.features?.ais ?? false;
@@ -694,6 +727,7 @@ export function App() {
   const detailInfo: Record<DetailKey, { title: string; source?: string; savedAt: number | null }> = {
     weather: { title: `Wetter — ${place}`, source: weather.data?.source, savedAt: weather.savedAt },
     warnings: { title: 'Amtliche Warnungen', source: warnings.data?.source, savedAt: warnings.savedAt },
+    nina: { title: 'Warnungen der Behörden', source: nina.data?.source, savedAt: nina.savedAt },
     traffic: { title: 'Verkehr im Ausschnitt', source: traffic.data?.source, savedAt: traffic.savedAt },
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
     transit: { title: 'Bahn / ÖPNV in der Nähe', source: transit.data?.source, savedAt: transit.savedAt },
@@ -853,6 +887,9 @@ export function App() {
             emergency={layers.emergency ? (emergencyState.data ?? []) : []}
             quakes={quakes.data?.data ?? []}
             lightning={lightning.data?.data ?? []}
+            nina={nina.data?.data ?? []}
+            fires={fires.data?.data ?? []}
+            radiation={radiation.data?.data ?? []}
             lightningAvailable={lightningAvailable}
             aurora={aurora.data?.data ?? null}
             fire={fire.data?.data ?? null}
@@ -1048,6 +1085,14 @@ export function App() {
               value={layers.aprs ? (aprs.data?.data.length ?? null) : null}
               loading={layers.aprs && aprs.loading}
               hint={!layers.aprs ? 'Ebene ausgeschaltet' : undefined}
+            />
+            <CountCell
+              label="Behörden"
+              value={layers.nina ? (nina.data?.data.length ?? null) : null}
+              loading={layers.nina && nina.loading}
+              color={nina.data?.data.length ? 'var(--sev4)' : undefined}
+              hint={layers.nina ? 'Warnungen von Behörden' : 'Ebene ausgeschaltet'}
+              onOpen={nina.data?.data.length ? () => setDetail('nina') : undefined}
             />
             <CountCell
               label="Blitze"
@@ -1327,8 +1372,17 @@ export function App() {
 
       {detail && (
         <Sheet title={detailInfo[detail].title} meta={detailMeta(detail)} onClose={() => setDetail(null)}>
-          {detail === 'weather' && w && <WeatherDetail w={w} forecast={fc} air={airNow} coords={coords} />}
+          {detail === 'weather' && w && (
+            <WeatherDetail
+              w={w}
+              forecast={fc}
+              air={airNow}
+              pollen={pollen.data?.data ?? null}
+              coords={coords}
+            />
+          )}
           {detail === 'warnings' && <WarningsDetail list={uniqueWarnings} />}
+          {detail === 'nina' && <CivilWarningsDetail list={nina.data?.data ?? []} />}
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
           {detail === 'transit' && (

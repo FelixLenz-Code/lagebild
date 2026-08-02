@@ -6,10 +6,12 @@ import type {
   WeatherNow,
   WeatherForecast,
   WarningFeature,
+  CivilWarning,
   TrafficIncident,
   WaterLevel,
   NewsItem,
   AirQuality,
+  PollenForecast,
   TransitStop,
 } from '@lagebild/shared';
 import {
@@ -42,11 +44,13 @@ export function WeatherDetail({
   w,
   forecast,
   air,
+  pollen,
   coords,
 }: {
   w: WeatherNow;
   forecast?: WeatherForecast | null;
   air?: AirQuality | null;
+  pollen?: PollenForecast | null;
   coords: Coords;
 }) {
   const today = forecast?.daily[0];
@@ -74,6 +78,67 @@ export function WeatherDetail({
       {forecast && forecast.hourly.length > 0 && <HourlyForecast hourly={forecast.hourly} coords={coords} />}
       {forecast && forecast.daily.length > 0 && <DailyList daily={forecast.daily} />}
       {air && <AirSection air={air} />}
+      {pollen && <PollenSection pollen={pollen} />}
+    </>
+  );
+}
+
+/**
+ * Pollenflug als Abschnitt der Wetteransicht.
+ *
+ * Der DWD gibt den Index je Region heraus, nicht je Ort — die Region steht
+ * deshalb dabei. Gibt es mehrere Teilregionen, zeigt die App den höheren Wert;
+ * auch das wird genannt, damit niemand die Zahl für punktgenau hält.
+ */
+function PollenSection({ pollen }: { pollen: PollenForecast }) {
+  // Arten ohne jede Belastung stehen nur im Nachsatz — sonst acht leere Zeilen.
+  const active = pollen.kinds.filter(
+    (k) => k.today.value > 0 || k.tomorrow.value > 0 || k.dayAfter.value > 0,
+  );
+  const quiet = pollen.kinds.filter((k) => !active.includes(k));
+  const bar = (value: number) => Math.round((value / 3) * 100);
+
+  return (
+    <>
+      <h4 className="sec-title">Pollenflug</h4>
+      {active.length === 0 && <p className="muted">Zurzeit fliegen keine der acht Arten.</p>}
+      {active.length > 0 && (
+        <table className="pollen">
+          <thead>
+            <tr>
+              <th scope="col">Art</th>
+              <th scope="col">heute</th>
+              <th scope="col">morgen</th>
+              <th scope="col">übermorgen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {active.map((k) => (
+              <tr key={k.kind}>
+                <th scope="row">{k.kind}</th>
+                {[k.today, k.tomorrow, k.dayAfter].map((load, i) => (
+                  <td key={i} title={load.text}>
+                    <span className="pl-bar" aria-hidden="true">
+                      <i style={{ width: `${bar(load.value)}%` }} />
+                    </span>
+                    <span className="pl-text">{load.text}</span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {quiet.length > 0 && (
+        <p className="muted pollen-quiet">Ohne Belastung: {quiet.map((k) => k.kind).join(', ')}.</p>
+      )}
+      <p className="sr-hint">
+        Region {pollen.regionName}
+        {pollen.partRegions.length > 1
+          ? ` (höchster Wert aus ${pollen.partRegions.length} Teilregionen)`
+          : ''}
+        {pollen.updatedAt ? ` · Stand ${pollen.updatedAt}` : ''}
+      </p>
     </>
   );
 }
@@ -430,6 +495,37 @@ export function WarningsDetail({ list }: { list: WarningFeature[] }) {
           </div>
           {a.description && <p className="alert-desc">{a.description}</p>}
           {a.instruction && <p className="alert-desc alert-instruction">{a.instruction}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Behördenwarnungen (BBK/NINA) als Liste — mit Herkunft und Gebiet. */
+export function CivilWarningsDetail({ list }: { list: CivilWarning[] }) {
+  if (list.length === 0) return <p className="muted">Keine Behördenwarnungen im Kartenausschnitt.</p>;
+  return (
+    <div className="detail-list">
+      {list.map((w) => (
+        <div className="alert-block" key={w.id} style={{ borderColor: SEVERITY_VAR[w.severity] }}>
+          <div className="alert-top">
+            <span className="sev-pill" style={{ background: SEVERITY_VAR[w.severity] }}>
+              {SEVERITY_DE[w.severity]}
+            </span>
+            <b>{w.headline}</b>
+          </div>
+          <div className="alert-meta mono">
+            {w.channel}
+            {w.areaDesc ? ` · ${w.areaDesc}` : ''}
+            {w.expires ? ` · bis ${formatDateTime(w.expires)}` : w.onset ? ` · seit ${formatDateTime(w.onset)}` : ''}
+          </div>
+          {w.description && <p className="alert-desc">{w.description}</p>}
+          {w.instruction && <p className="alert-desc alert-instruction">{w.instruction}</p>}
+          {w.web && (
+            <a className="alert-link" href={w.web} target="_blank" rel="noreferrer">
+              Mehr dazu
+            </a>
+          )}
         </div>
       ))}
     </div>

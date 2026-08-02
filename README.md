@@ -43,7 +43,10 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 
 | Ebene | Quelle | Hinweis |
 | --- | --- | --- |
-| Warnungen | DWD-GeoServer (NINA-Skala) | mit Warnstufen-Filter |
+| Unwetterwarnungen | DWD-GeoServer | Gruppe Wetter, mit Warnstufen-Filter |
+| Behördenwarnungen | BBK / NINA | MoWaS, KATWARN, BIWAPP, Polizei, Hochwasser |
+| Feuer (Satellit) | NASA FIRMS (VIIRS) | Wärmeanomalien der letzten 24 h |
+| Strahlung (ODL) | Bundesamt für Strahlenschutz | ~1700 Sonden, stündlich |
 | Regenradar | DWD RADOLAN-RV / RainViewer | Zeitleiste bis +2 h |
 | Wind | Open-Meteo | animiertes Strömungsbild (10 m über Grund) |
 | Verkehrsfluss | TomTom | nur mit gültigem `TOMTOM_KEY` |
@@ -467,6 +470,74 @@ Kategorie, Schlagzeile, Zeitpunkt und Link; ungenaue Orte sind blasser. Dieselbe
 Symbole stehen in der Nachrichtenliste. In der Nachrichtenliste lässt sich auf
 **„Mit Ort"** umschalten, und ein Klick auf den Ortsnamen schwenkt die Karte
 dorthin.
+
+## Behördenwarnungen (BBK / NINA)
+
+Die Ebene **„Warnungen"** heißt jetzt **„Unwetterwarnungen"** und steht bei den
+Wetterebenen — sie zeigt weiterhin nur den DWD. Alles andere, was über das
+Warnsystem des Bundes läuft, liegt in der neuen Ebene **„Behördenwarnungen"**
+(Gruppe Gefahren):
+
+| Kanal | Inhalt |
+| --- | --- |
+| MoWaS | Warnungen von Behörden: Gefahrstoffe, Trinkwasser, Bombenfund, Evakuierung |
+| KATWARN, BIWAPP | kommunale Warnsysteme |
+| Polizei | polizeiliche Gefahrenmeldungen |
+| LHP | Länderübergreifendes Hochwasserportal |
+
+`/api/nina` fragt `warnung.bund.de/api31` ab — frei und ohne Schlüssel, aber
+**zweistufig**: Die Übersicht je Kanal (`<kanal>/mapData.json`) nennt nur
+Kennung, Titel und Stufe; Text und Fläche kommen einzeln aus
+`warnings/<id>.json` und `warnings/<id>.geojson`. Deshalb wird die Übersicht
+kurz (60 s) und die Einzelmeldung lange (15 min, Schlüssel samt Versionszähler)
+gecacht, und pro Abruf werden höchstens 80 Meldungen aufgelöst. Zurückgezogene
+Meldungen (`Cancel`) fliegen raus, CAP-Texte werden von HTML befreit.
+
+Auf der Karte: Fläche in der Farbe der Warnstufe mit **gestricheltem** Rand
+(unterscheidbar, wenn sie über einer DWD-Warnfläche liegt) und ein Warndreieck
+in der Mitte — kleine Gebiete sind sonst kaum zu treffen. Das Popup nennt Stufe,
+Kanal, Gebiet, Gültigkeit, Beschreibung, Handlungsanweisung und verlinkt die
+Behörde; die Kachel „Im Ausschnitt" zählt sie unter **Behörden** und öffnet die
+Liste.
+
+## Feuer aus dem Satellitenblick (NASA FIRMS)
+
+Die Waldbrandgefahr sagt, wie leicht es brennen *könnte* — die Ebene **„Feuer
+(Satellit)"** zeigt, wo es tatsächlich heiß ist. Quelle sind die
+VIIRS-Instrumente auf Suomi-NPP und NOAA-20; NASA veröffentlicht die
+Detektionen der letzten 24 Stunden je Kontinent als **offene CSV ohne
+Schlüssel** (das schlüsselpflichtige API braucht es dafür nicht). Kreisgröße und
+Farbe folgen der Strahlungsleistung (FRP in Megawatt).
+
+**Der Vorbehalt gehört dazu und steht im Popup:** Eine Detektion ist ein heißer
+Bildpunkt von etwa 375 m Kantenlänge, kein bestätigter Brand — Industrie,
+Fackeln oder Feldarbeit sehen für den Satelliten genauso aus.
+
+## Strahlung: Ortsdosisleistung (BfS)
+
+Rund 1700 Sonden des Bundesamts für Strahlenschutz melden stündlich die
+Gamma-Ortsdosisleistung; `imis.bfs.de` gibt sie als offenen WFS heraus. Die
+Ebene **„Strahlung (ODL)"** zeichnet sie als Punkte, deren Farbe erst über dem
+natürlichen Untergrund warm wird.
+
+Zur Einordnung: In Deutschland liegt der Untergrund je nach Geologie und Höhe
+etwa zwischen 0,05 und 0,18 µSv/h. Auffällig ist deshalb nicht ein hoher
+Absolutwert, sondern ein Wert deutlich über dem, was diese Sonde sonst zeigt —
+das Popup nennt den Messwert, eine Einordnung im Klartext („im normalen
+Bereich", „leicht erhöht", „deutlich erhöht") und den natürlichen Anteil aus
+kosmischer und terrestrischer Strahlung.
+
+## Pollenflug (DWD)
+
+Im Wetterblatt steht unten der **Pollenflug-Gefahrenindex** des DWD: acht Arten
+(Hasel bis Ambrosia) für heute, morgen und übermorgen, als Balken mit Text.
+Arten ohne Belastung stehen zusammengefasst in einer Zeile darunter.
+
+Der DWD gibt den Index **je Region** heraus, nicht je Ort — und die Regionen
+kommen ohne Geometrie. `/api/pollen` ordnet deshalb über das Bundesland zu; hat
+eine Region mehrere Teilregionen, gewinnt der **höhere** Wert (im Zweifel lieber
+eine Warnung zu viel). Beides steht unter der Tabelle, damit niemand die Zahl
+für punktgenau hält. Erneuert wird einmal täglich gegen 11 Uhr.
 
 ## Blitze (Blitzortung.org)
 

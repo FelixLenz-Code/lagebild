@@ -15,6 +15,10 @@ import type {
   HfMufGrid,
   TransitVehicle,
   LightningStrike,
+  CivilWarning,
+  FireDetection,
+  RadiationStation,
+  PollenForecast,
   EarthquakeItem,
   AuroraGrid,
   FireDangerGrid,
@@ -107,6 +111,10 @@ export const fetchRadarForecast = (c: Coords): Promise<ApiEnvelope<RadarForecast
 export const fetchVehicles = (b: Bbox): Promise<ApiEnvelope<TransitVehicle[]>> =>
   getJson(`/api/vehicles?${bboxQ(b)}`);
 
+/** Behördenwarnungen (BBK/NINA), die den Ausschnitt berühren. */
+export const fetchNina = (b: Bbox): Promise<ApiEnvelope<CivilWarning[]>> =>
+  getJson(`/api/nina?${bboxQ(b)}`);
+
 /** Blitzentladungen im Ausschnitt (Blitzortung.org, letzte Minuten). */
 export const fetchLightning = (b: Bbox, minutes = 30): Promise<ApiEnvelope<LightningStrike[]>> =>
   getJson(`/api/lightning?${bboxQ(b)}&minutes=${minutes}`);
@@ -114,6 +122,18 @@ export const fetchLightning = (b: Bbox, minutes = 30): Promise<ApiEnvelope<Light
 /** Erdbeben der letzten Woche ab Stärke 2,5. */
 export const fetchQuakes = (): Promise<ApiEnvelope<EarthquakeItem[]>> =>
   getJson(`/api/hazards/quakes`);
+
+/** Wärmeanomalien der letzten 24 h im Ausschnitt (NASA FIRMS). */
+export const fetchFires = (b: Bbox): Promise<ApiEnvelope<FireDetection[]>> =>
+  getJson(`/api/hazards/fires?${bboxQ(b)}`);
+
+/** Ortsdosisleistung im Ausschnitt (BfS). */
+export const fetchRadiation = (b: Bbox): Promise<ApiEnvelope<RadiationStation[]>> =>
+  getJson(`/api/radiation?${bboxQ(b)}`);
+
+/** Pollenbelastung in der Region des Standorts (DWD). */
+export const fetchPollen = (c: Coords): Promise<ApiEnvelope<PollenForecast | null>> =>
+  getJson(`/api/pollen?lat=${c.lat}&lon=${c.lon}`);
 
 /** Polarlicht-Wahrscheinlichkeit als weltweites Gitter. */
 export const fetchAurora = (): Promise<ApiEnvelope<AuroraGrid>> => getJson(`/api/hazards/aurora`);

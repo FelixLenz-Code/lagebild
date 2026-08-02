@@ -27,7 +27,10 @@ export type LayerId =
   | 'quakes'
   | 'aurora'
   | 'fire'
-  | 'lightning';
+  | 'lightning'
+  | 'nina'
+  | 'fires'
+  | 'radiation';
 
 /** Zusätzlich zu den Ebenen: eingerückte Anzeigeoptionen. */
 export type LayerRowId = LayerId | 'wind-labels';
@@ -52,8 +55,11 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'emergency', label: 'Notfallpunkte', color: '#a92318', group: 'Lage', hint: 'Klinik, Apotheke, Polizei, Feuerwehr — offline', source: 'osm' },
   { id: 'quakes', label: 'Erdbeben', color: '#8a4b1d', group: 'Lage', hint: 'letzte Woche, ab Stärke 2,5', source: 'usgs' },
   { id: 'news', label: 'Nachrichten', color: '#6a7580', group: 'Lage', hint: 'regionale Meldungen mit Ortsbezug', source: 'tagesschau' },
-  { id: 'warnings', label: 'Warnungen', color: '#a92318', group: 'Gefahren', hint: 'amtliche Unwetterwarnungen', source: 'dwd-geo' },
+  { id: 'nina', label: 'Behördenwarnungen', color: '#6c2790', group: 'Gefahren', hint: 'MoWaS, KATWARN, BIWAPP, Polizei, Hochwasser', source: 'nina' },
+  { id: 'fires', label: 'Feuer (Satellit)', color: '#e0521f', group: 'Gefahren', hint: 'Wärmeanomalien der letzten 24 h', source: 'firms' },
+  { id: 'radiation', label: 'Strahlung (ODL)', color: '#7a5cc0', group: 'Gefahren', hint: 'Ortsdosisleistung, ~1700 Sonden', source: 'bfs' },
   { id: 'fire', label: 'Waldbrandgefahr', color: 'linear-gradient(90deg,#3f8f4a,#e3b505,#a92318)', group: 'Gefahren', hint: 'DWD-Index, Stufe 1–5', source: 'dwd-open' },
+  { id: 'warnings', label: 'Unwetterwarnungen', color: '#a92318', group: 'Wetter', hint: 'amtlich vom DWD', source: 'dwd-geo' },
   { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', hint: 'Messung und Vorhersage bis +2 h', source: 'brightsky' },
   { id: 'lightning', label: 'Blitze', color: '#e3b505', group: 'Wetter', hint: 'Entladungen der letzten 30 Minuten', needs: 'lightning', source: 'blitzortung' },
   { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Strömungsbild, 10 m über Grund', source: 'openmeteo' },

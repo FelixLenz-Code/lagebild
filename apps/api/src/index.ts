@@ -26,6 +26,9 @@ import { hfRoute } from './routes/hf.js';
 import { vehiclesRoute } from './routes/vehicles.js';
 import { hazardsRoute } from './routes/hazards.js';
 import { lightningRoute, startLightningCollector, lightningUsable } from './routes/lightning.js';
+import { ninaRoute } from './routes/nina.js';
+import { radiationRoute } from './routes/radiation.js';
+import { pollenRoute } from './routes/pollen.js';
 
 const app = new Hono();
 
@@ -67,6 +70,9 @@ app.route('/api/hf', hfRoute);
 app.route('/api/vehicles', vehiclesRoute);
 app.route('/api/hazards', hazardsRoute);
 app.route('/api/lightning', lightningRoute);
+app.route('/api/nina', ninaRoute);
+app.route('/api/radiation', radiationRoute);
+app.route('/api/pollen', pollenRoute);
 // Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
 app.use(
   '/api/maps/*',

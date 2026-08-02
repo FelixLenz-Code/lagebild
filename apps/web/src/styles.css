@@ -107,6 +107,17 @@ svg { display: block; }
 }
 .mapcontrols > * { pointer-events: auto; }
 .maptools { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Pollenflug im Wetterblatt */
+.pollen { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.pollen th, .pollen td { text-align: left; padding: 6px 8px 6px 0; vertical-align: top; }
+.pollen thead th { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); }
+.pollen tbody th { font-weight: 650; color: var(--ink); white-space: nowrap; }
+.pollen tbody tr + tr th, .pollen tbody tr + tr td { border-top: 1px solid var(--line); }
+.pl-bar { display: block; height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-bottom: 3px; }
+.pl-bar i { display: block; height: 100%; background: var(--sev2); }
+.pl-text { font-size: .68rem; color: var(--muted); }
+.pollen-quiet { font-size: .74rem; margin-top: 8px; }
+
 /* Diashow: Karten der Reihe nach zeigen (großer Monitor).
    „Nur die Karte" blendet Kachelspalte und Kopfzeile aus — die Karte bekommt
    den ganzen Platz, die Leiste unten sagt, was gerade läuft. */
@@ -876,6 +887,7 @@ svg { display: block; }
   .hb-status { grid-area: status; }
   .hb-reason { grid-area: reason; }
 }
+.alert-link { display: inline-block; margin-top: 6px; font-size: .78rem; font-weight: 600; color: var(--accent-ink, var(--accent)); }
 .news-popup .wp-link { display: inline-block; margin-top: 8px; font-size: .76rem; font-weight: 600; color: #1d4e73; }
 .news-popup .wp-desc { max-height: 120px; }
 

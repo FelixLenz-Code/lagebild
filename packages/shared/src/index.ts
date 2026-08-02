@@ -106,6 +106,30 @@ export interface WarningFeature {
   geometry: GeoJsonGeometry;
 }
 
+/**
+ * Warnung der Behörden aus dem Warnsystem des Bundes (BBK/NINA) — alles außer
+ * dem DWD-Kanal, der schon in `WarningFeature` steckt.
+ */
+export interface CivilWarning {
+  id: string;
+  /** Woher die Meldung kommt (Behördenwarnung, KATWARN, Polizei …). */
+  channel: string;
+  event: string;
+  headline: string;
+  description?: string;
+  instruction?: string;
+  severity: Severity;
+  /** true bei „sofort handeln". */
+  urgent: boolean;
+  /** Beschreibung des betroffenen Gebiets im Klartext. */
+  areaDesc: string | null;
+  sender: string | null;
+  web: string | null;
+  onset: string | null;
+  expires: string | null;
+  geometry: GeoJsonGeometry;
+}
+
 /** Verkehrsmeldung (Autobahn-API: Baustelle, Sperrung, Stau). */
 export interface TrafficIncident {
   id: string;
@@ -581,6 +605,62 @@ export interface LightningStrike {
   stations: number;
   /** Ortungsgenauigkeit in Metern (soweit gemeldet). */
   accuracyM: number | null;
+}
+
+/** Eine Wärmeanomalie aus dem Satellitenblick (NASA FIRMS, VIIRS 375 m). */
+export interface FireDetection {
+  lat: number;
+  lon: number;
+  /** Zeitpunkt der Überfliegung (UTC). */
+  at: string;
+  satellite: string;
+  /** Vertrauensgrad der Detektion: low | nominal | high. */
+  confidence: string;
+  /** Strahlungsleistung des Feuers in Megawatt — grobes Maß für die Stärke. */
+  frpMW: number;
+  night: boolean;
+}
+
+/** Eine Messstelle des ODL-Messnetzes (Bundesamt für Strahlenschutz). */
+export interface RadiationStation {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** Gamma-Ortsdosisleistung in µSv/h (Stundenmittel). */
+  microSievertPerHour: number;
+  /** Anteile des natürlichen Untergrunds, soweit gemeldet. */
+  cosmic: number | null;
+  terrestrial: number | null;
+  measuredAt: string | null;
+  validated: boolean;
+}
+
+/** Pollenarten des DWD-Gefahrenindex. */
+export type PollenKind =
+  | 'Hasel'
+  | 'Erle'
+  | 'Esche'
+  | 'Birke'
+  | 'Gräser'
+  | 'Roggen'
+  | 'Beifuß'
+  | 'Ambrosia';
+
+/** Belastungsstufe (0 keine … 3 hoch; Zwischenstufen mit ,5). */
+export interface PollenLoad {
+  value: number;
+  text: string;
+}
+
+/** Pollenflug für die Region des Standorts. */
+export interface PollenForecast {
+  regionName: string;
+  /** Teilregionen, über die der höchste Wert gebildet wurde. */
+  partRegions: string[];
+  updatedAt: string | null;
+  nextUpdate: string | null;
+  kinds: { kind: PollenKind; today: PollenLoad; tomorrow: PollenLoad; dayAfter: PollenLoad }[];
 }
 
 /** Ein Erdbeben (USGS). */

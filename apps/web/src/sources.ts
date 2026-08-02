@@ -36,6 +36,13 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         terms: 'Deutscher Wetterdienst, Nutzung mit Quellenangabe',
       },
       {
+        key: 'nina',
+        name: 'BBK — Warnsystem des Bundes (NINA)',
+        use: 'Behördenwarnungen: MoWaS, KATWARN, BIWAPP, Polizei, Hochwasserportal',
+        url: 'https://warnung.bund.de/',
+        terms: 'amtliche Warnungen, frei abrufbar — maßgeblich ist stets die Meldung der Behörde',
+      },
+      {
         key: 'dwd-open',
         name: 'DWD Open Data',
         use: 'Waldbrandgefahrenindex je Messstation',
@@ -62,6 +69,27 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         url: 'https://www.blitzortung.org/',
         terms:
           'ehrenamtliches Empfängernetz — private, nicht gewerbliche Nutzung; eine Verbindung für alle, keine Archivierung',
+      },
+      {
+        key: 'firms',
+        name: 'NASA FIRMS (VIIRS)',
+        use: 'Wärmeanomalien aus dem Satellitenblick — tatsächliche Feuer',
+        url: 'https://firms.modaps.eosdis.nasa.gov/',
+        terms: 'gemeinfrei (NASA), offene 24-h-Dateien ohne Schlüssel',
+      },
+      {
+        key: 'bfs',
+        name: 'Bundesamt für Strahlenschutz (ODL-Messnetz)',
+        use: 'Gamma-Ortsdosisleistung von rund 1700 Sonden',
+        url: 'https://odlinfo.bfs.de/',
+        terms: 'offene Daten des Bundes (imis.bfs.de), stündliche Messwerte',
+      },
+      {
+        key: 'dwd-pollen',
+        name: 'DWD — Pollenflug-Gefahrenindex',
+        use: 'Pollenbelastung für heute, morgen und übermorgen',
+        url: 'https://www.dwd.de/pollenflug',
+        terms: 'GeoNutzV, einmal täglich erneuert',
       },
       {
         key: 'usgs',

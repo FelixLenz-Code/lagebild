@@ -173,6 +173,11 @@ export const NEWS_STYLE: Record<string, { path: string; color: string; label: st
   other: { path: GLYPH_PAPER, color: '#5b5b60', label: 'Nachricht' },
 };
 
+/** Warndreieck für Behördenwarnungen (Mitte der Fläche). */
+/* Ausrufezeichen als Aussparung (fill-rule evenodd) — das Piktogramm wird
+   weiß gefüllt, die inneren Flächen bleiben dadurch farbig. */
+const GLYPH_ALERT = 'M16 6 28 27H4Z M14.7 13.5h2.6v7.2h-2.6z M14.7 22.2h2.6v2.6h-2.6z';
+
 /** Fahrzeugpfeil (zeigt nach Norden, wird per icon-rotate gedreht). */
 const GLYPH_VEHICLE = 'M16 4 26 27l-10-5.5L6 27Z';
 
@@ -240,5 +245,13 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     ...Object.entries(VEHICLE_COLORS).map(([kind, color]) =>
       draw(map, `veh-${kind}`, GLYPH_VEHICLE, color, '#ffffff'),
     ),
+    // Behördenwarnung: Dreieck je Warnstufe, damit die Stufe nicht allein an
+    // der Flächenfarbe hängt.
+    ...Object.entries({
+      minor: '#b58a10',
+      moderate: '#c96f0f',
+      severe: '#a92318',
+      extreme: '#6c2790',
+    }).map(([sev, color]) => drawSvg(map, `nina-${sev}`, badge(GLYPH_ALERT, color))),
   ]);
 }

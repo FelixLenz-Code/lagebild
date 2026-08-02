@@ -30,6 +30,10 @@ import type {
   TransitVehicle,
   EarthquakeItem,
   LightningStrike,
+  CivilWarning,
+  FireDetection,
+  RadiationStation,
+  GeoJsonGeometry,
   AuroraGrid,
   FireDangerGrid,
   HfMufGrid,
@@ -234,6 +238,47 @@ function newsPopupHtml(item: NewsItem): string {
   );
 }
 
+/** Mittelpunkt einer Geometrie (Schwerpunkt der Stützpunkte, genügt hier). */
+function geometryCenter(geometry: GeoJsonGeometry): [number, number] | null {
+  let sumLon = 0;
+  let sumLat = 0;
+  let count = 0;
+  const visit = (node: unknown): void => {
+    if (!Array.isArray(node)) return;
+    if (typeof node[0] === 'number' && typeof node[1] === 'number') {
+      sumLon += node[0] as number;
+      sumLat += node[1] as number;
+      count++;
+      return;
+    }
+    for (const child of node) visit(child);
+  };
+  visit((geometry as { coordinates?: unknown }).coordinates);
+  return count ? [sumLon / count, sumLat / count] : null;
+}
+
+/** Popup einer Behördenwarnung: Stufe, Herkunft, Text und Handlungshinweis. */
+function civilWarningPopupHtml(w: CivilWarning): string {
+  const validity = w.expires
+    ? `gültig bis ${formatDateTime(w.expires)}`
+    : w.onset
+      ? `seit ${relativeTime(w.onset)}`
+      : '';
+  return (
+    `<div class="warn-popup">` +
+    `<span class="wp-sev" style="background:${SEVERITY_COLOR[w.severity]}">${esc(SEVERITY_DE[w.severity])}</span>` +
+    `<b>${esc(w.headline)}</b>` +
+    `<div class="wp-region">${esc(w.channel)}${w.areaDesc ? ` · ${esc(w.areaDesc)}` : ''}</div>` +
+    (validity ? `<div class="wp-meta">${esc(validity)}</div>` : '') +
+    (w.description ? `<p class="wp-desc">${esc(w.description)}</p>` : '') +
+    (w.instruction ? `<p class="wp-desc wp-instr">${esc(w.instruction)}</p>` : '') +
+    (w.web
+      ? `<a class="wp-link" href="${esc(w.web)}" target="_blank" rel="noreferrer">Mehr dazu</a>`
+      : '') +
+    `</div>`
+  );
+}
+
 /** Popup eines Blitzes: Zeitpunkt, Ortungsgüte, Zahl der Stationen. */
 function lightningPopupHtml(s: LightningStrike): string {
   const accuracy =
@@ -248,6 +293,47 @@ function lightningPopupHtml(s: LightningStrike): string {
     `<div class="wp-meta">${esc(relativeTime(s.time))} · ${esc(formatDateTime(s.time))}</div>` +
     `<div class="wp-meta">${s.stations} Empfangsstationen${accuracy ? ` · ${esc(accuracy)}` : ''}</div>` +
     `<div class="wp-meta">Blitzortung.org (ehrenamtliches Netz)</div>` +
+    `</div>`
+  );
+}
+
+/** Popup einer Wärmeanomalie — mit dem nötigen Vorbehalt. */
+function firePopupHtml(f: FireDetection): string {
+  const CONF: Record<string, string> = {
+    low: 'geringer Vertrauensgrad',
+    nominal: 'üblicher Vertrauensgrad',
+    high: 'hoher Vertrauensgrad',
+  };
+  return (
+    `<div class="warn-popup">` +
+    `<h4>Wärmeanomalie</h4>` +
+    `<div class="wp-meta">${esc(relativeTime(f.at))} · ${esc(formatDateTime(f.at))} · ${esc(f.satellite)}</div>` +
+    `<div class="wp-meta">Strahlungsleistung ${f.frpMW.toFixed(1).replace('.', ',')} MW · ${esc(CONF[f.confidence] ?? f.confidence)}</div>` +
+    `<p class="wp-desc">Satellitenmessung eines heißen Bildpunkts (≈375 m). Auch Industrie, ` +
+    `Fackeln oder Feldarbeit können dahinterstecken — kein bestätigter Brand.</p>` +
+    `</div>`
+  );
+}
+
+/** Popup einer Strahlungsmessstelle samt Einordnung des Werts. */
+function radiationPopupHtml(s: RadiationStation): string {
+  const v = s.microSievertPerHour;
+  // Einordnung im Klartext, nicht nur über die Farbe.
+  const judgement =
+    v <= 0.2 ? 'im normalen Bereich' : v <= 0.5 ? 'leicht erhöht' : 'deutlich erhöht';
+  const natural = s.cosmic != null && s.terrestrial != null ? s.cosmic + s.terrestrial : null;
+  return (
+    `<div class="warn-popup">` +
+    `<h4>${esc(s.name || 'Messstelle')}</h4>` +
+    `<div class="wp-rows">` +
+    `<span class="ac-k">Ortsdosisleistung</span><span class="ac-v">${v.toFixed(3).replace('.', ',')} µSv/h</span>` +
+    `<span class="ac-k">Einordnung</span><span class="ac-v">${esc(judgement)}</span>` +
+    (natural != null
+      ? `<span class="ac-k">davon natürlich</span><span class="ac-v">${natural.toFixed(3).replace('.', ',')} µSv/h</span>`
+      : '') +
+    `</div>` +
+    (s.measuredAt ? `<div class="wp-time">Messung ${formatDateTime(s.measuredAt)}</div>` : '') +
+    `<div class="wp-meta">Bundesamt für Strahlenschutz${s.validated ? '' : ' · noch nicht geprüft'}</div>` +
     `</div>`
   );
 }
@@ -545,6 +631,12 @@ interface Props {
   quakes: EarthquakeItem[];
   /** Blitzentladungen der letzten Minuten. */
   lightning: LightningStrike[];
+  /** Behördenwarnungen (BBK/NINA). */
+  nina: CivilWarning[];
+  /** Wärmeanomalien aus dem Satellitenblick. */
+  fires: FireDetection[];
+  /** Messstellen der Ortsdosisleistung. */
+  radiation: RadiationStation[];
   /** Polarlicht-Gitter und Waldbrandgefahr als Flächen. */
   aurora: AuroraGrid | null;
   fire: FireDangerGrid | null;
@@ -597,6 +689,11 @@ export interface ActiveLayers {
   emergency: boolean;
   quakes: boolean;
   lightning: boolean;
+  /** Behördenwarnungen (BBK/NINA). */
+  nina: boolean;
+  /** Satelliten-Feuer und Strahlungsmessnetz. */
+  fires: boolean;
+  radiation: boolean;
   aurora: boolean;
   fire: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
@@ -640,6 +737,9 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   aprs: false,
   wind: false,
   night: false,
+  nina: false,
+  fires: false,
+  radiation: false,
   lightning: false,
   stops: false,
   muf: false,
@@ -680,6 +780,9 @@ export function LageMap({
   emergency,
   quakes,
   lightning,
+  nina,
+  fires,
+  radiation,
   aurora,
   fire,
   flyTo,
@@ -760,6 +863,9 @@ export function LageMap({
     emergency: showEmergency,
     quakes: showQuakes,
     lightning: showLightning,
+    nina: showNina,
+    fires: showFires,
+    radiation: showRadiation,
     aurora: showAurora,
     fire: showFire,
   } = on;
@@ -804,13 +910,17 @@ export function LageMap({
         emergency: showEmergency,
         quakes: showQuakes,
         lightning: showLightning,
+        nina: showNina,
+        fires: showFires,
+        radiation: showRadiation,
         aurora: showAurora,
         fire: showFire,
         aprsTargets,
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
-      showVehicles, showEmergency, showQuakes, showLightning, showAurora, showFire, aprsTargets,
+      showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
+      showAurora, showFire, aprsTargets,
       onLayersChange,
     ],
   );
@@ -1936,6 +2046,100 @@ export function LageMap({
     };
   }, [ready, styleEpoch]);
 
+  /* ---------- Behördenwarnungen (BBK/NINA) ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('nina')) return;
+    map.addSource('nina', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'nina-fill',
+      type: 'fill',
+      source: 'nina',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.3 },
+    });
+    map.addLayer({
+      id: 'nina-line',
+      type: 'line',
+      source: 'nina',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      // Gestrichelt: so ist die Behördenwarnung auch dort zu unterscheiden, wo
+      // sie über einer DWD-Warnfläche liegt.
+      paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-dasharray': [2, 1.2] },
+    });
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addLayer({
+      id: 'nina',
+      type: 'symbol',
+      source: 'nina',
+      filter: ['==', ['geometry-type'], 'Point'],
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.6, 11, 0.95],
+        'icon-allow-overlap': true,
+        'text-field': ['step', ['zoom'], '', 8, ['get', 'label']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-offset': [0, 1.3],
+        'text-anchor': 'top',
+        'text-optional': true,
+        'text-max-width': 11,
+      },
+      paint: {
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.6,
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('nina') as GeoJSONSource | undefined;
+    if (!src) return;
+    const list = showNina ? nina : [];
+    const features: GeoJSON.Feature[] = [];
+    list.forEach((w, index) => {
+      const color = SEVERITY_COLOR[w.severity];
+      features.push({
+        type: 'Feature',
+        properties: { index, color },
+        geometry: w.geometry as GeoJSON.Geometry,
+      });
+      // Warndreieck in der Mitte der Fläche — kleine Gebiete (eine Straße)
+      // wären als Fläche allein kaum zu sehen.
+      const center = geometryCenter(w.geometry);
+      if (center) {
+        features.push({
+          type: 'Feature',
+          properties: {
+            index,
+            icon: `nina-${w.severity}`,
+            label: w.channel,
+          },
+          geometry: { type: 'Point', coordinates: center },
+        });
+      }
+    });
+    src.setData({ type: 'FeatureCollection', features });
+  }, [nina, showNina, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const w = index != null ? nina[index] : undefined;
+      if (w) warnPopup.current!.setLngLat(e.lngLat).setHTML(civilWarningPopupHtml(w)).addTo(map);
+    };
+    for (const id of ['nina', 'nina-fill']) map.on('click', id, onClick);
+    return () => {
+      for (const id of ['nina', 'nina-fill']) map.off('click', id, onClick);
+    };
+  }, [nina, ready, styleEpoch]);
+
   /* ---------- Blitze ---------- */
 
   useEffect(() => {
@@ -2017,6 +2221,133 @@ export function LageMap({
       map.off('click', 'lightning', onClick);
     };
   }, [lightning, ready, styleEpoch]);
+
+  /* ---------- Feuer aus dem Satellitenblick ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('fires')) return;
+    map.addSource('fires', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'fires',
+      type: 'circle',
+      source: 'fires',
+      paint: {
+        // Größe nach Strahlungsleistung: ein Schwelbrand ist kein Flächenbrand.
+        'circle-radius': ['interpolate', ['linear'], ['get', 'frp'], 0, 3.5, 20, 6, 100, 11, 400, 18],
+        'circle-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'frp'],
+          0,
+          '#e0a90b',
+          30,
+          '#e0521f',
+          150,
+          '#a92318',
+        ],
+        'circle-opacity': 0.8,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('fires') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showFires ? fires : []).map((f, i) => ({
+        type: 'Feature',
+        properties: { index: i, frp: f.frpMW },
+        geometry: { type: 'Point', coordinates: [f.lon, f.lat] },
+      })),
+    });
+  }, [fires, showFires, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const f = index != null ? fires[index] : undefined;
+      if (f) warnPopup.current!.setLngLat(e.lngLat).setHTML(firePopupHtml(f)).addTo(map);
+    };
+    map.on('click', 'fires', onClick);
+    return () => {
+      map.off('click', 'fires', onClick);
+    };
+  }, [fires, ready, styleEpoch]);
+
+  /* ---------- Ortsdosisleistung (Strahlung) ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('radiation')) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addSource('radiation', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'radiation',
+      type: 'circle',
+      source: 'radiation',
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 4, 12, 8],
+        // Der natürliche Untergrund liegt bei 0,05–0,18 µSv/h; erst darüber
+        // wird die Farbe warm. Die Werte stehen zusätzlich im Popup.
+        'circle-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'value'],
+          0.05,
+          '#3f8f4a',
+          0.15,
+          '#7a5cc0',
+          0.3,
+          '#e0a90b',
+          1,
+          '#a92318',
+        ],
+        'circle-opacity': 0.85,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': dark ? '#0f0f10' : '#ffffff',
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('radiation') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showRadiation ? radiation : []).map((s, i) => ({
+        type: 'Feature',
+        properties: { index: i, value: s.microSievertPerHour },
+        geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+      })),
+    });
+  }, [radiation, showRadiation, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const s = index != null ? radiation[index] : undefined;
+      if (s) warnPopup.current!.setLngLat(e.lngLat).setHTML(radiationPopupHtml(s)).addTo(map);
+    };
+    map.on('click', 'radiation', onClick);
+    return () => {
+      map.off('click', 'radiation', onClick);
+    };
+  }, [radiation, ready, styleEpoch]);
 
   /* ---------- Erdbeben ---------- */
 
@@ -2767,6 +3098,48 @@ export function LageMap({
                 <span className="rs-step">
                   <i style={{ background: '#8a6a12' }} />
                   30 min
+                </span>
+              </div>
+            </div>
+          )}
+          {showRadiation && (
+            <div className="legend" aria-label="Ortsdosisleistung">
+              <span className="legend-title">Strahlung</span>
+              <div className="radar-scale">
+                <span className="rs-step">
+                  <i style={{ background: '#3f8f4a' }} />
+                  0,05
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: '#7a5cc0' }} />
+                  0,15
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: '#e0a90b' }} />
+                  0,3
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: '#a92318' }} />
+                  ab 1 µSv/h
+                </span>
+              </div>
+            </div>
+          )}
+          {showFires && (
+            <div className="legend" aria-label="Feuer aus dem Satellitenblick">
+              <span className="legend-title">Feuer MW</span>
+              <div className="radar-scale">
+                <span className="rs-step">
+                  <i style={{ background: '#e0a90b' }} />
+                  klein
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: '#e0521f' }} />
+                  30
+                </span>
+                <span className="rs-step">
+                  <i style={{ background: '#a92318' }} />
+                  ab 150
                 </span>
               </div>
             </div>
