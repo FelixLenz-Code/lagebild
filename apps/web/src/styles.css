@@ -747,3 +747,14 @@ svg { display: block; }
   .hb-status { grid-area: status; }
   .hb-reason { grid-area: reason; }
 }
+.news-popup .wp-link { display: inline-block; margin-top: 8px; font-size: .76rem; font-weight: 600; color: #1d4e73; }
+.news-popup .wp-desc { max-height: 120px; }
+
+/* Nachrichten mit Ortsbezug */
+.news-filter { display: flex; gap: 8px; margin-bottom: 12px; }
+.news-filter .rp-chip.is-on { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.news-place { background: transparent; border: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.news-place:hover { color: var(--accent-ink); }
+.stop-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.stop-head .stop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert-top .rp-chip { margin-left: auto; }

@@ -126,6 +126,13 @@ export function App() {
   const transit = useApi(`transit:${geoKey}`, () => fetchTransit(coords), [coords, refreshTick]);
   const radar = useApi('radar', () => fetchRadar(), [refreshTick]);
   // Live-Ebenen laden nur, solange sie auf der Karte eingeschaltet sind.
+  /** Kartenschwenk auf einen Punkt (Nachrichtenliste). */
+  const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; zoom?: number; key: number } | null>(null);
+  const showOnMap = useCallback((lat: number, lon: number, zoom = 9) => {
+    setFlyTo({ lat, lon, zoom, key: Date.now() });
+    setDetail(null);
+  }, []);
+
   /** Gegenstelle der Funkstrecken-Bewertung (Kartenmenü). */
   const [hfTarget, setHfTarget] = useState<Coords | null>(null);
   const [layers, setLayers] = useState<ActiveLayers>({
@@ -136,6 +143,7 @@ export function App() {
     wind: false,
     stops: false,
     muf: false,
+    news: false,
     aprsTargets: [],
   });
   const radarForecast = useApi(
@@ -641,6 +649,8 @@ export function App() {
             route={route}
             itinerary={profile === 'transit' ? (itineraries[itineraryIndex] ?? null) : null}
             muf={mufGrid}
+            news={news.data?.data ?? []}
+            flyTo={flyTo}
             hfPath={hfForecast?.line ?? null}
             stops={stopPoints}
             stopsAvailable={online || !!stopsCode}
@@ -842,7 +852,31 @@ export function App() {
           {transit.data && !nearestStop && <p className="muted">Keine ÖPNV-Daten in der Nähe.</p>}
           {nearestStop && (
             <>
-              <div className="stop-name">{nearestStop.name}</div>
+              <div className="stop-head">
+                <span className="stop-name">{nearestStop.name}</span>
+                {nearestStop.coordinates && (
+                  <button
+                    type="button"
+                    className="rp-chip"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      startRouteTo({
+                        name: nearestStop.name,
+                        lat: nearestStop.coordinates!.lat,
+                        lon: nearestStop.coordinates!.lon,
+                      });
+                    }}
+                    title={`Route nach ${nearestStop.name}`}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 20V9a3 3 0 0 1 3-3h5" />
+                      <path d="M14 3l3 3-3 3" />
+                      <circle cx="9" cy="20" r="1.6" />
+                    </svg>
+                    Hinfahren
+                  </button>
+                )}
+              </div>
               <ul className="list">
                 {nearestStop.departures.slice(0, 3).map((d, i) => (
                   <li className="line-item" key={i}>
@@ -972,8 +1006,15 @@ export function App() {
           {detail === 'warnings' && <WarningsDetail list={uniqueWarnings} />}
           {detail === 'traffic' && traffic.data && <TrafficDetail list={traffic.data.data} />}
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
-          {detail === 'transit' && <TransitDetail stops={transitStops} />}
-          {detail === 'news' && news.data && <NewsDetail list={news.data.data} />}
+          {detail === 'transit' && (
+            <TransitDetail
+              stops={transitStops}
+              onRoute={(name, lat, lon) => startRouteTo({ name, lat, lon })}
+            />
+          )}
+          {detail === 'news' && news.data && (
+            <NewsDetail list={news.data.data} onShowOnMap={showOnMap} />
+          )}
           {detail === 'hf' && hfNow && <HfDetail data={hfNow} />}
         </Sheet>
       )}

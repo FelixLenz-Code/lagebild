@@ -25,6 +25,7 @@ import type {
   WindPoint,
   WindField,
   WaterLevelHistory,
+  NewsItem,
   HfMufGrid,
   RouteResult,
   TransitItinerary,
@@ -191,6 +192,22 @@ function pegelPopupHtml(p: WaterLevel, history?: WaterLevelHistory | null, loadi
     trendLine +
     chart +
     (p.measuredAt ? `<div class="wp-time">Messung ${formatDateTime(p.measuredAt)}</div>` : '') +
+    `</div>`
+  );
+}
+
+/** Popup einer Meldung: Schlagzeile, Ressort, Zeitpunkt und Link. */
+function newsPopupHtml(item: NewsItem): string {
+  const place = item.place;
+  return (
+    `<div class="warn-popup news-popup">` +
+    `<h4>${esc(item.title)}</h4>` +
+    (item.summary ? `<p class="wp-desc">${esc(item.summary)}</p>` : '') +
+    `<div class="wp-meta">${esc(item.topic ?? 'Nachricht')}` +
+    (item.publishedAt ? ` · ${esc(relativeTime(item.publishedAt))}` : '') +
+    (place ? ` · ${esc(place.name)}${place.approximate ? ' (ungenau)' : ''}` : '') +
+    `</div>` +
+    `<a class="wp-link" href="${esc(item.url)}" target="_blank" rel="noreferrer">Zur Meldung</a>` +
     `</div>`
   );
 }
@@ -445,6 +462,10 @@ interface Props {
   itinerary: TransitItinerary | null;
   /** Weltweites MUF-Gitter für die Ausbreitungsebene. */
   muf: HfMufGrid | null;
+  /** Verortete Meldungen für die Nachrichten-Ebene. */
+  news: NewsItem[];
+  /** Karte auf diesen Punkt schwenken (z.B. aus der Nachrichtenliste). */
+  flyTo: { lat: number; lon: number; zoom?: number; key: number } | null;
   /** Haltestellen im Ausschnitt. */
   stops: TransitStopPoint[];
   /** Antippen einer Haltestelle öffnet ihre Abfahrten. */
@@ -480,6 +501,8 @@ export interface ActiveLayers {
   radar: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
   muf: boolean;
+  /** Verortete Nachrichten. */
+  news: boolean;
   aircraft: boolean;
   vessels: boolean;
   aprs: boolean;
@@ -491,7 +514,7 @@ export interface ActiveLayers {
 }
 
 /** Alle umschaltbaren Kartenebenen. */
-type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops' | 'muf';
+type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops' | 'muf' | 'news';
 
 /**
  * Darstellung der Symbol-Ebenen. Flugzeuge erst ab Zoom 6, weil das ADS-B-Netz
@@ -520,6 +543,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   night: false,
   stops: false,
   muf: false,
+  news: false,
 };
 
 export function LageMap({
@@ -541,6 +565,8 @@ export function LageMap({
   route,
   itinerary,
   muf,
+  news,
+  flyTo,
   hfPath,
   stops,
   stopsAvailable,
@@ -571,6 +597,7 @@ export function LageMap({
   onStopClickRef.current = onStopClick;
   /** Bereits geladene Pegelverläufe (null = Abruf fehlgeschlagen). */
   const pegelHistory = useRef<Map<string, WaterLevelHistory | null>>(new Map());
+  const newsMarkers = useRef<Marker[]>([]);
   const stopsRef = useRef(stops);
   stopsRef.current = stops;
   const pickingRef = useRef(pickingLocation);
@@ -606,6 +633,7 @@ export function LageMap({
     wind: showWind,
     stops: showStops,
     muf: showMuf,
+    news: showNews,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -643,9 +671,10 @@ export function LageMap({
         wind: showWind,
         stops: showStops,
         muf: showMuf,
+        news: showNews,
         aprsTargets,
       }),
-    [showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, aprsTargets, onLayersChange],
+    [showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews, aprsTargets, onLayersChange],
   );
 
   // Nachschlagetabellen für die Klick-Popups
@@ -1411,6 +1440,32 @@ export function LageMap({
     );
   }, [mufUrl, ready, styleEpoch]);
 
+  // Verortete Meldungen als Marker.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const m of newsMarkers.current) m.remove();
+    newsMarkers.current = [];
+    if (!showNews) return;
+    for (const item of news) {
+      if (!item.place) continue;
+      const el = markerEl(item.place.approximate ? '#8a8a8f' : '#4a5560', 13);
+      el.title = item.title;
+      const m = new maplibregl.Marker({ element: el })
+        .setLngLat([item.place.lon, item.place.lat])
+        .setPopup(new maplibregl.Popup({ offset: 12, maxWidth: '320px' }).setHTML(newsPopupHtml(item)))
+        .addTo(map);
+      newsMarkers.current.push(m);
+    }
+  }, [news, showNews, ready]);
+
+  // Auf einen Punkt schwenken (Nachrichtenliste, Suchtreffer).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !flyTo) return;
+    map.flyTo({ center: [flyTo.lon, flyTo.lat], zoom: flyTo.zoom ?? 9, speed: 1.4 });
+  }, [flyTo, ready]);
+
   // Großkreis der bewerteten Funkstrecke.
   useEffect(() => {
     const map = mapRef.current;
@@ -1777,6 +1832,14 @@ export function LageMap({
 
   // Inhalt des Ebenen-Menüs. Ebenen ohne Zugang (kein Key) tauchen gar nicht auf.
   const layerOptions: LayerOption[] = [
+    {
+      id: 'news',
+      label: 'Nachrichten',
+      color: '#6a7580',
+      group: 'Lage',
+      hint: 'regionale Meldungen mit Ortsbezug',
+      active: showNews,
+    },
     { id: 'warnings', label: 'Warnungen', color: SEVERITY_COLOR.severe, group: 'Gefahren', active: showWarnings },
     { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', active: showRadar },
     { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Strömungsbild, 10 m über Grund', active: showWind },

@@ -471,7 +471,14 @@ export function PegelDetail({ list }: { list: WaterLevel[] }) {
   );
 }
 
-export function TransitDetail({ stops }: { stops: TransitStop[] }) {
+export function TransitDetail({
+  stops,
+  onRoute,
+}: {
+  stops: TransitStop[];
+  /** Halt anfahren (Routenplanung übernimmt ihn als Ziel). */
+  onRoute?: (name: string, lat: number, lon: number) => void;
+}) {
   const withData = stops.filter((s) => s.departures.length > 0);
   if (withData.length === 0)
     return <p className="muted">Keine Abfahrten in der Nähe (Dienst evtl. nicht erreichbar).</p>;
@@ -482,6 +489,21 @@ export function TransitDetail({ stops }: { stops: TransitStop[] }) {
           <div className="alert-top">
             <b>{s.name}</b>
             {s.distanceM != null && <span className="alert-meta mono">{Math.round(s.distanceM)} m</span>}
+            {onRoute && s.coordinates && (
+              <button
+                type="button"
+                className="rp-chip"
+                onClick={() => onRoute(s.name, s.coordinates!.lat, s.coordinates!.lon)}
+                title={`Route nach ${s.name}`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 20V9a3 3 0 0 1 3-3h5" />
+                  <path d="M14 3l3 3-3 3" />
+                  <circle cx="9" cy="20" r="1.6" />
+                </svg>
+                Hinfahren
+              </button>
+            )}
           </div>
           <DepartureBoard departures={s.departures} stopName={s.name} />
         </div>
@@ -490,17 +512,64 @@ export function TransitDetail({ stops }: { stops: TransitStop[] }) {
   );
 }
 
-export function NewsDetail({ list }: { list: NewsItem[] }) {
+export function NewsDetail({
+  list,
+  onShowOnMap,
+}: {
+  list: NewsItem[];
+  /** Meldung auf der Karte zeigen (nur bei verorteten Meldungen). */
+  onShowOnMap?: (lat: number, lon: number) => void;
+}) {
+  const [onlyPlaced, setOnlyPlaced] = useState(false);
+  const placed = list.filter((n) => n.place).length;
+  const shown = onlyPlaced ? list.filter((n) => n.place) : list;
   if (list.length === 0) return <p className="muted">Keine Meldungen.</p>;
   return (
-    <ul className="news">
-      {list.map((n) => (
-        <li className="news-item" key={n.id}>
-          <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
-          {n.summary && <p className="news-summary">{n.summary}</p>}
-          <span className="tm">{n.topic ? `${n.topic} · ` : ''}{relativeTime(n.publishedAt)}</span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <div className="news-filter">
+        <button
+          type="button"
+          className={`rp-chip${onlyPlaced ? '' : ' is-on'}`}
+          aria-pressed={!onlyPlaced}
+          onClick={() => setOnlyPlaced(false)}
+        >
+          Alle ({list.length})
+        </button>
+        <button
+          type="button"
+          className={`rp-chip${onlyPlaced ? ' is-on' : ''}`}
+          aria-pressed={onlyPlaced}
+          onClick={() => setOnlyPlaced(true)}
+        >
+          Mit Ort ({placed})
+        </button>
+      </div>
+      <ul className="news">
+        {shown.map((n) => (
+          <li className="news-item" key={n.id}>
+            <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
+            {n.summary && <p className="news-summary">{n.summary}</p>}
+            <span className="tm">
+              {n.topic ? `${n.topic} · ` : ''}
+              {relativeTime(n.publishedAt)}
+              {n.place && (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    className="news-place"
+                    onClick={() => onShowOnMap?.(n.place!.lat, n.place!.lon)}
+                    title="Auf der Karte zeigen"
+                  >
+                    {n.place.name}
+                    {n.place.approximate ? ' (ungenau)' : ''}
+                  </button>
+                </>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

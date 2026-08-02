@@ -320,6 +320,9 @@ Ort voranstellen („Bremen Fürther Straße"), wird ein im Ausschnitt dominiere
 Ortsname für die Kartenbeschriftung weggelassen. Ohne Netz springt der
 Offline-Suchindex (OSM) ein, damit die Ebene auch dann etwas zeigt.
 
+In der Kachel **Bahn / ÖPNV** und in ihrer Detailliste führt „Hinfahren" jede
+Haltestelle direkt in die Routenplanung.
+
 Ein Tipp auf eine Haltestelle öffnet ihre **nächsten Abfahrten** (alle Steige
 zusammen, mit Echtzeit) samt „Route hierher" und „Als Start setzen". Eigene
 Markierungen öffnen weiterhin das kleine Kartenmenü.
@@ -331,6 +334,29 @@ der Liniennummer (Bus, Tram, S-Bahn, Regionalzug …) — die Farbe der Plakette
 nur eine Zugabe, keine alleinige Information. Angezeigt werden nur Abfahrten der nächsten 12 Stunden —
 hat ein Halt nichts Näheres, bleiben zwei Einträge als Hinweis stehen (mit
 Wochentag, damit „morgen 09:40" nicht wie „gleich" aussieht).
+
+## Nachrichten mit Ortsbezug
+
+Die Tagesschau-API liefert je Meldung Schlagworte und eine Regionskennung. Das
+Backend leitet daraus einen Ort ab und hängt ihn als `place` an die Meldung:
+
+* Schlagworte mischen Themen und Orte („Gewerkschaften" neben „Schwerin"), und
+  eine Ortssuche findet zu fast jedem Wort etwas — „Wetter" etwa eine Stadt im
+  Ruhrgebiet. Deshalb wird jeder Treffer **gegen das Bundesland der Meldung
+  geprüft**; liegt er außerhalb, war es kein Ortsname.
+* Nur Orte und Verwaltungseinheiten zählen (Stadt, Gemeinde, Kreis), keine
+  Straßen oder Geschäfte. Landesnamen liefern keinen genauen Ort.
+* Bleibt nichts übrig, wird der **Mittelpunkt des Bundeslandes** genommen und als
+  „ungenau" gekennzeichnet. Meldungen ohne Region (bundesweit, Ausland) bekommen
+  gar keinen Ort.
+* Geokodiert wird über Photon, mit langem Cache (7 Tage) und höchstens 15 neuen
+  Abfragen je Aktualisierung — die Ergebnisse ändern sich ohnehin nicht.
+
+Auf der Karte gibt es dafür die Ebene **„Nachrichten"** (Gruppe Lage): jede
+verortete Meldung als Marker, im Popup Schlagzeile, Ressort, Zeitpunkt und Link.
+Ungenaue Orte sind heller gezeichnet. In der Nachrichtenliste lässt sich auf
+**„Mit Ort"** umschalten, und ein Klick auf den Ortsnamen schwenkt die Karte
+dorthin.
 
 ## Funkwetter und Kurzwellen-Ausbreitung
 

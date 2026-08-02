@@ -449,6 +449,19 @@ export interface NewsItem {
   url: string;
   publishedAt: string | null;
   topic?: string;
+  /** Ort der Meldung, sofern sie einem Ort zugeordnet werden konnte. */
+  place?: NewsPlace;
+}
+
+/** Verorteter Bezug einer Meldung. */
+export interface NewsPlace {
+  name: string;
+  lat: number;
+  lon: number;
+  /** Bundesland-Code der Meldung (Tagesschau-Region). */
+  state?: StateCode;
+  /** true, wenn nur das Bundesland bekannt ist (Mittelpunkt statt Ort). */
+  approximate: boolean;
 }
 
 /** Öffentlich dokumentierte GeoJSON-Geometrie (vereinfacht). */
@@ -630,6 +643,29 @@ export interface FederalState {
   code: StateCode;
   name: string;
 }
+
+/**
+ * Grobe Rechtecke der Bundesländer [west, süd, ost, nord]. Nur genau genug,
+ * um zu prüfen, ob ein Punkt plausibel in einem Land liegt.
+ */
+export const FEDERAL_STATE_BOUNDS: Record<StateCode, [number, number, number, number]> = {
+  '01': [7.8, 53.3, 11.4, 55.1],
+  '02': [9.7, 53.4, 10.35, 53.75],
+  '03': [6.6, 51.3, 11.6, 53.9],
+  '04': [8.4, 53.0, 9.0, 53.65],
+  '05': [5.8, 50.3, 9.5, 52.6],
+  '06': [7.7, 49.4, 10.25, 51.7],
+  '07': [6.1, 48.9, 8.55, 50.95],
+  '08': [7.5, 47.5, 10.5, 49.8],
+  '09': [8.9, 47.2, 13.9, 50.6],
+  '10': [6.3, 49.1, 7.45, 49.65],
+  '11': [13.05, 52.3, 13.8, 52.7],
+  '12': [11.2, 51.3, 14.8, 53.6],
+  '13': [10.5, 53.1, 14.45, 54.7],
+  '14': [11.8, 50.1, 15.1, 51.7],
+  '15': [10.5, 50.9, 13.3, 53.05],
+  '16': [9.8, 50.2, 12.7, 51.65],
+};
 
 export const FEDERAL_STATES: readonly FederalState[] = [
   { code: '01', name: 'Schleswig-Holstein' },
