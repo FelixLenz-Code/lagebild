@@ -317,20 +317,25 @@ function firePopupHtml(f: FireDetection): string {
 
 /** Popup einer Strahlungsmessstelle samt Einordnung des Werts. */
 function radiationPopupHtml(s: RadiationStation): string {
+  const num = (v: number) => v.toFixed(3).replace('.', ',');
   const v = s.microSievertPerHour;
   // Einordnung im Klartext, nicht nur über die Farbe.
   const judgement =
     v <= 0.2 ? 'im normalen Bereich' : v <= 0.5 ? 'leicht erhöht' : 'deutlich erhöht';
-  const natural = s.cosmic != null && s.terrestrial != null ? s.cosmic + s.terrestrial : null;
+  const rows = [
+    ['Messwert', `${num(v)} µSv/h`],
+    ['Einordnung', judgement],
+    ...(s.cosmic != null ? [['davon kosmisch', `${num(s.cosmic)} µSv/h`]] : []),
+    ...(s.terrestrial != null ? [['davon terrestrisch', `${num(s.terrestrial)} µSv/h`]] : []),
+  ];
   return (
     `<div class="warn-popup">` +
     `<h4>${esc(s.name || 'Messstelle')}</h4>` +
+    `<div class="wp-region">Ortsdosisleistung (Gammastrahlung)</div>` +
     `<div class="wp-rows">` +
-    `<span class="ac-k">Ortsdosisleistung</span><span class="ac-v">${v.toFixed(3).replace('.', ',')} µSv/h</span>` +
-    `<span class="ac-k">Einordnung</span><span class="ac-v">${esc(judgement)}</span>` +
-    (natural != null
-      ? `<span class="ac-k">davon natürlich</span><span class="ac-v">${natural.toFixed(3).replace('.', ',')} µSv/h</span>`
-      : '') +
+    rows
+      .map(([k, val]) => `<span class="ac-k">${esc(k!)}</span><span class="ac-v">${esc(val!)}</span>`)
+      .join('') +
     `</div>` +
     (s.measuredAt ? `<div class="wp-time">Messung ${formatDateTime(s.measuredAt)}</div>` : '') +
     `<div class="wp-meta">Bundesamt für Strahlenschutz${s.validated ? '' : ' · noch nicht geprüft'}</div>` +

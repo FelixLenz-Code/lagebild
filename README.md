@@ -38,8 +38,9 @@ pnpm typecheck  # Typprüfung über alle Pakete
 ## Kartenebenen
 
 Die Karte startet **ohne** Fachebenen. Alle Ebenen liegen im Ausklapp-Menü
-**„Ebenen"** oben links (nach Themen gruppiert, mit Zähler der aktiven Ebenen
-und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
+**„Ebenen"** oben links, gruppiert in der Reihenfolge **Wetter, Gefahren,
+Verkehr, Lage, Funk** (vom Alltäglichen zum Besonderen), mit Zähler der aktiven
+Ebenen und „Alle aus"; das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 
 | Ebene | Quelle | Hinweis |
 | --- | --- | --- |
@@ -50,7 +51,8 @@ und „Alle aus"); das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Regenradar | DWD RADOLAN-RV / RainViewer | Zeitleiste bis +2 h |
 | Wind | Open-Meteo | animiertes Strömungsbild (10 m über Grund) |
 | Verkehrsfluss | TomTom | nur mit gültigem `TOMTOM_KEY` |
-| Verkehr / Pegel | Autobahn GmbH / PEGELONLINE | folgen dem Kartenausschnitt |
+| Verkehrsmeldungen | Autobahn GmbH | folgt dem Kartenausschnitt |
+| Pegel | PEGELONLINE | Gruppe Gefahren, mit Verlauf im Popup |
 | Flugzeuge | adsb.fi (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
 | Schiffe | aisstream.io (AIS) | nur mit `AISSTREAM_KEY` |
 | Amateurfunk | aprs.fi (APRS) | nur mit `APRSFI_KEY`, feste Rufzeichenliste |

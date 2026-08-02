@@ -843,6 +843,13 @@ svg { display: block; }
 .tp-legs li.is-walk .tp-when { color: var(--muted); font-weight: 600; }
 .tp-legs li.tp-end .tp-head b { font-size: .86rem; }
 
+/* Wertetabelle in Popups (Strahlung, Pegel …). Popups sind in beiden Themen
+   hell — deshalb feste Farben statt der Theme-Variablen. */
+.warn-popup .wp-rows { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin-top: 8px; font-size: .78rem; }
+.warn-popup .wp-rows .ac-k { color: #6a7580; }
+.warn-popup .wp-rows .ac-v { color: #14181c; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.warn-popup .wp-time { font-size: .7rem; color: #6a7580; margin-top: 6px; }
+
 /* Pegel-Popup mit Verlaufskurve.
    Popups sind in beiden Themen hell — deshalb feste Farben statt der
    Theme-Variablen, die im Dunkelmodus hell würden. */

@@ -50,21 +50,27 @@ export interface LayerInfo {
   source?: string;
 }
 
-/** Reihenfolge = Reihenfolge im Menü; die Gruppen ergeben sich daraus. */
+/**
+ * Reihenfolge = Reihenfolge im Menü; auch die Gruppen ergeben sich daraus
+ * (Wetter, Gefahren, Verkehr, Lage, Funk — vom Alltäglichen zum Besonderen).
+ */
 export const LAYER_CATALOG: LayerInfo[] = [
-  { id: 'emergency', label: 'Notfallpunkte', color: '#a92318', group: 'Lage', hint: 'Klinik, Apotheke, Polizei, Feuerwehr — offline', source: 'osm' },
-  { id: 'quakes', label: 'Erdbeben', color: '#8a4b1d', group: 'Lage', hint: 'letzte Woche, ab Stärke 2,5', source: 'usgs' },
-  { id: 'news', label: 'Nachrichten', color: '#6a7580', group: 'Lage', hint: 'regionale Meldungen mit Ortsbezug', source: 'tagesschau' },
-  { id: 'nina', label: 'Behördenwarnungen', color: '#6c2790', group: 'Gefahren', hint: 'MoWaS, KATWARN, BIWAPP, Polizei, Hochwasser', source: 'nina' },
-  { id: 'fires', label: 'Feuer (Satellit)', color: '#e0521f', group: 'Gefahren', hint: 'Wärmeanomalien der letzten 24 h', source: 'firms' },
-  { id: 'radiation', label: 'Strahlung (ODL)', color: '#7a5cc0', group: 'Gefahren', hint: 'Ortsdosisleistung, ~1700 Sonden', source: 'bfs' },
-  { id: 'fire', label: 'Waldbrandgefahr', color: 'linear-gradient(90deg,#3f8f4a,#e3b505,#a92318)', group: 'Gefahren', hint: 'DWD-Index, Stufe 1–5', source: 'dwd-open' },
+  // Wetter
   { id: 'warnings', label: 'Unwetterwarnungen', color: '#a92318', group: 'Wetter', hint: 'amtlich vom DWD', source: 'dwd-geo' },
   { id: 'radar', label: 'Regenradar', color: '#3f83d4', group: 'Wetter', hint: 'Messung und Vorhersage bis +2 h', source: 'brightsky' },
   { id: 'lightning', label: 'Blitze', color: '#e3b505', group: 'Wetter', hint: 'Entladungen der letzten 30 Minuten', needs: 'lightning', source: 'blitzortung' },
   { id: 'wind', label: 'Wind', color: '#2c7448', group: 'Wetter', hint: 'Strömungsbild, 10 m über Grund', source: 'openmeteo' },
   { id: 'wind-labels', label: 'Windwerte', color: '#2c7448', group: 'Wetter', hint: 'km/h an den Gitterpunkten', sub: true },
   { id: 'night', label: 'Tag/Nacht', color: '#0b1a33', group: 'Wetter', hint: 'Dämmerungsgrenze, selbst gerechnet' },
+
+  // Gefahren
+  { id: 'nina', label: 'Behördenwarnungen', color: '#6c2790', group: 'Gefahren', hint: 'MoWaS, KATWARN, BIWAPP, Polizei, Hochwasser', source: 'nina' },
+  { id: 'fire', label: 'Waldbrandgefahr', color: 'linear-gradient(90deg,#3f8f4a,#e3b505,#a92318)', group: 'Gefahren', hint: 'DWD-Index, Stufe 1–5', source: 'dwd-open' },
+  { id: 'fires', label: 'Feuer (Satellit)', color: '#e0521f', group: 'Gefahren', hint: 'Wärmeanomalien der letzten 24 h', source: 'firms' },
+  { id: 'radiation', label: 'Strahlung (ODL)', color: '#7a5cc0', group: 'Gefahren', hint: 'Ortsdosisleistung, ~1700 Sonden', source: 'bfs' },
+  { id: 'pegel', label: 'Pegel', color: 'var(--accent)', group: 'Gefahren', hint: 'Wasserstände mit Verlauf', source: 'pegelonline' },
+
+  // Verkehr
   { id: 'flow', label: 'Verkehrsfluss', color: 'linear-gradient(90deg,#2c9e5b,#e0a90b,#c0392b)', group: 'Verkehr', needs: 'flow', source: 'tomtom' },
   { id: 'traffic', label: 'Verkehrsmeldungen', color: 'var(--sev3)', group: 'Verkehr', hint: 'Baustellen, Sperrungen, Staus', source: 'autobahn' },
   { id: 'vehicles', label: 'Busse & Bahnen', color: '#a92318', group: 'Verkehr', hint: 'Position aus dem Fahrplan gerechnet', source: 'transitous' },
@@ -72,7 +78,13 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'aircraft', label: 'Flugzeuge', color: '#1d4e73', group: 'Verkehr', hint: 'ADS-B, ab Zoom 6', source: 'adsb' },
   { id: 'vessels', label: 'Schiffe', color: '#2c7448', group: 'Verkehr', hint: 'AIS', needs: 'ais', source: 'aisstream' },
   { id: 'aprs', label: 'Amateurfunk', color: '#6b3fa0', group: 'Verkehr', hint: 'feste Rufzeichenliste', needs: 'aprs', source: 'aprsfi' },
-  { id: 'pegel', label: 'Pegel', color: 'var(--accent)', group: 'Wasser', hint: 'Wasserstände mit Verlauf', source: 'pegelonline' },
+
+  // Lage
+  { id: 'emergency', label: 'Notfallpunkte', color: '#a92318', group: 'Lage', hint: 'Klinik, Apotheke, Polizei, Feuerwehr — offline', source: 'osm' },
+  { id: 'quakes', label: 'Erdbeben', color: '#8a4b1d', group: 'Lage', hint: 'letzte Woche, ab Stärke 2,5', source: 'usgs' },
+  { id: 'news', label: 'Nachrichten', color: '#6a7580', group: 'Lage', hint: 'regionale Meldungen mit Ortsbezug', source: 'tagesschau' },
+
+  // Funk
   { id: 'muf', label: 'Ausbreitung (MUF)', color: 'linear-gradient(90deg,#3b4a7a,#2c8f6a,#d0a71a,#a4218c)', group: 'Funk', hint: 'Kurzwelle: höchste brauchbare Frequenz', source: 'kc2g' },
   { id: 'aurora', label: 'Polarlicht', color: '#3cba7a', group: 'Funk', hint: 'Wahrscheinlichkeit (NOAA)', source: 'noaa' },
 ];
