@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { Sheet } from './Sheet.js';
-import { ALWAYS_SHOWN, LAYER_CATALOG, type LayerInfo, type LayerRowId } from './layerCatalog.js';
+import {
+  ALWAYS_SHOWN,
+  LAYER_CATALOG,
+  NEEDS_REASON,
+  type LayerInfo,
+  type LayerRowId,
+} from './layerCatalog.js';
 import { PROJECTS, SOURCE_BY_KEY, SOURCE_GROUPS } from './sources.js';
 import { REFRESH_CHOICES, type Settings } from './settings.js';
 import {
@@ -64,11 +70,13 @@ export function SettingsSheet(props: Props) {
     set({ hiddenLayers: [...next] });
   };
 
-  // Ebenen ohne Schlüssel stehen gar nicht erst zur Wahl.
-  const usable = LAYER_CATALOG.filter(
-    (l) => !ALWAYS_SHOWN.includes(l.id) && (!l.needs || props.available[l.needs]),
-  );
-  const groups = [...new Set(usable.map((l) => l.group))];
+  // Alle Ebenen stehen in der Liste — die ohne Schlüssel ausgegraut, damit man
+  // sieht, dass es sie gibt und woran es fehlt.
+  const listed = LAYER_CATALOG.filter((l) => !ALWAYS_SHOWN.includes(l.id));
+  const has = (l: LayerInfo) => !l.needs || props.available[l.needs];
+  /** Nur einsatzbereite Ebenen taugen als Vorlage für Karten und Zähler. */
+  const usable = listed.filter(has);
+  const groups = [...new Set(listed.map((l) => l.group))];
   const shownCount = usable.filter((l) => !hidden.has(l.id)).length;
 
   return (
@@ -97,7 +105,8 @@ export function SettingsSheet(props: Props) {
           <p className="muted st-intro">
             Was hier abgewählt ist, verschwindet aus dem Menü „Ebenen" auf der Karte — die Ebene
             wird dabei ausgeschaltet. Das ändert nichts an den Daten, nur an dem, was angeboten
-            wird.
+            wird. <b>Ausgegraute</b> Ebenen brauchen einen Zugang, den der Server nicht hat; sie
+            erscheinen erst mit dem passenden Schlüssel.
           </p>
           <div className="rp-actions" style={{ marginBottom: 12 }}>
             <button
@@ -113,26 +122,31 @@ export function SettingsSheet(props: Props) {
             <div key={group} className="st-group">
               <div className="sect-label">{group}</div>
               <ul className="st-list">
-                {usable
+                {listed
                   .filter((l) => l.group === group)
                   .map((l) => {
-                    const on = !hidden.has(l.id);
+                    const ready = has(l);
+                    const on = ready && !hidden.has(l.id);
                     const src = l.source ? SOURCE_BY_KEY[l.source] : undefined;
                     return (
                       <li key={l.id}>
                         <button
                           type="button"
-                          className="st-item"
+                          className={`st-item${ready ? '' : ' is-off'}`}
                           role="switch"
                           aria-checked={on}
+                          aria-disabled={!ready}
+                          disabled={!ready}
+                          title={ready ? undefined : NEEDS_REASON[l.needs!]}
                           onClick={() => toggleLayer(l.id)}
                         >
                           <span className="k" style={{ background: l.color }} />
                           <span className="st-label">
                             {l.label}
                             <span className="st-hint">
-                              {l.hint}
-                              {src ? ` · ${src.name}` : ''}
+                              {ready
+                                ? [l.hint, src?.name].filter(Boolean).join(' · ')
+                                : NEEDS_REASON[l.needs!]}
                             </span>
                           </span>
                           <span className={`st-switch${on ? ' is-on' : ''}`} aria-hidden="true">

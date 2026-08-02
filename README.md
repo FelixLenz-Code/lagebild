@@ -92,7 +92,11 @@ künftig alles hinein, was Einstellung ist:
 - **Ebenen**: jede Kartenebene lässt sich aus dem Menü „Ebenen" nehmen. Wer
   Amateurfunk oder Erdbeben nie braucht, blendet sie aus; die Ebene wird dabei
   ausgeschaltet. Jede Zeile nennt gleich mit, woher ihre Daten kommen. Die
-  Auswahl liegt im localStorage und überlebt den Neustart.
+  Auswahl liegt im localStorage und überlebt den Neustart. Ebenen, für die dem
+  Server der Zugang fehlt (Schiffe ohne `AISSTREAM_KEY`, Verkehrsfluss ohne
+  `TOMTOM_KEY`, Amateurfunk ohne `APRSFI_KEY`, Blitze ohne Empfang), stehen
+  **ausgegraut** in der Liste samt Grund — auf der Karte tauchen sie weiterhin
+  gar nicht erst auf.
 - **App**: selbsttätiges Aktualisieren (aus, 5, 15, 30 Minuten — ohne Verbindung
   passiert nichts), Ortung beim Start, Ansagen bei der Zielführung (derselbe
   Schalter wie in der Navigationsleiste, nur dauerhaft), Verweis auf die

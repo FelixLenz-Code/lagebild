@@ -44,7 +44,7 @@ export interface LayerInfo {
   hint?: string;
   /** Eingerückte Unteroption der Ebene darüber. */
   sub?: boolean;
-  /** Nur sichtbar, wenn der Server diese Möglichkeit meldet. */
+  /** Nur nutzbar, wenn der Server diese Möglichkeit meldet. */
   needs?: 'flow' | 'ais' | 'aprs' | 'lightning';
   /** Woher die Daten kommen — als Schlüssel in `SOURCES`. */
   source?: string;
@@ -88,6 +88,17 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'muf', label: 'Ausbreitung (MUF)', color: 'linear-gradient(90deg,#3b4a7a,#2c8f6a,#d0a71a,#a4218c)', group: 'Funk', hint: 'Kurzwelle: höchste brauchbare Frequenz', source: 'kc2g' },
   { id: 'aurora', label: 'Polarlicht', color: '#3cba7a', group: 'Funk', hint: 'Wahrscheinlichkeit (NOAA)', source: 'noaa' },
 ];
+
+/**
+ * Warum eine Ebene gerade nicht zu haben ist. Steht in den Einstellungen an der
+ * ausgegrauten Zeile — sonst rätselt man, warum sie im Karten-Menü fehlt.
+ */
+export const NEEDS_REASON: Record<NonNullable<LayerInfo['needs']>, string> = {
+  flow: 'Braucht einen TomTom-Schlüssel auf dem Server',
+  ais: 'Braucht einen aisstream.io-Schlüssel auf dem Server',
+  aprs: 'Braucht einen aprs.fi-Schlüssel auf dem Server',
+  lightning: 'Der Server empfängt gerade keine Blitze',
+};
 
 /** Ebenen, die man nicht ausblenden können soll — sonst fehlt die Grundlage. */
 export const ALWAYS_SHOWN: LayerRowId[] = ['wind-labels'];
