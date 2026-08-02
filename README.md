@@ -332,6 +332,34 @@ nur eine Zugabe, keine alleinige Information. Angezeigt werden nur Abfahrten der
 hat ein Halt nichts Näheres, bleiben zwei Einträge als Hinweis stehen (mit
 Wochentag, damit „morgen 09:40" nicht wie „gleich" aussieht).
 
+## Funkwetter und Kurzwellen-Ausbreitung
+
+Die Kachel **Funkwetter** zeigt solaren Fluss, Sonnenflecken, A/K-Index,
+Röntgenfluss, Polarlicht-Stufe und Störpegel sowie die Bandbewertungen für Tag
+und Nacht (80/40, 30/20, 17/15, 12/10 m). Die Stufen stehen als **Wort** da
+(Gut / Mäßig / Schlecht), die Farbe kommt nur dazu.
+
+Die Kartenebene **„Ausbreitung (MUF)"** (Gruppe Funk) legt die höchste
+brauchbare Frequenz als Fläche über die Welt; die Legende nennt statt Zahlen
+gleich das oberste noch nutzbare Band. Gut zu sehen ist die Tag-/Nachtgrenze —
+auf der Nachtseite sinkt die MUF auf Kurzwellen-Niveau.
+
+Das Feld entsteht aus zwei Teilen: ein einfaches Modell aus Sonnenstand und
+solarem Fluss füllt die großen Lücken (Ozeane), und die Messwerte von rund
+30 aktuellen **Ionosonden** ziehen es entfernungsgewichtet auf die Wirklichkeit.
+Das ersetzt kein Ionosphärenmodell und ist keine Vorhersage für eine bestimmte
+Strecke — für den Überblick „welches Band trägt gerade wohin" reicht es.
+
+### Quellen und ihre Bitten
+
+| Quelle | wofür | eingehalten |
+| --- | --- | --- |
+| [N0NBH / hamqsl.com](https://www.hamqsl.com/solar.html) | Kennzahlen, Bandbewertungen | Daten wechseln stündlich → **1 h Cache**, Quelle mit Rücklink genannt |
+| [prop.kc2g.com](https://prop.kc2g.com/) (GIRO) | Ionosonden für die MUF-Ebene | 15 min Cache, Quelle im Ebenen-Menü genannt |
+| NOAA SWPC | solarer Fluss, Kp-Index | gemeinfrei, trotzdem gecacht |
+
+Umstellbar über `HAMQSL_URL` und `KC2G_URL`.
+
 ## Deployment
 
 Läuft hinter einem eigenen Reverse-Proxy (TLS dort terminieren). Installation und

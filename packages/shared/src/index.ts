@@ -468,6 +468,59 @@ export interface ApiEnvelope<T> {
   stale?: boolean;
 }
 
+/* ------------------------------------------------------------------ */
+/* Funkwetter (Kurzwelle)                                              */
+/* ------------------------------------------------------------------ */
+
+/** Bewertung einer Bandgruppe zu Tag oder Nacht. */
+export interface HfBandCondition {
+  /** Bandgruppe, z.B. „80m-40m". */
+  band: string;
+  time: 'day' | 'night';
+  level: 'good' | 'fair' | 'poor' | 'unknown';
+  /** Bezeichnung der Quelle im Original (Good/Fair/Poor). */
+  text: string;
+}
+
+/** Sonnen- und Erdmagnetdaten mit Bandbewertungen. */
+export interface HfSpaceWeather {
+  updated: string | null;
+  /** Solarer Fluss (10,7 cm) — Maß für die Ionisierung. */
+  solarFluxIndex: number | null;
+  sunspots: number | null;
+  aIndex: number | null;
+  kIndex: number | null;
+  /** Röntgenklasse, z.B. „B8.3". */
+  xray: string | null;
+  aurora: number | null;
+  geomagField: string | null;
+  signalNoise: string | null;
+  solarWindKmS: number | null;
+  bands: HfBandCondition[];
+}
+
+/** Eine Ionosonde mit ihrem gemessenen MUF-Wert. */
+export interface HfStation {
+  lat: number;
+  lon: number;
+  mufMHz: number;
+  name: string;
+}
+
+/**
+ * Weltweites Gitter der höchsten brauchbaren Frequenz (MUF, 3000 km Sprung).
+ * `values` liegt zeilenweise von Nord (90°) nach Süd, je Zeile von -180° an.
+ */
+export interface HfMufGrid {
+  generatedAt: string;
+  solarFluxIndex: number;
+  cellDeg: number;
+  cols: number;
+  rows: number;
+  values: number[];
+  stations: HfStation[];
+}
+
 /** Ergebnis einer Ortssuche (Geocoding). */
 export interface GeoResult {
   name: string;

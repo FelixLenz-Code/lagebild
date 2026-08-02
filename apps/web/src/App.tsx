@@ -10,12 +10,13 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchPlan, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchPlan, fetchHfSpace, fetchHfMuf, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers } from './LageMap.js';
 import { SearchSheet } from './SearchSheet.js';
 import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
+import { HfBands, HfDetail } from './HfPanel.js';
 import { RoutePanel, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
@@ -29,7 +30,7 @@ import { relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR
 import { WeatherIcon } from './WeatherIcon.js';
 import { sunAltitude } from './sun.js';
 
-type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'transit';
+type DetailKey = 'weather' | 'warnings' | 'traffic' | 'pegel' | 'news' | 'transit' | 'hf';
 
 /** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
 function boxAround(c: { lat: number; lon: number }): Bbox {
@@ -130,6 +131,7 @@ export function App() {
     aprs: false,
     wind: false,
     stops: false,
+    muf: false,
     aprsTargets: [],
   });
   const radarForecast = useApi(
@@ -166,6 +168,14 @@ export function App() {
     refreshMs: 600000,
     cache: false,
   });
+  // Funkwetter wird stündlich erneuert — häufiger abzurufen bringt nichts und
+  // widerspricht der Bitte der Quelle.
+  const hf = useApi('hf-space', () => fetchHfSpace(), [refreshTick], { refreshMs: 3600_000 });
+  const muf = useApi('hf-muf', () => fetchHfMuf(), [refreshTick], {
+    enabled: layers.muf,
+    refreshMs: 900_000,
+  });
+
   const news = useApi('news', () => fetchNews(), [refreshTick]);
   const health = useApi('health', () => fetchHealth(), [refreshTick]);
   const flowAvailable = health.data?.features?.flow ?? false;
@@ -502,6 +512,7 @@ export function App() {
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
     transit: { title: 'Bahn / ÖPNV in der Nähe', source: transit.data?.source, savedAt: transit.savedAt },
     news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
+    hf: { title: 'Funkwetter', source: hf.data?.source, savedAt: hf.savedAt },
   };
   const detailMeta = (k: DetailKey) => {
     const info = detailInfo[k];
@@ -517,6 +528,7 @@ export function App() {
   // Vorschau in der Kachel: die nächsten vier vollen Stunden.
   const nextHours = (fc?.hourly ?? []).filter((h) => new Date(h.time).getTime() > Date.now()).slice(0, 4);
   const airNow = air.data?.data ?? null;
+  const hfNow = hf.data?.data ?? null;
   const rain24h = fc
     ? Math.round(fc.hourly.slice(0, 24).reduce((sum, h) => sum + (h.precipitationMm ?? 0), 0) * 10) / 10
     : null;
@@ -613,6 +625,7 @@ export function App() {
             offlineCode={offlineCode}
             route={route}
             itinerary={profile === 'transit' ? (itineraries[itineraryIndex] ?? null) : null}
+            muf={muf.data?.data ?? null}
             stops={stopPoints}
             stopsAvailable={online || !!stopsCode}
             onStopClick={setStopDetail}
@@ -831,6 +844,28 @@ export function App() {
           )}
         </Tile>
 
+        <Tile
+          title="Funkwetter"
+          source={hf.data?.source}
+          cached={hf.fromCache}
+          badge={hfNow?.solarFluxIndex != null ? `SFI ${hfNow.solarFluxIndex}` : undefined}
+          badgeKind="ok"
+          onOpen={hfNow ? () => setDetail('hf') : undefined}
+        >
+          {!hfNow && hf.loading && <p className="muted">Lade …</p>}
+          {!hfNow && hf.error && <p className="err">{hf.error}</p>}
+          {hfNow && (
+            <>
+              <div className="hf-row">
+                <span>Sonnenflecken <b>{hfNow.sunspots ?? '–'}</b></span>
+                <span>K <b>{hfNow.kIndex ?? '–'}</b></span>
+                <span>Röntgen <b>{hfNow.xray ?? '–'}</b></span>
+              </div>
+              <HfBands data={hfNow} />
+            </>
+          )}
+        </Tile>
+
         <Tile title="News" source={news.data?.source} cached={news.fromCache} wide onOpen={news.data ? () => setDetail('news') : undefined}>
           <Loader state={news} empty="Keine Meldungen.">
             <ul className="news">
@@ -913,6 +948,7 @@ export function App() {
           {detail === 'pegel' && pegel.data && <PegelDetail list={pegel.data.data} />}
           {detail === 'transit' && <TransitDetail stops={transitStops} />}
           {detail === 'news' && news.data && <NewsDetail list={news.data.data} />}
+          {detail === 'hf' && hfNow && <HfDetail data={hfNow} />}
         </Sheet>
       )}
     </div>

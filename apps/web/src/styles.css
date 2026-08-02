@@ -718,3 +718,15 @@ svg { display: block; }
 .pegel-popup .pg-trend.steady { color: #6a7580; }
 .pegel-popup .pg-note { font-size: .74rem; color: #6a7580; margin: 8px 0 2px; }
 .pegel-popup .wp-time { font-size: .7rem; color: #6a7580; margin-top: 4px; }
+
+/* Funkwetter */
+.hf-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .78rem; color: var(--muted); margin-bottom: 8px; }
+.hf-row b { color: var(--ink); font-weight: 650; }
+.hf-bands { display: grid; grid-template-columns: auto 1fr 1fr; gap: 3px 10px; font-size: .76rem; align-items: center; }
+.hf-head { font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); }
+.hf-band { color: var(--muted); font-variant-numeric: tabular-nums; }
+.hf-cell { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.hf-cell i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.hf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 14px; margin-bottom: 14px; }
+.hf-kv { display: flex; justify-content: space-between; gap: 10px; font-size: .82rem; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.hf-kv b { color: var(--ink); font-weight: 650; }

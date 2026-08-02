@@ -11,6 +11,8 @@ import type {
   AirQuality,
   RadarData,
   GeoResult,
+  HfSpaceWeather,
+  HfMufGrid,
   TransitStop,
   TransitStopPoint,
   TransitDeparture,
@@ -94,6 +96,12 @@ export const fetchRadarForecast = (c: Coords): Promise<ApiEnvelope<RadarForecast
   getJson(`/api/radar/forecast?${q(c)}&distance=150000`);
 
 /** Online-Ortssuche; mit Bezugspunkt bevorzugt Photon nahe Treffer. */
+/** Funkwetter: Kennzahlen und Bandbewertungen (stündlich erneuert). */
+export const fetchHfSpace = (): Promise<ApiEnvelope<HfSpaceWeather>> => getJson(`/api/hf/space`);
+
+/** Weltweites MUF-Gitter für die Ausbreitungsebene. */
+export const fetchHfMuf = (): Promise<ApiEnvelope<HfMufGrid>> => getJson(`/api/hf/muf`);
+
 export const fetchGeocode = (query: string, near?: Coords): Promise<ApiEnvelope<GeoResult[]>> =>
   getJson(`/api/geocode?q=${encodeURIComponent(query)}${near ? `&${q(near)}` : ''}`);
 

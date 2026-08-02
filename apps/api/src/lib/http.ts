@@ -13,3 +13,22 @@ export async function fetchJson<T>(url: string, opts: { timeoutMs?: number } = {
     clearTimeout(timer);
   }
 }
+
+/** Wie fetchJson, aber für Text- und XML-Antworten. */
+export async function fetchText(url: string, opts: { timeoutMs?: number } = {}): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 8000);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        accept: 'text/xml, text/plain, */*',
+        'user-agent': 'lagebild/0.1 (+https://github.com/FelixLenz-Code/lagebild)',
+      },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}

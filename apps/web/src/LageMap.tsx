@@ -5,6 +5,7 @@ import maplibregl, {
   type Popup as MlPopup,
   type FilterSpecification,
   type GeoJSONSource,
+  type ImageSource,
   type MapMouseEvent,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -24,6 +25,7 @@ import type {
   WindPoint,
   WindField,
   WaterLevelHistory,
+  HfMufGrid,
   RouteResult,
   TransitItinerary,
   TransitStopPoint,
@@ -35,6 +37,7 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
+import { mufToDataUrl, MUF_BOUNDS, MUF_SCALE } from './mufGrid.js';
 import { ensureMapIcons, STOP_COLOR, STOP_ICON, WIND_CLASSES } from './mapIcons.js';
 import { WindAnimation } from './windField.js';
 import { shadowPolygon, CIVIL_TWILIGHT } from './sun.js';
@@ -440,6 +443,8 @@ interface Props {
   route: RouteResult | null;
   /** Gewählte ÖPNV-Verbindung (Fußwege gestrichelt, Fahrten in Linienfarbe). */
   itinerary: TransitItinerary | null;
+  /** Weltweites MUF-Gitter für die Ausbreitungsebene. */
+  muf: HfMufGrid | null;
   /** Haltestellen im Ausschnitt. */
   stops: TransitStopPoint[];
   /** Antippen einer Haltestelle öffnet ihre Abfahrten. */
@@ -471,6 +476,8 @@ interface Props {
 /** Ebenen, deren Daten nur bei Bedarf geholt werden. */
 export interface ActiveLayers {
   radar: boolean;
+  /** Kurzwellen-Ausbreitung (MUF-Fläche). */
+  muf: boolean;
   aircraft: boolean;
   vessels: boolean;
   aprs: boolean;
@@ -482,7 +489,7 @@ export interface ActiveLayers {
 }
 
 /** Alle umschaltbaren Kartenebenen. */
-type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops';
+type LayerId = 'warnings' | 'radar' | 'flow' | 'traffic' | 'pegel' | 'aircraft' | 'vessels' | 'aprs' | 'wind' | 'night' | 'stops' | 'muf';
 
 /**
  * Darstellung der Symbol-Ebenen. Flugzeuge erst ab Zoom 6, weil das ADS-B-Netz
@@ -510,6 +517,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   wind: false,
   night: false,
   stops: false,
+  muf: false,
 };
 
 export function LageMap({
@@ -530,6 +538,7 @@ export function LageMap({
   offlineCode,
   route,
   itinerary,
+  muf,
   stops,
   stopsAvailable,
   onStopClick,
@@ -593,6 +602,7 @@ export function LageMap({
     aprs: showAprs,
     wind: showWind,
     stops: showStops,
+    muf: showMuf,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -629,9 +639,10 @@ export function LageMap({
         aprs: showAprs,
         wind: showWind,
         stops: showStops,
+        muf: showMuf,
         aprsTargets,
       }),
-    [showRadar, showAircraft, showVessels, showAprs, showWind, showStops, aprsTargets, onLayersChange],
+    [showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, aprsTargets, onLayersChange],
   );
 
   // Nachschlagetabellen für die Klick-Popups
@@ -1373,6 +1384,30 @@ export function LageMap({
     };
   }, [ready, styleEpoch]);
 
+  /* ---------- Kurzwellen-Ausbreitung (MUF) ---------- */
+
+  // Bild aus dem Gitter erzeugen und als Bildquelle über die Welt legen.
+  const mufUrl = useMemo(() => (muf && showMuf ? mufToDataUrl(muf) : null), [muf, showMuf]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const source = map.getSource('muf') as ImageSource | undefined;
+    if (!mufUrl) {
+      if (map.getLayer('muf')) map.removeLayer('muf');
+      if (map.getSource('muf')) map.removeSource('muf');
+      return;
+    }
+    if (source) {
+      source.updateImage({ url: mufUrl, coordinates: MUF_BOUNDS });
+      return;
+    }
+    map.addSource('muf', { type: 'image', url: mufUrl, coordinates: MUF_BOUNDS });
+    map.addLayer(
+      { id: 'muf', type: 'raster', source: 'muf', paint: { 'raster-opacity': 0.85 } },
+      map.getLayer('warnings-fill') ? 'warnings-fill' : undefined,
+    );
+  }, [mufUrl, ready, styleEpoch]);
+
   /* ---------- ÖPNV-Verbindung ---------- */
 
   useEffect(() => {
@@ -1772,6 +1807,14 @@ export function LageMap({
         ]
       : []),
     { id: 'pegel', label: 'Pegel', color: 'var(--accent)', group: 'Wasser', active: showPegel },
+    {
+      id: 'muf',
+      label: 'Ausbreitung (MUF)',
+      color: 'linear-gradient(90deg,#3b4a7a,#2c8f6a,#d0a71a,#a4218c)',
+      group: 'Funk',
+      hint: 'Kurzwelle: höchste brauchbare Frequenz',
+      active: showMuf,
+    },
   ];
 
   return (
@@ -1790,9 +1833,21 @@ export function LageMap({
             onAllOff={() => setOn({ ...ALL_LAYERS_OFF })}
             footer={
               <span className="lm-credit">
-                Flüge: adsb.lol · Schiffe: aisstream.io · Funk:{' '}
+                Flüge: adsb.lol · Schiffe: aisstream.io · Haltestellen:{' '}
+                <a href="https://transitous.org/" target="_blank" rel="noreferrer">
+                  transitous.org
+                </a>{' '}
+                · Funk:{' '}
                 <a href="https://aprs.fi/" target="_blank" rel="noreferrer">
                   aprs.fi
+                </a>{' '}
+                · Ausbreitung:{' '}
+                <a href="https://prop.kc2g.com/" target="_blank" rel="noreferrer">
+                  prop.kc2g.com
+                </a>{' '}
+                (GIRO) und{' '}
+                <a href="https://www.hamqsl.com/solar.html" target="_blank" rel="noreferrer">
+                  N0NBH
                 </a>
               </span>
             }
@@ -1925,6 +1980,19 @@ export function LageMap({
                   <span key={c.id} className="rs-step" title={c.label}>
                     <i style={{ background: c.color }} />
                     {c.max === Infinity ? `>${WIND_CLASSES[i - 1]!.max}` : `<${c.max}`}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {showMuf && (
+            <div className="legend" aria-label="Höchste brauchbare Frequenz">
+              <span className="legend-title">MUF · offene Bänder</span>
+              <div className="radar-scale">
+                {MUF_SCALE.map((step) => (
+                  <span key={step.band} className="rs-step" title={`ab ${step.min} MHz`}>
+                    <i style={{ background: step.color }} />
+                    {step.band}
                   </span>
                 ))}
               </div>
