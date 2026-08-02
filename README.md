@@ -53,6 +53,8 @@ Ebenen und „Alle aus"; das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Verkehrsfluss | TomTom | nur mit gültigem `TOMTOM_KEY` |
 | Verkehrsmeldungen | Autobahn GmbH | folgt dem Kartenausschnitt |
 | Pegel | PEGELONLINE | Gruppe Gefahren, mit Verlauf im Popup |
+| Rastplätze & Laden | Autobahn GmbH | Stellplätze und Ladepunkte, ab Zoom 8 |
+| Webcams | Foto-Webcam.eu | Standorte mit Link, ohne Bild |
 | Flugzeuge | adsb.fi (offenes ADS-B-Netz) | ab Zoom 6, aktualisiert alle 15 s |
 | Schiffe | aisstream.io (AIS) | nur mit `AISSTREAM_KEY` |
 | Amateurfunk | aprs.fi (APRS) | nur mit `APRSFI_KEY`, feste Rufzeichenliste |
@@ -544,6 +546,37 @@ kommen ohne Geometrie. `/api/pollen` ordnet deshalb über das Bundesland zu; hat
 eine Region mehrere Teilregionen, gewinnt der **höhere** Wert (im Zweifel lieber
 eine Warnung zu viel). Beides steht unter der Tabelle, damit niemand die Zahl
 für punktgenau hält. Erneuert wird einmal täglich gegen 11 Uhr.
+
+## Rastplätze, Ladepunkte und Webcams
+
+Die Ebene **„Rastplätze & Laden"** (Gruppe Verkehr, ab Zoom 8) nutzt zwei
+weitere Endpunkte derselben Autobahn-Schnittstelle, aus der schon die
+Verkehrsmeldungen kommen: `parking_lorry` (Rastanlagen mit Pkw- und
+Lkw-Stellplätzen) und `electric_charging_station` (Ladepunkte samt Leistung und
+Betreiber, auch das Deutschlandnetz). Beides ändert sich in Wochen, nicht in
+Minuten — `/api/rest` baut die Liste deshalb einmal über alle rund 120
+Autobahnen auf und hält sie sechs Stunden.
+
+**Falle bei der Benennung:** Die beiden Endpunkte beschriften ihre Anlagen
+unterschiedlich. Bei Rastanlagen steht der Name im **Untertitel** („NI 40 W bei
+km 197,8"), während der Titel nur die Autobahn mit ihren beiden Enden nennt
+(„A1 | Puttgarden") — als Überschrift wäre das grob irreführend. Ladepunkte
+hängen den Namen dagegen hinten an den Titel und schreiben die Art in den
+Untertitel. Die Route dreht das gerade.
+
+Die Ebene **„Webcams"** (Gruppe Wetter) zeigt die Standorte der
+Panorama-Kameras von [Foto-Webcam.eu](https://www.foto-webcam.eu/) — rund 370
+Stück, davon gut hundert in Deutschland, der Rest im Alpenraum. Das Popup nennt
+Höhe und Blickrichtung (als Himmelsrichtung, nicht nur in Grad) und verlinkt
+die Kameraseite.
+
+**Bitte des Betreibers (eingehalten):** Das Impressum erlaubt Links auf die
+Seite und ihre Unterseiten ausdrücklich, die Nutzung der **Bilder** ist aber je
+Kamera geregelt. Deshalb zeigt die App **kein einziges Kamerabild**, sondern
+Standort, Blickrichtung und Link — dorthin, wo die Betreiber ihre eigenen
+Bedingungen nennen. Eine Datenschnittstelle gibt es nicht; die Liste steht als
+JSON im Quelltext der Übersichtsseite und wird alle sechs Stunden **einmal für
+alle Nutzer** gelesen.
 
 ## Blitze (Blitzortung.org)
 
