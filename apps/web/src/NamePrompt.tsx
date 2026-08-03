@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { StylePicker } from './StylePicker.js';
 
 /**
  * Kleiner Dialog zum Benennen einer frisch gezeichneten Markierung.
@@ -8,10 +9,14 @@ export function NamePrompt(props: {
   title: string;
   defaultName: string;
   confirmLabel?: string;
-  onSave: (name: string) => void;
+  /** Farbe und (bei Punkten) Symbol gleich mitwählen. */
+  style?: { color: string; icon?: string };
+  onSave: (name: string, style?: { color: string; icon?: string }) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(props.defaultName);
+  const [color, setColor] = useState(props.style?.color ?? 'teal');
+  const [icon, setIcon] = useState(props.style?.icon ?? 'dot');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -27,7 +32,11 @@ export function NamePrompt(props: {
     return () => document.removeEventListener('keydown', onKey);
   }, [props]);
 
-  const save = () => props.onSave(name.trim() || props.defaultName);
+  const save = () =>
+    props.onSave(
+      name.trim() || props.defaultName,
+      props.style ? { color, ...(props.style.icon !== undefined ? { icon } : {}) } : undefined,
+    );
 
   return (
     <div
@@ -56,6 +65,13 @@ export function NamePrompt(props: {
           aria-label="Name"
           maxLength={60}
         />
+        {props.style && (
+          <StylePicker
+            color={color}
+            onColor={setColor}
+            {...(props.style.icon !== undefined ? { icon, onIcon: setIcon } : {})}
+          />
+        )}
         <div className="namebtns">
           <button type="button" className="rbtn ghost" onClick={props.onCancel}>
             Verwerfen

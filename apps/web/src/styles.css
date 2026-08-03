@@ -829,6 +829,22 @@ svg { display: block; }
 
 .legend-note { max-width: 260px; font-size: .72rem; line-height: 1.35; color: var(--sev2); }
 
+/* Farb- und Symbolwahl für Markierungen */
+.sp { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 2px; }
+.sp-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-color {
+  width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; box-shadow: 0 0 0 1px var(--line-strong) inset;
+}
+.sp-color.is-on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface) inset; }
+.sp-icon {
+  width: 30px; height: 30px; padding: 2px; cursor: pointer; background: transparent;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+}
+.sp-icon svg { width: 100%; height: 100%; display: block; }
+.sp-icon.is-on { border-color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.region .sp { margin: 6px 0 0; }
+
 /* Schloss vor der App */
 .lock { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
 .lock-box {

@@ -13,6 +13,10 @@ export interface DrawFeature {
   geometry: DrawGeometry;
   /** Einzeln ausgeblendet — bleibt gespeichert, liegt nur nicht auf der Karte. */
   hidden?: boolean;
+  /** Farbschlüssel aus `drawStyle.ts`; fehlt = Standardfarbe. */
+  color?: string;
+  /** Symbolschlüssel (nur bei Punkten); fehlt = schlichter Punkt. */
+  icon?: string;
 }
 
 const KEY = 'lagebild.draw';

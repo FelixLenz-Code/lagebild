@@ -59,6 +59,7 @@ import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from '
 import { DrawMenu, type DrawTool } from './DrawMenu.js';
 import type { TrailFeature } from './offline/trails.js';
 import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
+import { DRAW_COLOR, colorOf, drawIconId } from './drawStyle.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
 import { mufToDataUrl, MUF_BOUNDS, MUF_SCALE } from './mufGrid.js';
 import {
@@ -95,7 +96,7 @@ import {
   timeHM,
 } from './format.js';
 
-const DRAW_COLOR = '#0d9488';
+
 /** Farbe der Routenlinie (kräftig genug, um über allen Ebenen zu tragen). */
 const ROUTE_COLOR = '#2f7fd1';
 type DrawMode = DrawTool;
@@ -128,7 +129,14 @@ function drawToGeoJson(
     .filter((d) => !d.hidden)
     .map((d) => ({
       type: 'Feature',
-      properties: { kind: d.kind, name: d.name },
+      properties: {
+        kind: d.kind,
+        name: d.name,
+        color: colorOf(d.color),
+        // Bild-ID vorberechnen: MapLibre kann sie zwar zusammensetzen, aber so
+        // steht die Zuordnung an einer Stelle und ist im Zweifel nachlesbar.
+        icon: drawIconId(d.icon, d.color),
+      },
       geometry: d.geometry,
     }));
   if (closeRing && areaVertices.length >= 3) {
@@ -1146,6 +1154,8 @@ export function LageMap({
   const [areaVertices, setAreaVertices] = useState<[number, number][]>([]);
   const [listOpen, setListOpen] = useState(false);
   const [pending, setPending] = useState<PendingDraw | null>(null);
+  /** Zuletzt gewählte Farbe und Symbol — Vorschlag für die nächste Markierung. */
+  const [lastStyle, setLastStyle] = useState<{ color: string; icon: string }>({ color: 'teal', icon: 'dot' });
   const drawModeRef = useRef<DrawMode>('off');
   drawModeRef.current = drawMode;
   const drawCount = useRef({ point: 0, area: 0, line: 0 });
@@ -1287,7 +1297,7 @@ export function LageMap({
           geometry: { type: 'Point', coordinates: c },
           defaultName: `Ort ${drawCount.current.point + 1}`,
         });
-      } else if (mode === 'area' || mode === 'measure') {
+      } else if (mode === 'area' || mode === 'line' || mode === 'measure') {
         setAreaVertices((prev) => [...prev, c]);
       }
     });
@@ -1904,17 +1914,19 @@ export function LageMap({
     const map = mapRef.current;
     if (!map || !ready || map.getSource('draw')) return;
     map.addSource('draw', { type: 'geojson', data: drawToGeoJson(drawFeatures, areaVertices) });
-    map.addLayer({ id: 'draw-area-fill', type: 'fill', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'fill-color': DRAW_COLOR, 'fill-opacity': 0.15 } });
-    map.addLayer({ id: 'draw-area-line', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'line-color': DRAW_COLOR, 'line-width': 2 } });
+    map.addLayer({ id: 'draw-area-fill', type: 'fill', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.15 } });
+    map.addLayer({ id: 'draw-area-line', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'line-color': ['get', 'color'], 'line-width': 2 } });
     map.addLayer({ id: 'draw-progress-area', type: 'fill', source: 'draw', filter: ['==', ['get', 'kind'], 'progress-area'], paint: { 'fill-color': DRAW_COLOR, 'fill-opacity': 0.12 } });
-    map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'line'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': DRAW_COLOR, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 16, 5] } });
+    map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'line'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 16, 5] } });
     map.addLayer({ id: 'draw-progress', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'progress'], paint: { 'line-color': DRAW_COLOR, 'line-width': 2, 'line-dasharray': [2, 1] } });
     map.addLayer({ id: 'draw-vertex', type: 'circle', source: 'draw', filter: ['==', ['get', 'kind'], 'vertex'], paint: { 'circle-radius': 4, 'circle-color': '#fff', 'circle-stroke-color': DRAW_COLOR, 'circle-stroke-width': 2 } });
-    map.addLayer({ id: 'draw-point', type: 'circle', source: 'draw', filter: ['==', ['get', 'kind'], 'point'], paint: { 'circle-radius': 7, 'circle-color': DRAW_COLOR, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
-    map.addLayer({ id: 'draw-label', type: 'symbol', source: 'draw', filter: ['in', ['get', 'kind'], ['literal', ['point', 'area']]], layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Medium'], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' }, paint: { 'text-color': DRAW_COLOR, 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
+    // Punkte tragen ein Symbol in ihrer Farbe (farbiger Kreis, weißes
+    // Piktogramm) — dieselbe Bildsprache wie Haltestellen und Notfallpunkte.
+    map.addLayer({ id: 'draw-point', type: 'symbol', source: 'draw', filter: ['==', ['get', 'kind'], 'point'], layout: { 'icon-image': ['get', 'icon'], 'icon-size': 0.62, 'icon-allow-overlap': true } });
+    map.addLayer({ id: 'draw-label', type: 'symbol', source: 'draw', filter: ['in', ['get', 'kind'], ['literal', ['point', 'area']]], layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Medium'], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' }, paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
     // `symbol-placement` ist keine datengesteuerte Eigenschaft — Linien
     // brauchen deshalb eine eigene Beschriftungsebene.
-    map.addLayer({ id: 'draw-line-label', type: 'symbol', source: 'draw', filter: ['==', ['get', 'kind'], 'line'], layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Medium'], 'text-size': 12, 'symbol-placement': 'line-center' }, paint: { 'text-color': DRAW_COLOR, 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
+    map.addLayer({ id: 'draw-line-label', type: 'symbol', source: 'draw', filter: ['==', ['get', 'kind'], 'line'], layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Medium'], 'text-size': 12, 'symbol-placement': 'line-center' }, paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, styleEpoch]);
 
@@ -3518,6 +3530,20 @@ export function LageMap({
     }
   };
 
+  /** Gezeichnete Linie übernehmen (mindestens zwei Punkte). */
+  const finishLine = () => {
+    if (areaVertices.length >= 2) {
+      setPending({
+        kind: 'line',
+        geometry: { type: 'LineString', coordinates: [...areaVertices] },
+        defaultName: `Linie ${drawCount.current.line + 1}`,
+      });
+      return; // Punkte bleiben sichtbar, bis der Name steht.
+    }
+    setAreaVertices([]);
+    setDrawMode('off');
+  };
+
   const finishArea = () => {
     if (areaVertices.length >= 3) {
       const ring: [number, number][] = [...areaVertices, areaVertices[0]!];
@@ -3537,17 +3563,27 @@ export function LageMap({
   };
 
   /** Benannte Markierung übernehmen (bzw. beim Verwerfen aufräumen). */
-  const resolvePending = (name: string | null) => {
+  const resolvePending = (name: string | null, style?: { color: string; icon?: string }) => {
     if (name && pending) {
       setDrawFeatures((prev) => [
         ...prev,
-        { id: newId(), name, kind: pending.kind, geometry: pending.geometry },
+        {
+          id: newId(),
+          name,
+          kind: pending.kind,
+          geometry: pending.geometry,
+          ...(style?.color ? { color: style.color } : {}),
+          ...(style?.icon ? { icon: style.icon } : {}),
+        },
       ]);
+      // Die zuletzt gewählte Aufmachung bleibt vorgeschlagen — wer eine Reihe
+      // gleichartiger Punkte setzt, soll nicht jedes Mal neu wählen.
+      if (style) setLastStyle({ color: style.color, icon: style.icon ?? lastStyle.icon });
     }
     if (pending?.kind === 'area' || pending?.kind === 'line') {
       setAreaVertices([]);
       // Nach dem Messen darf weitergemessen werden; eine gezeichnete Fläche
-      // ist dagegen abgeschlossen.
+      // oder Linie ist dagegen abgeschlossen.
       if (drawMode !== 'measure') setDrawMode('off');
     }
     setPending(null);
@@ -3668,6 +3704,21 @@ export function LageMap({
         {drawMode !== 'off' && (
           <div className="drawstatus" role="status">
             {drawMode === 'point' && <span className="ds-hint">Karte antippen — der Punkt bekommt gleich einen Namen.</span>}
+            {drawMode === 'line' && (
+              <>
+                <span className="ds-hint">
+                  {areaVertices.length < 2
+                    ? `Punkte antippen (${areaVertices.length}/2)`
+                    : `${areaVertices.length} Punkte · ${formatLength(lineLength(areaVertices))}`}
+                </span>
+                <button type="button" className="chip chip-ok" onClick={finishLine} disabled={areaVertices.length < 2}>
+                  Fertig
+                </button>
+                <button type="button" className="chip" onClick={cancelArea}>
+                  Abbrechen
+                </button>
+              </>
+            )}
             {drawMode === 'area' && (
               <>
                 <span className="ds-hint">
@@ -4054,9 +4105,17 @@ export function LageMap({
 
       {pending && (
         <NamePrompt
-          title={pending.kind === 'point' ? 'Neuer Punkt' : 'Neue Fläche'}
+          title={
+            pending.kind === 'point'
+              ? 'Neuer Punkt'
+              : pending.kind === 'line'
+                ? 'Neue Linie'
+                : 'Neue Fläche'
+          }
           defaultName={pending.defaultName}
-          onSave={(name) => resolvePending(name)}
+          // Punkte bekommen zusätzlich ein Symbol; Linien und Flächen nur Farbe.
+          style={pending.kind === 'point' ? { color: lastStyle.color, icon: lastStyle.icon } : { color: lastStyle.color }}
+          onSave={(name, style) => resolvePending(name, style)}
           onCancel={() => resolvePending(null)}
         />
       )}
@@ -4065,6 +4124,9 @@ export function LageMap({
         <DrawList
           features={drawFeatures}
           onRename={(id, name) => setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, name } : f)))}
+          onStyle={(id, style) =>
+            setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, ...style } : f)))
+          }
           onToggle={(id) =>
             setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, hidden: !f.hidden } : f)))
           }

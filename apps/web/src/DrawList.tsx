@@ -7,10 +7,14 @@ import {
   type DrawFeature,
 } from './drawStore.js';
 import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
+import { StylePicker } from './StylePicker.js';
+import { colorOf } from './drawStyle.js';
 
 interface Props {
   features: DrawFeature[];
   onRename: (id: string, name: string) => void;
+  /** Farbe bzw. Symbol nachträglich ändern. */
+  onStyle: (id: string, style: { color?: string; icon?: string }) => void;
   /** Eine einzelne Markierung aus- bzw. wieder einblenden. */
   onToggle: (id: string) => void;
   /** Alle auf einmal aus- bzw. einblenden. */
@@ -27,6 +31,19 @@ const KIND_LABEL: Record<DrawFeature['kind'], string> = {
   line: 'Linie',
   area: 'Fläche',
 };
+
+/** Zeile, in der sich Farbe und Symbol nachträglich ändern lassen. */
+function StyleRow({ feature, onStyle }: { feature: DrawFeature; onStyle: Props['onStyle'] }) {
+  return (
+    <StylePicker
+      color={feature.color ?? 'teal'}
+      onColor={(color) => onStyle(feature.id, { color })}
+      {...(feature.kind === 'point'
+        ? { icon: feature.icon ?? 'dot', onIcon: (icon: string) => onStyle(feature.id, { icon }) }
+        : {})}
+    />
+  );
+}
 
 const ICONS: Record<DrawFeature['kind'], JSX.Element> = {
   point: (
@@ -104,7 +121,7 @@ export function DrawList(props: Props) {
           <div className="region-list">
             {props.features.map((f) => (
               <div className={`region${f.hidden ? ' is-hidden' : ''}`} key={f.id}>
-                <span className="draw-kind" title={KIND_LABEL[f.kind]}>
+                <span className="draw-kind" title={KIND_LABEL[f.kind]} style={{ color: colorOf(f.color) }}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                     {ICONS[f.kind]}
                   </svg>
@@ -165,6 +182,7 @@ export function DrawList(props: Props) {
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>
                   </button>
                 </div>
+                <StyleRow feature={f} onStyle={props.onStyle} />
               </div>
             ))}
           </div>

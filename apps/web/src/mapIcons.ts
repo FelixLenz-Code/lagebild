@@ -1,4 +1,5 @@
 import type { Map as MlMap } from 'maplibre-gl';
+import { DRAW_COLORS, DRAW_ICONS } from './drawStyle.js';
 
 /**
  * Symbole für Flugzeuge und Schiffe als Karten-Icons. MapLibre braucht dafür
@@ -264,6 +265,11 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     drawSvg(map, 'webcam-off', badge(GLYPH_CAMERA, '#9a9aa0')),
     // Behördenwarnung: Dreieck je Warnstufe, damit die Stufe nicht allein an
     // der Flächenfarbe hängt.
+    // Eigene Markierungen: jedes Symbol in jeder Farbe. 12 × 8 kleine Bilder
+    // sind schnell erzeugt und ersparen der Karte jede Sonderbehandlung.
+    ...DRAW_ICONS.flatMap((icon) =>
+      DRAW_COLORS.map((color) => drawSvg(map, `dp-${icon.key}-${color.key}`, badge(icon.path, color.hex))),
+    ),
     ...Object.entries({
       minor: '#b58a10',
       moderate: '#c96f0f',

@@ -293,7 +293,7 @@ Der Knopf **„Einzeichnen"** auf der Karte öffnet ein Menü mit allem, was man
 selbst auf die Karte bringt — es ist bewusst so geschnitten, dass weitere
 Werkzeuge hineinwachsen:
 
-- **Werkzeuge**: Punkt setzen, Fläche zeichnen, **Messen**.
+- **Werkzeuge**: Punkt setzen, **Linie zeichnen**, Fläche zeichnen, **Messen**.
 - **Datei**: Tour oder Punkte einlesen (GPX, KML, KMZ, GeoJSON).
 - **Meine Markierungen**: Liste mit Maßen, Umbenennen, Löschen, „auf der Karte
   zeigen", **einzeln aus- und einblenden** und **Ausgabe als GPX bzw. GeoJSON**
@@ -308,6 +308,14 @@ auffindbar, liegen nur nicht auf der Karte.
 **GPX kennt keine Flächen**: Ein Gebiet wird darin zur geschlossenen Linie. Wer
 die Fläche als Fläche braucht, nimmt GeoJSON — deshalb stehen beide Ausgaben
 nebeneinander.
+
+Beim Anlegen wird gleich die **Farbe** gewählt, bei Punkten zusätzlich ein
+**Symbol** (Fahne, Gefahr, Erste Hilfe, Sammelplatz, Wasser, Feuer, Antenne …).
+Beides lässt sich in der Liste nachträglich ändern. Die Palette steht in
+`drawStyle.ts` — acht kräftige Töne, die auf heller wie dunkler Karte tragen,
+und zwölf Symbole; Karte und Bedienung lesen dieselbe Quelle. Die zuletzt
+gewählte Aufmachung bleibt vorgeschlagen, damit eine Reihe gleichartiger Punkte
+schnell gesetzt ist.
 
 Das laufende Werkzeug bekommt eine **eigene Leiste auf der Karte** statt eines
 Bereichs im Menü. Der Grund ist handfest: Wer misst, tippt auf die Karte — und

@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'react';
  * für die Werkzeuge, die noch dazukommen.
  */
 
-export type DrawTool = 'off' | 'point' | 'area' | 'measure';
+export type DrawTool = 'off' | 'point' | 'line' | 'area' | 'measure';
 
 const TOOLS: { id: DrawTool; label: string; hint: string; icon: JSX.Element }[] = [
   {
@@ -16,6 +16,12 @@ const TOOLS: { id: DrawTool; label: string; hint: string; icon: JSX.Element }[] 
     label: 'Punkt setzen',
     hint: 'Karte antippen',
     icon: <circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" />,
+  },
+  {
+    id: 'line',
+    label: 'Linie zeichnen',
+    hint: 'Punkte antippen, dann „Fertig"',
+    icon: <path d="M4 18c4 0 4-6 8-6s4 6 8 6" />,
   },
   {
     id: 'area',
