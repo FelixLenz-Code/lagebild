@@ -13,6 +13,7 @@
 import { deflateRawSync } from 'node:zlib';
 import { ImportError, drawFrom, readImport, tracksFrom } from '../apps/web/src/importFiles.js';
 import { toGpx, type Track } from '../apps/web/src/trackStore.js';
+import { distance, lineLength, midpoint, ringArea } from '../apps/web/src/geo.js';
 
 let failed = 0;
 
@@ -167,8 +168,11 @@ console.log('\nKML');
   check('Placemark ohne Geometrie übergangen', r.skipped === 1, `skipped=${r.skipped}`);
 
   const draw = drawFrom(r);
-  check('Markierungen erzeugt', draw.length === 2 && draw[0]!.kind === 'point' && draw[1]!.kind === 'area');
-  const ring = (draw[1]!.geometry as { coordinates: [number, number][][] }).coordinates[0]!;
+  // Linien stehen vorn, danach Punkte, danach Flächen.
+  check('Markierungen erzeugt (Linien, Punkt, Fläche)',
+    draw.length === 4 && draw[0]!.kind === 'line' && draw[2]!.kind === 'point' && draw[3]!.kind === 'area',
+    draw.map((d) => d.kind).join(', '));
+  const ring = (draw[3]!.geometry as { coordinates: [number, number][][] }).coordinates[0]!;
   check('Ring bleibt geschlossen', ring[0]![0] === ring[ring.length - 1]![0]);
 }
 
@@ -334,6 +338,35 @@ console.log('\nAusdünnen');
   // Die Schranke ist die zuletzt benutzte Toleranz (hier 8 m, weil 4 m das
   // Ortungsrauschen nicht wegbekommt und die Zahl der Punkte zu hoch bliebe).
   check('Verlauf bleibt erhalten', worst <= 8, `größte Abweichung ${worst.toFixed(1)} m`);
+}
+
+console.log('\nMaße (geo.ts)');
+{
+  // Ein Grad Breite ist überall gleich lang: R·π/180 bei R = 6.371.008,8 m.
+  const oneDegree = distance([0, 0], [0, 1]);
+  check('ein Grad Breite', Math.abs(oneDegree - 111194.9) < 1, `${oneDegree.toFixed(1)} m`);
+
+  // Fläche zwischen 0°/1° Breite und 0°/1° Länge: R²·Δλ·(sin φ2 − sin φ1).
+  const box: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  const R = 6371008.8;
+  const exact = R * R * (Math.PI / 180) * Math.sin((1 * Math.PI) / 180);
+  const got = ringArea(box);
+  check('Fläche eines Gradfelds', Math.abs(got - exact) / exact < 0.01,
+    `${(got / 1e6).toFixed(0)} km² gegenüber ${(exact / 1e6).toFixed(0)} km² (${((got / exact - 1) * 100).toFixed(2)} %)`);
+
+  // Umlaufrichtung darf das Ergebnis nicht kippen.
+  check('Umlaufrichtung egal', Math.abs(ringArea([...box].reverse()) - got) < 1);
+  check('zu wenige Punkte = keine Fläche', ringArea([[0, 0], [1, 1]]) === 0);
+
+  const line: [number, number][] = [[8.8, 53.07], [8.81, 53.08], [8.82, 53.09]];
+  const total = lineLength(line);
+  check('Linienlänge = Summe der Abschnitte',
+    Math.abs(total - (distance(line[0]!, line[1]!) + distance(line[1]!, line[2]!))) < 1e-6,
+    `${Math.round(total)} m`);
+  const mid = midpoint(line);
+  check('Mittelpunkt liegt auf der Linie',
+    Math.abs(mid[0] - line[1]![0]) < 1e-6 && Math.abs(mid[1] - line[1]![1]) < 1e-6,
+    `${mid[1].toFixed(5)}, ${mid[0].toFixed(5)}`);
 }
 
 console.log('\nFehlerfälle');

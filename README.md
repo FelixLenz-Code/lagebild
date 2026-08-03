@@ -40,7 +40,7 @@ pnpm typecheck  # Typprüfung über alle Pakete
 Die Karte startet **ohne** Fachebenen. Alle Ebenen liegen im Ausklapp-Menü
 **„Ebenen"** oben links, gruppiert in der Reihenfolge **Wetter, Gefahren,
 Verkehr, Lage, Funk** (vom Alltäglichen zum Besonderen), mit Zähler der aktiven
-Ebenen und „Alle aus"; das Zeichenwerkzeug bleibt als eigener Knopf daneben:
+Ebenen und „Alle aus"; das Einzeichnen-Menü liegt als eigener Knopf daneben:
 
 | Ebene | Quelle | Hinweis |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ Ebenen und „Alle aus"; das Zeichenwerkzeug bleibt als eigener Knopf daneben:
 | Waldbrandgefahr | DWD | Stufe 1–5, Deutschland |
 | Polarlicht | NOAA SWPC (OVATION) | Wahrscheinlichkeit weltweit |
 | Tag/Nacht | selbst gerechnet | Dämmerungssaum, wandert minütlich mit |
-| Markieren | eigene Punkte/Flächen | Benennung direkt beim Anlegen |
+| Einzeichnen | eigene Punkte/Linien/Flächen | Werkzeuge, Messen und Datei-Import (siehe unten) |
 
 Nicht gebrauchte Ebenen lassen sich unter **Einstellungen → Ebenen** ganz aus
 dem Menü nehmen (siehe unten).
@@ -139,16 +139,41 @@ Messgenauigkeit herumspringen. Übernommen wird deshalb nur, was mindestens 8 m
 entfernt oder 30 s später kommt — sonst wüchse die Spur ins Unendliche und die
 Länge wäre zu groß.
 
-## Fremde Dateien einlesen
+## Einzeichnen: Werkzeuge, Messen, Dateien
 
-Dasselbe Blatt liest **GPX, KML, KMZ und GeoJSON** ein — die Datei wird
-ausgewählt oder einfach auf das Fenster gezogen. Damit lassen sich fertige
-Touren (Komoot, Outdooractive), Punktsammlungen aus Google Earth und
-Übersichten aus einer Lagekarte öffnen:
+Der Knopf **„Einzeichnen"** auf der Karte öffnet ein Menü mit allem, was man
+selbst auf die Karte bringt — es ist bewusst so geschnitten, dass weitere
+Werkzeuge hineinwachsen:
 
-- **Linien** (`trk`, `rte`, `LineString`, `gx:Track`) werden zu Spuren und
-  liegen damit in derselben Ablage wie die eigene Aufzeichnung — samt „Zum
-  Start zurück" und GPX-Ausgabe.
+- **Werkzeuge**: Punkt setzen, Fläche zeichnen, **Messen**.
+- **Datei**: Tour oder Punkte einlesen (GPX, KML, KMZ, GeoJSON).
+- **Meine Markierungen**: Liste mit Maßen, Umbenennen, Löschen, „auf der Karte
+  zeigen".
+
+Das laufende Werkzeug bekommt eine **eigene Leiste auf der Karte** statt eines
+Bereichs im Menü. Der Grund ist handfest: Wer misst, tippt auf die Karte — und
+dabei fällt jedes Ausklappmenü zu, samt der Werte, auf die es ankommt.
+
+### Messen
+
+Punkte antippen; die Leiste zeigt laufend die **Strecke** und ab drei Punkten
+die **eingeschlossene Fläche**. Beides lässt sich als Markierung sichern (Linie
+bzw. Fläche), sonst ist die Arbeit mit dem nächsten Werkzeug weg. Die Fläche
+kommt aus dem sphärischen Exzess (`geo.ts`) und stimmt deshalb auch bei großen
+Gebieten; die Liste der Markierungen nennt zu jeder Linie ihre Länge und zu
+jeder Fläche Größe und Umfang.
+
+### Dateien einlesen
+
+Gelesen werden **GPX, KML, KMZ und GeoJSON** — Datei auswählen oder einfach auf
+das Fenster ziehen. Damit lassen sich fertige Touren (Komoot, Outdooractive),
+Punktsammlungen aus Google Earth und Übersichten aus einer Lagekarte öffnen:
+
+- **Linien** (`trk`, `rte`, `LineString`, `gx:Track`) landen **doppelt**: als
+  Markierung der Art „Linie" (dauerhaft auf der Karte, mehrere gleichzeitig,
+  umbenennbar) **und** als Spur (GPX-Ausgabe, „Zum Start zurück"). Beide Wege
+  sollen offenstehen; deshalb wird die Spur nach dem Einlesen nicht zusätzlich
+  eingeblendet — sie läge deckungsgleich unter der Markierung.
 - **Einzelne Punkte** (`wpt`, `Point`) und **Flächen** (`Polygon`) werden zu
   eigenen Markierungen. Sie erscheinen dadurch in der Suche als Ziel und lassen
   sich anfahren.
@@ -372,6 +397,25 @@ merkt A* das erst, nachdem es das ganze übrige Netz abgesucht hat — gemessen
 
 Geprüft mit `scripts/check-via.mts` (Naht ohne Doppelpunkt, verschobene
 Anweisungsindizes, Summen der Abschnitte, Reihenfolge, Stichweg-Fall).
+
+### Einer GPX-Tour folgen
+
+In der Routenleiste liest **„GPX-Tour"** eine Datei ein (genommen wird die
+längste Linie darin — Tourenportale legen gern Anfahrtsschnipsel dazu). Danach
+steht die Wahl zwischen zwei Arten, ihr zu folgen:
+
+- **Genau dieser Linie folgen.** Die Tour *ist* die Route: `routeFromLine()`
+  baut sie ohne Graphen, die Anweisungen entstehen allein aus den
+  Richtungswechseln („in 200 m rechts abbiegen"), also ohne Straßennamen.
+  Funktioniert abseits von Straßen und ohne gespeicherte Region. Die Fahrzeit
+  ist ein ehrlicher Mittelwert je Fortbewegungsart — ohne Straßendaten ist mehr
+  nicht zu holen. Ein Profilwechsel rechnet nur die Zeit neu, die Linie bleibt.
+  Weicht man ab, wird **nicht** neu berechnet: es gibt nichts zu rechnen, der
+  Weg zurück auf die Spur bleibt Sache des Fahrers.
+- **Auf dem Straßennetz nachrechnen.** Die Stützpunkte werden zu Zwischenzielen
+  (`viaPointsFromLine()`, gleichmäßig verteilt, höchstens 18 — mehr macht die
+  Rechnung langsam und zwingt den Router auf jeden Messfehler), der Rest ist die
+  normale Routenplanung mit echten Abbiegehinweisen.
 
 ### ÖPNV-Verbindungen
 

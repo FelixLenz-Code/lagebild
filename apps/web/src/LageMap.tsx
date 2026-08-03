@@ -56,6 +56,8 @@ import { getOfflineFile } from './offlineMaps.js';
 import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
+import { DrawMenu, type DrawTool } from './DrawMenu.js';
+import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
 import { mufToDataUrl, MUF_BOUNDS, MUF_SCALE } from './mufGrid.js';
 import {
@@ -95,11 +97,14 @@ import {
 const DRAW_COLOR = '#0d9488';
 /** Farbe der Routenlinie (kräftig genug, um über allen Ebenen zu tragen). */
 const ROUTE_COLOR = '#2f7fd1';
-type DrawMode = 'off' | 'point' | 'area';
+type DrawMode = DrawTool;
+
+/** Ebenen mit eigenen Markierungen, die sich antippen lassen. */
+const DRAW_CLICK_LAYERS = ['draw-point', 'draw-area-fill', 'draw-line'];
 
 /** Frisch gezeichnete Markierung, die noch auf ihren Namen wartet. */
 interface PendingDraw {
-  kind: 'point' | 'area';
+  kind: 'point' | 'area' | 'line';
   geometry: DrawGeometry;
   defaultName: string;
 }
@@ -110,12 +115,24 @@ interface TimelineFrame {
   forecast: boolean;
 }
 
-function drawToGeoJson(features: DrawFeature[], areaVertices: [number, number][]): GeoJSON.FeatureCollection {
+function drawToGeoJson(
+  features: DrawFeature[],
+  areaVertices: [number, number][],
+  /** Beim Messen wird die Fläche schon während des Setzens gefüllt. */
+  closeRing = false,
+): GeoJSON.FeatureCollection {
   const out: GeoJSON.Feature[] = features.map((d) => ({
     type: 'Feature',
     properties: { kind: d.kind, name: d.name },
     geometry: d.geometry,
   }));
+  if (closeRing && areaVertices.length >= 3) {
+    out.push({
+      type: 'Feature',
+      properties: { kind: 'progress-area' },
+      geometry: { type: 'Polygon', coordinates: [[...areaVertices, areaVertices[0]!]] },
+    });
+  }
   if (areaVertices.length >= 2) {
     out.push({ type: 'Feature', properties: { kind: 'progress' }, geometry: { type: 'LineString', coordinates: areaVertices } });
   }
@@ -832,6 +849,8 @@ interface Props {
   hfPath: [number, number][] | null;
   /** Der nächste Klick setzt den Standort (Modus aus dem Standort-Menü). */
   pickingLocation: boolean;
+  /** Das Einlesen einer Datei öffnet ein eigenes Blatt (liegt in App). */
+  onOpenImport: () => void;
   /** Nächster Kartenklick setzt ein Zwischenziel. */
   pickingVia: boolean;
   /** Wird gerade eine Route geplant? Dann bietet das Punktmenü Zwischenziele an. */
@@ -982,6 +1001,7 @@ export function LageMap({
   navBearing,
   onPickPoint,
   pickingLocation,
+  onOpenImport,
   pickingVia,
   routeActive,
   onViewport,
@@ -1081,10 +1101,11 @@ export function LageMap({
   const [pending, setPending] = useState<PendingDraw | null>(null);
   const drawModeRef = useRef<DrawMode>('off');
   drawModeRef.current = drawMode;
-  const drawCount = useRef({ point: 0, area: 0 });
+  const drawCount = useRef({ point: 0, area: 0, line: 0 });
   drawCount.current = {
     point: drawFeatures.filter((f) => f.kind === 'point').length,
     area: drawFeatures.filter((f) => f.kind === 'area').length,
+    line: drawFeatures.filter((f) => f.kind === 'line').length,
   };
   useEffect(() => saveDraw(drawFeatures), [drawFeatures]);
 
@@ -1213,7 +1234,7 @@ export function LageMap({
           geometry: { type: 'Point', coordinates: c },
           defaultName: `Ort ${drawCount.current.point + 1}`,
         });
-      } else if (mode === 'area') {
+      } else if (mode === 'area' || mode === 'measure') {
         setAreaVertices((prev) => [...prev, c]);
       }
     });
@@ -1735,10 +1756,15 @@ export function LageMap({
     map.addSource('draw', { type: 'geojson', data: drawToGeoJson(drawFeatures, areaVertices) });
     map.addLayer({ id: 'draw-area-fill', type: 'fill', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'fill-color': DRAW_COLOR, 'fill-opacity': 0.15 } });
     map.addLayer({ id: 'draw-area-line', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'area'], paint: { 'line-color': DRAW_COLOR, 'line-width': 2 } });
+    map.addLayer({ id: 'draw-progress-area', type: 'fill', source: 'draw', filter: ['==', ['get', 'kind'], 'progress-area'], paint: { 'fill-color': DRAW_COLOR, 'fill-opacity': 0.12 } });
+    map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'line'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': DRAW_COLOR, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 16, 5] } });
     map.addLayer({ id: 'draw-progress', type: 'line', source: 'draw', filter: ['==', ['get', 'kind'], 'progress'], paint: { 'line-color': DRAW_COLOR, 'line-width': 2, 'line-dasharray': [2, 1] } });
     map.addLayer({ id: 'draw-vertex', type: 'circle', source: 'draw', filter: ['==', ['get', 'kind'], 'vertex'], paint: { 'circle-radius': 4, 'circle-color': '#fff', 'circle-stroke-color': DRAW_COLOR, 'circle-stroke-width': 2 } });
     map.addLayer({ id: 'draw-point', type: 'circle', source: 'draw', filter: ['==', ['get', 'kind'], 'point'], paint: { 'circle-radius': 7, 'circle-color': DRAW_COLOR, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
     map.addLayer({ id: 'draw-label', type: 'symbol', source: 'draw', filter: ['in', ['get', 'kind'], ['literal', ['point', 'area']]], layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Medium'], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' }, paint: { 'text-color': DRAW_COLOR, 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
+    // `symbol-placement` ist keine datengesteuerte Eigenschaft — Linien
+    // brauchen deshalb eine eigene Beschriftungsebene.
+    map.addLayer({ id: 'draw-line-label', type: 'symbol', source: 'draw', filter: ['==', ['get', 'kind'], 'line'], layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Medium'], 'text-size': 12, 'symbol-placement': 'line-center' }, paint: { 'text-color': DRAW_COLOR, 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, styleEpoch]);
 
@@ -1747,8 +1773,8 @@ export function LageMap({
     const map = mapRef.current;
     if (!map || !ready) return;
     const src = map.getSource('draw') as maplibregl.GeoJSONSource | undefined;
-    src?.setData(drawToGeoJson(drawFeatures, areaVertices));
-  }, [drawFeatures, areaVertices, ready, styleEpoch]);
+    src?.setData(drawToGeoJson(drawFeatures, areaVertices, drawMode === 'measure'));
+  }, [drawFeatures, areaVertices, drawMode, ready, styleEpoch]);
 
   // Zeichen-Cursor
   useEffect(() => {
@@ -3235,9 +3261,9 @@ export function LageMap({
         label: name ?? null,
       });
     };
-    for (const layer of ['draw-point', 'draw-area-fill']) map.on('click', layer, onClick);
+    for (const layer of DRAW_CLICK_LAYERS) map.on('click', layer, onClick);
     return () => {
-      for (const layer of ['draw-point', 'draw-area-fill']) map.off('click', layer, onClick);
+      for (const layer of DRAW_CLICK_LAYERS) map.off('click', layer, onClick);
     };
   }, [ready, styleEpoch]);
 
@@ -3254,7 +3280,7 @@ export function LageMap({
     // Klicks auf Haltestellen oder eigene Markierungen öffnen das Menü — dieser
     // allgemeine Handler läuft danach und darf es nicht sofort wieder zumachen.
     const closeOnClick = (e: MapMouseEvent) => {
-      const layers = ['stops', 'emergency', 'draw-point', 'draw-area-fill'].filter((id) =>
+      const layers = ['stops', 'emergency', ...DRAW_CLICK_LAYERS].filter((id) =>
         map.getLayer(id),
       );
       if (layers.length && map.queryRenderedFeatures(e.point, { layers }).length) return;
@@ -3269,6 +3295,33 @@ export function LageMap({
       map.off('click', closeOnClick);
     };
   }, [ready]);
+
+  /** Laufende Messung — reine Rechnung aus den gesetzten Punkten. */
+  const measure =
+    drawMode === 'measure'
+      ? {
+          points: areaVertices.length,
+          lengthM: lineLength(areaVertices),
+          areaM2: areaVertices.length >= 3 ? ringArea(areaVertices) : 0,
+        }
+      : null;
+
+  /** Gemessenes als Markierung behalten — sonst wäre die Arbeit weg. */
+  const keepMeasure = (as: 'line' | 'area') => {
+    if (as === 'area' && areaVertices.length >= 3) {
+      setPending({
+        kind: 'area',
+        geometry: { type: 'Polygon', coordinates: [[...areaVertices, areaVertices[0]!]] },
+        defaultName: `Fläche ${drawCount.current.area + 1}`,
+      });
+    } else if (areaVertices.length >= 2) {
+      setPending({
+        kind: 'line',
+        geometry: { type: 'LineString', coordinates: [...areaVertices] },
+        defaultName: `Strecke ${drawCount.current.line + 1}`,
+      });
+    }
+  };
 
   const finishArea = () => {
     if (areaVertices.length >= 3) {
@@ -3296,9 +3349,11 @@ export function LageMap({
         { id: newId(), name, kind: pending.kind, geometry: pending.geometry },
       ]);
     }
-    if (pending?.kind === 'area') {
+    if (pending?.kind === 'area' || pending?.kind === 'line') {
       setAreaVertices([]);
-      setDrawMode('off');
+      // Nach dem Messen darf weitergemessen werden; eine gezeichnete Fläche
+      // ist dagegen abgeschlossen.
+      if (drawMode !== 'measure') setDrawMode('off');
     }
     setPending(null);
   };
@@ -3391,35 +3446,38 @@ export function LageMap({
               </span>
             }
           />
-          <button
-            type="button"
-            className="chip"
-            aria-pressed={drawBarOpen}
-            onClick={() =>
-              setDrawBarOpen((v) => {
-                if (v) {
-                  setDrawMode('off');
-                  setAreaVertices([]);
-                }
-                return !v;
-              })
-            }
-          >
-            <span className="k" style={{ background: DRAW_COLOR }} />
-            Markieren
-          </button>
+          <DrawMenu
+            open={drawBarOpen}
+            // Das Menü zu schließen beendet das Werkzeug NICHT: der erste
+            // Kartenklick schließt es ohnehin (Klick daneben), und das
+            // Werkzeug soll dabei scharf bleiben. Beendet wird über die
+            // Arbeitsleiste.
+            onOpenChange={setDrawBarOpen}
+            tool={drawMode}
+            onTool={(tool) => {
+              setDrawMode(tool);
+              setAreaVertices([]);
+            }}
+            counts={drawCount.current}
+            onOpenList={() => setListOpen(true)}
+            onOpenImport={onOpenImport}
+            color={DRAW_COLOR}
+          />
         </div>
 
-        {drawBarOpen && (
-          <div className="drawbar">
-            <button type="button" className="chip" aria-pressed={drawMode === 'point'} onClick={() => setDrawMode((m) => (m === 'point' ? 'off' : 'point'))}>
-              Punkt
-            </button>
-            <button type="button" className="chip" aria-pressed={drawMode === 'area'} onClick={() => setDrawMode((m) => (m === 'area' ? 'off' : 'area'))}>
-              Fläche
-            </button>
-            {drawMode === 'area' && areaVertices.length > 0 && (
+        {/* Arbeitsleiste des laufenden Werkzeugs. Sie liegt bewusst NICHT im
+            Menü: wer misst, tippt auf die Karte — und dabei fällt jedes
+            Ausklappmenü zu, samt der Werte, auf die es ankommt. */}
+        {drawMode !== 'off' && (
+          <div className="drawstatus" role="status">
+            {drawMode === 'point' && <span className="ds-hint">Karte antippen — der Punkt bekommt gleich einen Namen.</span>}
+            {drawMode === 'area' && (
               <>
+                <span className="ds-hint">
+                  {areaVertices.length < 3
+                    ? `Ecken antippen (${areaVertices.length}/3)`
+                    : `${areaVertices.length} Ecken · ${formatArea(ringArea(areaVertices))}`}
+                </span>
                 <button type="button" className="chip chip-ok" onClick={finishArea} disabled={areaVertices.length < 3}>
                   Fertig
                 </button>
@@ -3428,12 +3486,48 @@ export function LageMap({
                 </button>
               </>
             )}
-            <button type="button" className="chip" onClick={() => setListOpen(true)}>
-              Liste ({drawFeatures.length})
-            </button>
-            {drawMode !== 'off' && (
-              <span className="drawhint">{drawMode === 'point' ? 'Karte antippen für Punkt' : 'Ecken antippen, dann „Fertig"'}</span>
+            {drawMode === 'measure' && measure && (
+              <>
+                {measure.points < 2 ? (
+                  <span className="ds-hint">Punkte antippen — Strecke und, ab drei Punkten, Fläche.</span>
+                ) : (
+                  <span className="ds-values">
+                    <b>{formatLength(measure.lengthM)}</b>
+                    {measure.points > 2 && (
+                      <>
+                        <span className="ds-sep">·</span>
+                        <b>{formatArea(measure.areaM2)}</b>
+                      </>
+                    )}
+                  </span>
+                )}
+                {measure.points >= 2 && (
+                  <button type="button" className="chip" onClick={() => keepMeasure('line')}>
+                    Als Linie sichern
+                  </button>
+                )}
+                {measure.points >= 3 && (
+                  <button type="button" className="chip" onClick={() => keepMeasure('area')}>
+                    Als Fläche sichern
+                  </button>
+                )}
+                {measure.points > 0 && (
+                  <button type="button" className="chip" onClick={() => setAreaVertices([])}>
+                    Zurücksetzen
+                  </button>
+                )}
+              </>
             )}
+            <button
+              type="button"
+              className="chip"
+              onClick={() => {
+                setDrawMode('off');
+                setAreaVertices([]);
+              }}
+            >
+              Beenden
+            </button>
           </div>
         )}
         </div>
@@ -3743,6 +3837,30 @@ export function LageMap({
           onDelete={(id) => setDrawFeatures((prev) => prev.filter((f) => f.id !== id))}
           onClear={() => {
             setDrawFeatures([]);
+            setListOpen(false);
+          }}
+          onShow={(f) => {
+            const map = mapRef.current;
+            if (!map) return;
+            const pts =
+              f.geometry.type === 'Point'
+                ? [f.geometry.coordinates]
+                : f.geometry.type === 'LineString'
+                  ? f.geometry.coordinates
+                  : (f.geometry.coordinates[0] ?? []);
+            if (!pts.length) return;
+            if (pts.length === 1) {
+              map.flyTo({ center: pts[0]!, zoom: 15, speed: 1.5 });
+            } else {
+              let west = 180, south = 90, east = -180, north = -90;
+              for (const [lon, lat] of pts) {
+                if (lon < west) west = lon;
+                if (lon > east) east = lon;
+                if (lat < south) south = lat;
+                if (lat > north) north = lat;
+              }
+              map.fitBounds([[west, south], [east, north]], { padding: 60, duration: 800, maxZoom: 16 });
+            }
             setListOpen(false);
           }}
           onClose={() => setListOpen(false)}

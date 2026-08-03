@@ -784,8 +784,23 @@ export function tracksFrom(result: ImportResult): Track[] {
   });
 }
 
-/** Eingelesene Punkte und Flächen als eigene Markierungen. */
+/**
+ * Eingelesenes als eigene Markierungen: Punkte, Flächen **und Linien**.
+ *
+ * Linien liegen damit doppelt vor — hier dauerhaft auf der Karte (mehrere
+ * gleichzeitig, umbenennbar) und zusätzlich als Spur mit GPX-Ausgabe und
+ * „Zum Start zurück". Ausdrücklicher Wunsch: beide Wege sollen offen sein.
+ */
 export function drawFrom(result: ImportResult): DrawFeature[] {
+  const lines: DrawFeature[] = result.lines.map((l) => ({
+    id: newId(),
+    name: l.name,
+    kind: 'line' as const,
+    geometry: {
+      type: 'LineString' as const,
+      coordinates: l.points.map((p) => [p.lon, p.lat] as [number, number]),
+    },
+  }));
   const points: DrawFeature[] = result.points.map((p) => ({
     id: newId(),
     name: p.name,
@@ -805,5 +820,5 @@ export function drawFrom(result: ImportResult): DrawFeature[] {
       geometry: { type: 'Polygon' as const, coordinates: [ring] },
     };
   });
-  return [...points, ...areas];
+  return [...lines, ...points, ...areas];
 }

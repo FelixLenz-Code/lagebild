@@ -2,12 +2,14 @@
 
 export type DrawGeometry =
   | { type: 'Point'; coordinates: [number, number] }
+  | { type: 'LineString'; coordinates: [number, number][] }
   | { type: 'Polygon'; coordinates: [number, number][][] };
 
 export interface DrawFeature {
   id: string;
   name: string;
-  kind: 'point' | 'area';
+  /** `line` entsteht beim Einlesen von Touren und beim Messen. */
+  kind: 'point' | 'area' | 'line';
   geometry: DrawGeometry;
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type {
   ManeuverModifier,
   ManeuverType,
@@ -27,6 +27,11 @@ interface Props {
   pickingVia: boolean;
   onPickVia: () => void;
   onCancelPickVia: () => void;
+  /** GPX/KML-Datei als Route einlesen. */
+  onGpxFile: (file: File) => void;
+  /** Name der Tour, der gerade gefolgt wird (sonst null). */
+  gpxName: string | null;
+  onClearGpx: () => void;
   profile: PlanMode;
   /** ÖPNV: gefundene Verbindungen und Auswahl. */
   itineraries: TransitItinerary[];
@@ -134,6 +139,7 @@ export function ManeuverIcon({ type, modifier, size = 22 }: { type: ManeuverType
 
 export function RoutePanel(props: Props) {
   const [showSteps, setShowSteps] = useState(false);
+  const gpxInput = useRef<HTMLInputElement>(null);
   const { route, progress, navigating } = props;
 
   /* --- Zielführung --- */
@@ -286,7 +292,16 @@ export function RoutePanel(props: Props) {
           <i className="dot end" />
           <span>{props.destination.name}</span>
         </div>
-        {props.profile !== 'transit' && (
+        {props.profile !== 'transit' && props.gpxName && (
+          <div className="rp-point rp-gpx">
+            <i className="dot gpx" aria-hidden="true" />
+            <span>Folgt der Tour „{props.gpxName}"</span>
+            <button type="button" className="rp-chip" onClick={props.onClearGpx}>
+              Lösen
+            </button>
+          </div>
+        )}
+        {props.profile !== 'transit' && !props.gpxName && (
           <div className="rp-point rp-addvia">
             <button
               type="button"
@@ -304,6 +319,23 @@ export function RoutePanel(props: Props) {
                 Abbrechen
               </button>
             )}
+            <button type="button" className="rp-chip" onClick={() => gpxInput.current?.click()}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3v10M8 9l4 4 4-4M4 19h16" />
+              </svg>
+              GPX-Tour
+            </button>
+            <input
+              ref={gpxInput}
+              type="file"
+              accept=".gpx,.kml,.kmz,.geojson,.json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) props.onGpxFile(f);
+                e.target.value = '';
+              }}
+            />
           </div>
         )}
       </div>

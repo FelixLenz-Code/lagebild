@@ -6,6 +6,7 @@ import { searchOffline } from './offline/client.js';
 import { CategoryIcon } from './CategoryIcon.js';
 import { parseCoords, formatDegMin, formatUtm } from './coords.js';
 import { loadDraw, type DrawFeature } from './drawStore.js';
+import { midpoint } from './geo.js';
 import { distanceM } from './offline/graph.js';
 import type { Place } from './places.js';
 
@@ -29,10 +30,16 @@ const distanceLabel = (m?: number): string | null => {
   return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
 };
 
-/** Mittelpunkt einer eigenen Markierung (Punkt oder Fläche). */
+/** Anfahrpunkt einer eigenen Markierung (Punkt, Linie oder Fläche). */
 function drawCenter(f: DrawFeature): Coords {
   if (f.geometry.type === 'Point') {
     const [lon, lat] = f.geometry.coordinates;
+    return { lat, lon };
+  }
+  if (f.geometry.type === 'LineString') {
+    // Bei einer Tour ist die Mitte der Linie gemeint, nicht der Schwerpunkt
+    // aller Stützpunkte — der läge bei einer Schleife irgendwo daneben.
+    const [lon, lat] = midpoint(f.geometry.coordinates);
     return { lat, lon };
   }
   const ring = f.geometry.coordinates[0] ?? [];

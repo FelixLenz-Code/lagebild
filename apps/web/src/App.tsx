@@ -25,7 +25,7 @@ import { HfBands, HfDetail } from './HfPanel.js';
 import { NewsIcon } from './NewsIcon.js';
 import { HfPathSheet } from './HfPathSheet.js';
 import { forecastPath } from './hfPath.js';
-import { RoutePanel, type PlanMode } from './RoutePanel.js';
+import { RoutePanel, formatDistance, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { SettingsSheet } from './SettingsSheet.js';
 import { loadSettings, saveSettings, type Settings } from './settings.js';
@@ -38,13 +38,16 @@ import {
 import type { LayerRowId } from './layerCatalog.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
 import { poisOffline, routeOffline, stopsOffline } from './offline/client.js';
+import { routeFromLine, viaPointsFromLine } from './offline/router.js';
 import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
 import { loadFavorites, saveFavorites, pointInGeometry, type Place } from './places.js';
 import { AlertBanner, collectAlerts } from './AlertBanner.js';
 import { TrackPanel, useTrackRecorder } from './TrackPanel.js';
-import { type Track } from './trackStore.js';
-import { drawFrom, tracksFrom, type ImportResult } from './importFiles.js';
+import { trackLength, type Track } from './trackStore.js';
+import { drawFrom, tracksFrom, readImport, ImportError, type ImportResult } from './importFiles.js';
+import { ImportBox } from './ImportBox.js';
+import { lineLength } from './geo.js';
 import { type DrawFeature } from './drawStore.js';
 import { Sheet } from './Sheet.js';
 import {
@@ -365,21 +368,21 @@ export function App() {
   const [addDraw, setAddDraw] = useState<{ features: DrawFeature[]; key: number } | null>(null);
   /** Ausschnitt, auf den die Karte springen soll. */
   const [fitBbox, setFitBbox] = useState<{ bbox: [number, number, number, number]; key: number } | null>(null);
-  /** Auf das Fenster gezogene Datei — wird an den Spuren-Bildschirm gereicht. */
+  /** Auf das Fenster gezogene Datei — wird an das Einlese-Blatt gereicht. */
   const [droppedFile, setDroppedFile] = useState<File | null>(null);
+  /** Blatt „Datei einlesen" (aus dem Einzeichnen-Menü oder per Ziehen). */
+  const [importOpen, setImportOpen] = useState(false);
 
   const takeImport = useCallback((result: ImportResult) => {
     const tracks = tracksFrom(result);
     const features = drawFrom(result);
-    if (tracks.length) {
-      recorder.setTracks((prev) => [...prev, ...tracks]);
-      // Die erste eingelesene Spur gleich zeigen — sonst bliebe die Karte leer
-      // und man müsste raten, ob etwas angekommen ist.
-      setShownTrack(tracks[0]!);
-    }
+    // Linien landen doppelt: als Markierung (dauerhaft auf der Karte) und als
+    // Spur (GPX-Ausgabe, „Zum Start zurück"). Deshalb wird die Spur NICHT
+    // zusätzlich eingeblendet — sie läge deckungsgleich unter der Markierung.
+    if (tracks.length) recorder.setTracks((prev) => [...prev, ...tracks]);
     if (features.length) setAddDraw({ features, key: Date.now() });
     if (result.bbox) setFitBbox({ bbox: result.bbox, key: Date.now() });
-    setTrackOpen(false);
+    setImportOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -394,7 +397,7 @@ export function App() {
       if (!file) return;
       e.preventDefault();
       setDroppedFile(file);
-      setTrackOpen(true);
+      setImportOpen(true);
     };
     window.addEventListener('dragover', over);
     window.addEventListener('drop', drop);
@@ -629,13 +632,35 @@ export function App() {
   const [planArriveBy, setPlanArriveBy] = useState(false);
   const [routes, setRoutes] = useState<RouteResult[]>([]);
   const [routeIndex, setRouteIndex] = useState(0);
+  /**
+   * Eingelesene GPX-Tour, der genau gefolgt werden soll. Sie wird nicht
+   * gerechnet, sondern liegt fertig vor — deshalb steht sie neben `routes`
+   * und schaltet die Berechnung ab, statt sie zu füttern.
+   */
+  const [gpxLine, setGpxLine] = useState<{ coords: [number, number][]; name: string } | null>(null);
+  const [gpxRoute, setGpxRoute] = useState<RouteResult | null>(null);
+  /** Eingelesene Tour, für die noch die Art der Übernahme fehlt. */
+  const [gpxChoice, setGpxChoice] = useState<{ name: string; coords: [number, number][]; source: string } | null>(null);
+  const gpxRouteRef = useRef<RouteResult | null>(null);
   const [avoidMotorways, setAvoidMotorways] = useState(false);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState(false);
   const [muted, setMuted] = useState(() => !loadSettings().voiceGuidance);
+  gpxRouteRef.current = gpxRoute;
+  /** Was in Leiste und Karte erscheint: die eingelesene Tour hat Vorrang. */
+  const shownRoutes = gpxRoute ? [gpxRoute] : routes;
   /** Die gerade gewählte Variante — sie wird gefahren und angesagt. */
-  const route = routes[routeIndex] ?? null;
+  const route = gpxRoute ?? routes[routeIndex] ?? null;
+
+  // Profilwechsel rechnet nur die Fahrzeit der Tour neu; die Linie bleibt.
+  useEffect(() => {
+    if (!gpxLine || profile === 'transit') {
+      setGpxRoute(null);
+      return;
+    }
+    setGpxRoute(routeFromLine(gpxLine.coords, profile as RouteProfile));
+  }, [gpxLine, profile]);
   // Beim Start der Zielführung darf nicht neu gerechnet werden, sonst wäre die
   // ausgewählte Variante wieder weg — deshalb nur als Ref, nicht als Abhängigkeit.
   const navigatingRef = useRef(navigating);
@@ -679,6 +704,8 @@ export function App() {
   );
 
   useEffect(() => {
+    // Einer eingelesenen Tour wird gefolgt, nicht nachgerechnet.
+    if (gpxRouteRef.current) return;
     if (!destination) {
       setRoutes([]);
       setRouteError(null);
@@ -734,7 +761,7 @@ export function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destKey, startKey, viaKey, profile, routeCodesKey, avoidMotorways]);
+  }, [destKey, startKey, viaKey, profile, routeCodesKey, avoidMotorways, gpxRoute]);
 
   // ÖPNV läuft nicht über den Offline-Graphen — Fahrpläne kommen aus dem Netz.
   const [planLoading, setPlanLoading] = useState(false);
@@ -768,11 +795,69 @@ export function App() {
 
   /** Bei Abweichung von der Route: ab der aktuellen Position neu rechnen. */
   const handleOffRoute = useCallback((position: Coords) => {
+    // Bei einer eingelesenen Tour gibt es nichts neu zu rechnen: die Linie ist
+    // die Route. Die Leiste zeigt weiterhin „abseits der Route" — der Weg
+    // zurück auf die Spur bleibt die Aufgabe des Fahrers.
+    if (gpxRouteRef.current) return;
     setRouteOrigin({ name: 'Aktuelle Position', lat: position.lat, lon: position.lon });
   }, []);
   // Zielführung gibt es nur für die selbst gerechneten Profile.
   const navProfile: RouteProfile = profile === 'transit' ? 'foot' : profile;
   const nav = useNavigation(route, navigating, navProfile, muted, handleOffRoute);
+
+  /**
+   * GPX-Datei für die Routenplanung einlesen. Genommen wird die **längste**
+   * Linie der Datei — Tourenportale legen gern noch Anfahrtsschnipsel dazu.
+   */
+  const loadGpxRoute = async (file: File) => {
+    setRouteError(null);
+    try {
+      const result = await readImport(file.name, await file.arrayBuffer());
+      const longest = result.lines
+        .map((l) => ({ line: l, length: trackLength(l.points) }))
+        .sort((a, b) => b.length - a.length)[0];
+      if (!longest) {
+        setRouteError(`In „${file.name}" steckt keine Linie, der man folgen könnte.`);
+        return;
+      }
+      setGpxChoice({
+        name: longest.line.name,
+        coords: longest.line.points.map((p) => [p.lon, p.lat] as [number, number]),
+        source: result.source,
+      });
+    } catch (e) {
+      setRouteError(
+        e instanceof ImportError ? e.message : `„${file.name}" ließ sich nicht lesen.`,
+      );
+    }
+  };
+
+  /** Eingelesene Tour übernehmen — entweder genau so oder auf Straßen gerechnet. */
+  const takeGpxRoute = (how: 'exact' | 'roads') => {
+    const choice = gpxChoice;
+    if (!choice) return;
+    const first = choice.coords[0]!;
+    const last = choice.coords[choice.coords.length - 1]!;
+    setNavigating(false);
+    setRouteOrigin({ name: `Start ${choice.name}`, lat: first[1], lon: first[0] });
+    setDestination({ name: choice.name, lat: last[1], lon: last[0] });
+    setPin(null);
+    if (how === 'exact') {
+      setVia([]);
+      setGpxLine({ coords: choice.coords, name: choice.name });
+    } else {
+      // Die Stützpunkte werden zu Zwischenzielen; den Rest macht der Router.
+      setGpxLine(null);
+      setVia(
+        viaPointsFromLine(choice.coords).map((p, i) => ({
+          name: `${choice.name} ${i + 1}`,
+          lat: p.lat,
+          lon: p.lon,
+        })),
+      );
+    }
+    setGpxChoice(null);
+  };
 
   /** Ziel setzen und die Karte auf Planung umstellen. */
   const startRouteTo = (place: Place, category?: string) => {
@@ -781,9 +866,10 @@ export function App() {
     setSearchOpen(false);
     setNavigating(false);
     // Ein neues Ziel beginnt eine neue Fahrt — die alten Zwischenziele lagen
-    // auf einem anderen Weg.
+    // auf einem anderen Weg, und eine eingelesene Tour führt woandershin.
     setVia([]);
     setPickingVia(false);
+    setGpxLine(null);
   };
 
   const stopRoute = () => {
@@ -793,6 +879,7 @@ export function App() {
     setRouteOrigin(null);
     setVia([]);
     setPickingVia(false);
+    setGpxLine(null);
     setPin(null);
   };
 
@@ -1087,7 +1174,7 @@ export function App() {
             fire={fire.data?.data ?? null}
             stopsAvailable={online || !!stopsCode}
             onStopClick={setStopDetail}
-            alternatives={routes.map((r, i) => ({ index: i, route: r })).filter((r) => r.index !== routeIndex)}
+            alternatives={shownRoutes.map((r, i) => ({ index: i, route: r })).filter((r) => r.index !== routeIndex)}
             onSelectRoute={setRouteIndex}
             routeOrigin={routeOrigin ? { lat: routeOrigin.lat, lon: routeOrigin.lon } : null}
             pin={destination ? null : pin}
@@ -1095,6 +1182,7 @@ export function App() {
             navPosition={nav.position}
             navBearing={nav.heading ?? nav.progress?.bearing ?? null}
             onPickPoint={pickPoint}
+            onOpenImport={() => setImportOpen(true)}
             pickingLocation={pickingLocation}
             pickingVia={pickingVia}
             routeActive={!!destination}
@@ -1148,8 +1236,8 @@ export function App() {
               onWalkLeg={walkLeg}
               online={online}
               route={route}
-              routes={routes}
-              routeIndex={routeIndex}
+              routes={shownRoutes}
+              routeIndex={gpxRoute ? 0 : routeIndex}
               onSelectRoute={setRouteIndex}
               avoidMotorways={avoidMotorways}
               onToggleMotorways={() => setAvoidMotorways((v) => !v)}
@@ -1168,6 +1256,9 @@ export function App() {
                 // Reihenfolge — sonst führe die Route im Zickzack.
                 setVia((prev) => [...prev].reverse());
               }}
+              onGpxFile={loadGpxRoute}
+              gpxName={gpxLine?.name ?? null}
+              onClearGpx={() => setGpxLine(null)}
               onResetOrigin={() => setRouteOrigin(null)}
               onStartNav={startNavigation}
               onStopNav={() => setNavigating(false)}
@@ -1523,11 +1614,54 @@ export function App() {
             setTrackOpen(false);
           }}
           shownId={shownTrack?.id ?? null}
-          onImport={takeImport}
-          droppedFile={droppedFile}
-          onFileHandled={() => setDroppedFile(null)}
           onClose={() => setTrackOpen(false)}
         />
+      )}
+
+      {gpxChoice && (
+        <Sheet
+          title="Tour übernehmen"
+          meta={gpxChoice.source}
+          onClose={() => setGpxChoice(null)}
+        >
+          <div className="gpxpick">
+            <div className="tr-head">
+              <b>{gpxChoice.name}</b>
+              <span className="tr-meta mono">
+                {formatDistance(lineLength(gpxChoice.coords))} · {gpxChoice.coords.length} Stützpunkte
+              </span>
+            </div>
+            <button type="button" className="gpx-opt" onClick={() => takeGpxRoute('exact')}>
+              <b>Genau dieser Linie folgen</b>
+              <span>
+                Die Tour ist die Route. Anweisungen entstehen aus den Richtungswechseln, ohne
+                Straßennamen. Funktioniert auch abseits von Straßen und ohne gespeicherte Region.
+              </span>
+            </button>
+            <button type="button" className="gpx-opt" onClick={() => takeGpxRoute('roads')}>
+              <b>Auf dem Straßennetz nachrechnen</b>
+              <span>
+                Die Stützpunkte werden zu Zwischenzielen, der Offline-Router baut daraus echte
+                Abbiegehinweise mit Straßennamen. Braucht die gespeicherte Region und weicht ab,
+                wo die Tour nicht auf Straßen liegt.
+              </span>
+            </button>
+          </div>
+        </Sheet>
+      )}
+
+      {importOpen && (
+        <Sheet
+          title="Datei einlesen"
+          meta="GPX · KML · KMZ · GeoJSON"
+          onClose={() => setImportOpen(false)}
+        >
+          <ImportBox
+            onCommit={takeImport}
+            file={droppedFile}
+            onFileHandled={() => setDroppedFile(null)}
+          />
+        </Sheet>
       )}
 
       {settingsOpen && (

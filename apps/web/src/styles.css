@@ -742,10 +742,26 @@ svg { display: block; }
 .rprog .pct { font-size: .68rem; color: var(--muted); margin-top: 3px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- draw tool ---------- */
-.drawbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* Einzeichnen-Menue (loest die fruehere Markieren-Leiste ab) */
+.dm-panel { min-width: 250px; }
+.dm-ico { width: 18px; height: 18px; flex: none; color: var(--muted); display: grid; place-items: center; }
+.dm-ico svg { width: 100%; height: 100%; }
+.lm-item[aria-checked='true'] .dm-ico { color: #0d9488; }
+.dm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px 8px; }
+.dm-actions .btn-primary { flex: none; min-height: 30px; padding: 0 12px; font-size: .78rem; }
+/* Arbeitsleiste des laufenden Zeichenwerkzeugs */
+.drawstatus {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 6px 8px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); max-width: 100%;
+}
+.ds-hint { font-size: .72rem; color: var(--muted); }
+.ds-values { display: flex; align-items: baseline; gap: 6px; }
+.ds-values b { font-size: .95rem; font-variant-numeric: tabular-nums; }
+.ds-sep { color: var(--muted); }
 .chip.chip-ok { color: #fff; background: var(--ok); border-color: var(--ok); }
 .chip.chip-ok:disabled { opacity: .5; cursor: default; }
-.drawhint { font-size: .68rem; color: var(--ink); background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 3px 8px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .draw-kind { width: 20px; flex: none; color: #0d9488; display: grid; place-items: center; }
 .draw-kind svg { width: 16px; height: 16px; }
 
@@ -804,6 +820,20 @@ svg { display: block; }
 .rp-legs li { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
 .rp-leg-to { color: var(--muted); }
 .rp-legs li .tr-meta { margin-left: auto; }
+.rp-point .dot.gpx { background: #0d9488; }
+.rp-gpx { color: var(--muted); }
+.rp-gpx .rp-chip { margin-left: auto; }
+
+/* Eingelesene Tour uebernehmen */
+.gpxpick { display: flex; flex-direction: column; gap: 10px; }
+.gpx-opt {
+  display: flex; flex-direction: column; gap: 4px; text-align: left; cursor: pointer;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: transparent;
+  padding: 12px 14px; color: inherit;
+}
+.gpx-opt:hover { border-color: var(--accent); }
+.gpx-opt b { font-size: .92rem; }
+.gpx-opt span { font-size: .78rem; color: var(--muted); line-height: 1.45; }
 .rp-summary { display: flex; align-items: baseline; gap: 14px; font-size: .82rem; color: var(--muted); }
 .rp-summary b { font-size: 1.15rem; font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
 .rp-actions { display: flex; align-items: center; gap: 8px; }

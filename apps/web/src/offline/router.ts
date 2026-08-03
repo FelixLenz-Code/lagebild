@@ -885,6 +885,150 @@ const SNAP_TRIES: [number, number][] = [
   [0, 2],
 ];
 
+/* ------------------------------------------------------------------ */
+/* Route aus einer fertigen Linie (eingelesene GPX-Tour)                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Durchschnittstempo je Fortbewegungsart, wenn **keine Straßendaten** dahinter
+ * liegen. Eine eingelesene Linie kennt weder Straßenklasse noch Tempolimit —
+ * mehr als ein ehrlicher Mittelwert ist nicht zu holen, und die Zahl steht in
+ * der Oberfläche neben der Länge, damit niemand sie für eine Messung hält.
+ */
+const LINE_SPEED_KMH: Record<RouteProfile, number> = { car: 50, bike: 16, foot: 4.5 };
+
+/** Abstand, über den die Richtung vor und nach einem Knick gemittelt wird. */
+const TURN_WINDOW_M = 25;
+/** Ab diesem Winkel gilt es als Richtungswechsel. */
+const TURN_ANGLE = 32;
+/** Zwei Anweisungen dürfen nicht dichter aufeinander folgen. */
+const TURN_MIN_GAP_M = 60;
+
+/**
+ * Macht aus einem fertigen Linienzug eine Route, **ohne den Graphen**.
+ *
+ * Damit lässt sich einer eingelesenen GPX-Tour Punkt für Punkt folgen — auch
+ * dort, wo gar keine Straße liegt (Wanderweg, Forstweg, Wasser) und auch ohne
+ * heruntergeladene Region. Die Anweisungen entstehen allein aus den
+ * Richtungswechseln, also ohne Straßennamen: „In 200 m rechts abbiegen".
+ */
+export function routeFromLine(coords: [number, number][], profileId: RouteProfile): RouteResult | null {
+  if (coords.length < 2) return null;
+
+  /** Auflaufende Länge bis zu jedem Stützpunkt. */
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) {
+    cum.push(cum[i - 1]! + distanceM(coords[i - 1]![1], coords[i - 1]![0], coords[i]![1], coords[i]![0]));
+  }
+  const total = cum[cum.length - 1]!;
+  const durationS = (total / (LINE_SPEED_KMH[profileId] * 1000)) * 3600;
+
+  /** Richtung über ein Stück Weg, damit einzelne Ausreißer nichts auslösen. */
+  const bearingAround = (index: number, back: boolean): number | null => {
+    const target = back ? cum[index]! - TURN_WINDOW_M : cum[index]! + TURN_WINDOW_M;
+    let other = index;
+    while (back ? other > 0 && cum[other]! > target : other < coords.length - 1 && cum[other]! < target) {
+      other += back ? -1 : 1;
+    }
+    if (other === index) return null;
+    const a = back ? coords[other]! : coords[index]!;
+    const b = back ? coords[index]! : coords[other]!;
+    return bearing(a[1], a[0], b[1], b[0]);
+  };
+
+  const steps: RouteStep[] = [];
+  const startBearing = bearingAround(0, false) ?? 0;
+  steps.push({
+    type: 'depart',
+    modifier: null,
+    name: null,
+    distanceM: 0,
+    durationS: 0,
+    lat: coords[0]![1],
+    lon: coords[0]![0],
+    index: 0,
+    text: `Richtung ${compass(startBearing)} der Spur folgen`,
+  });
+
+  let lastAt = 0;
+  for (let i = 1; i < coords.length - 1; i++) {
+    if (cum[i]! - lastAt < TURN_MIN_GAP_M) continue;
+    const inB = bearingAround(i, true);
+    const outB = bearingAround(i, false);
+    if (inB == null || outB == null) continue;
+    const angle = angleDiff(inB, outB);
+    if (Math.abs(angle) < TURN_ANGLE) continue;
+    const modifier = modifierFor(angle);
+    steps.push({
+      type: 'turn',
+      modifier,
+      name: null,
+      distanceM: 0,
+      durationS: 0,
+      lat: coords[i]![1],
+      lon: coords[i]![0],
+      index: i,
+      text: stepText('turn', modifier, null),
+    });
+    lastAt = cum[i]!;
+  }
+
+  steps.push({
+    type: 'arrive',
+    modifier: null,
+    name: null,
+    distanceM: 0,
+    durationS: 0,
+    lat: coords[coords.length - 1]![1],
+    lon: coords[coords.length - 1]![0],
+    index: coords.length - 1,
+    text: 'Ende der Spur erreicht',
+  });
+
+  for (let i = 0; i < steps.length; i++) {
+    const from = cum[steps[i]!.index] ?? 0;
+    const to = i + 1 < steps.length ? (cum[steps[i + 1]!.index] ?? total) : total;
+    steps[i]!.distanceM = Math.max(0, to - from);
+    steps[i]!.durationS = total > 0 ? (durationS * steps[i]!.distanceM) / total : 0;
+  }
+
+  return {
+    profile: profileId,
+    distanceM: Math.round(total),
+    durationS: Math.round(durationS),
+    coordinates: coords,
+    steps,
+    snappedStart: { lat: coords[0]![1], lon: coords[0]![0] },
+    snappedEnd: { lat: coords[coords.length - 1]![1], lon: coords[coords.length - 1]![0] },
+  };
+}
+
+/**
+ * Stützpunkte einer Linie auf Zwischenziele ausdünnen — für den Fall, dass die
+ * Tour **auf dem Straßennetz** nachgerechnet werden soll. Zu viele Punkte
+ * machen die Rechnung langsam und zwingen den Router auf jeden Messfehler.
+ */
+export function viaPointsFromLine(coords: [number, number][], maxPoints = 18): Coords[] {
+  if (coords.length < 3) return [];
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    total += distanceM(coords[i - 1]![1], coords[i - 1]![0], coords[i]![1], coords[i]![0]);
+  }
+  // Start und Ziel kommen von außen, dazwischen gleichmäßig verteilte Punkte.
+  const spacing = total / (maxPoints + 1);
+  const out: Coords[] = [];
+  let walked = 0;
+  let next = spacing;
+  for (let i = 1; i < coords.length - 1 && out.length < maxPoints; i++) {
+    walked += distanceM(coords[i - 1]![1], coords[i - 1]![0], coords[i]![1], coords[i]![0]);
+    if (walked >= next) {
+      out.push({ lat: coords[i]![1], lon: coords[i]![0] });
+      next += spacing;
+    }
+  }
+  return out;
+}
+
 /** Sucht einen Weg samt der üblichen Rückfallstufen. */
 function findLeg(
   graph: RouteGraph,
