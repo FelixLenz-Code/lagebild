@@ -1,0 +1,79 @@
+name: Offline-Pakete
+
+# Diese Prüfläufe brauchen ein **gebautes Regionspaket** und laden dafür einen
+# OSM-Auszug (Bremen, ~21 MB) sowie ein paar Höhenkacheln. Beides sind
+# gespendete bzw. offene Dienste — deshalb läuft der Ablauf bewusst nicht bei
+# jedem Anstoß, sondern nur dann, wenn er etwas finden kann:
+#
+#   * wenn der Paketbau oder der Offline-Teil der App sich ändert,
+#   * einmal in der Woche (fängt Änderungen bei OSM und an den Diensten ab),
+#   * auf Knopfdruck.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'apps/web/src/offline/**'
+      - 'packages/shared/**'
+      - '.github/workflows/pakete.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'apps/web/src/offline/**'
+      - 'packages/shared/**'
+      - '.github/workflows/pakete.yml'
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+# Zwei Läufe gleichzeitig würden nur doppelt herunterladen.
+concurrency:
+  group: pakete-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bremen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Der Auszug wird zwischengelagert: Für einen Prüflauf zählt der Aufbau
+      # der Daten, nicht ihr Alter — und Geofabrik ist ein gespendeter Dienst.
+      - name: OSM-Auszug aus dem Zwischenlager
+        uses: actions/cache@v4
+        with:
+          path: .cache/osm
+          key: osm-bremen-v1
+
+      - name: Höhenkacheln aus dem Zwischenlager
+        uses: actions/cache@v4
+        with:
+          path: /tmp/lagebild-terrain
+          key: terrain-bremen-z10-v1
+
+      - name: Routing- und Suchpaket bauen (Bremen)
+        run: node scripts/build-routing.mjs 04
+
+      - name: Höhenpaket bauen (Bremen)
+        run: node scripts/build-terrain.mjs --out apps/api/maps 04
+
+      - name: Graph, Router und Suche prüfen
+        run: pnpm check:offline
+
+      - name: Zwischenziele prüfen
+        run: pnpm check:via
+
+      - name: Höhen prüfen
+        run: pnpm check:terrain

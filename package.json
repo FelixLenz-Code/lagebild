@@ -11,9 +11,20 @@
     "dev": "pnpm --parallel -r --filter=@lagebild/api --filter=@lagebild/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "start": "node apps/api/dist/index.js"
+    "start": "node apps/api/dist/index.js",
+    "check": "pnpm check:import",
+    "check:import": "tsx scripts/check-import.mts",
+    "check:offline": "tsx scripts/check-offline.mts",
+    "check:via": "tsx scripts/check-via.mts",
+    "check:terrain": "tsx scripts/check-terrain.mts",
+    "check:pakete": "pnpm check:offline && pnpm check:via && pnpm check:terrain"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
   }
 }

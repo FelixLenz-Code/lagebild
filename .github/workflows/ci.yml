@@ -25,3 +25,9 @@ jobs:
       - run: pnpm typecheck
 
       - run: pnpm build
+
+      # Prüfläufe ohne Daten und ohne Netz: Datei-Import (GPX/KML/KMZ/GeoJSON)
+      # und die Maße in geo.ts. Laufen bei jedem Anstoß mit, sie dauern
+      # Sekunden. Alles, was ein gebautes Regionspaket braucht, steckt im
+      # Arbeitsablauf „Offline-Pakete".
+      - run: pnpm check

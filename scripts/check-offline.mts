@@ -114,9 +114,11 @@ if (graph.hasTrails) {
 
 /* --- Suche --- */
 const queries = ['Schlengstraße 31', 'Apotheke', 'Bremerhaven', 'Am Wall 12', 'Universität', 'Tankstelle'];
+const hitCounts = new Map<string, number>();
 for (const q of queries) {
   const t = Date.now();
   const hits = await index.query(q, hbf, 4);
+  hitCounts.set(q, hits.length);
   console.log(`\nSuche „${q}" (${Date.now() - t} ms):`);
   for (const h of hits) {
     console.log(
@@ -124,3 +126,35 @@ for (const q of queries) {
     );
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Mindestanforderungen
+ *
+ * Der Rest des Skripts ist zum Anschauen — dieser Teil entscheidet über den
+ * Rückgabewert, damit es in der CI etwas taugt. Geprüft wird nur, was für
+ * **jedes** Bundesland-Paket gelten muss; feste Zahlen stünden hier falsch,
+ * weil sich OpenStreetMap täglich ändert.
+ * ------------------------------------------------------------------ */
+
+let failed = 0;
+const must = (what: string, ok: boolean, detail = ''): void => {
+  if (!ok) failed++;
+  console.log(`\n  ${ok ? 'ok  ' : 'FEHL'} ${what}${detail ? ` — ${detail}` : ''}`);
+};
+
+must('Graph hat Knoten und Kanten', graph.nodeCount > 1000 && graph.edgeCount > 1000);
+must('Suchindex ist gefüllt', index.entryCount > 1000 && index.termCount > 100);
+must('Startpunkt lässt sich fangen', !!s && s.offRoadM < 3000);
+for (const profile of ['car', 'bike', 'foot'] as const) {
+  const r = route(graph, hbf, { lat: 53.1069, lon: 8.8517 }, profile);
+  must(
+    `Route zur Universität (${profile})`,
+    !!r && r.distanceM > 1000 && r.steps.length > 2,
+    r ? `${(r.distanceM / 1000).toFixed(1)} km, ${r.steps.length} Anweisungen` : 'keine Route',
+  );
+}
+must('Adresssuche findet die Hausnummer', (hitCounts.get('Schlengstraße 31') ?? 0) > 0);
+must('Kategoriesuche findet etwas', (hitCounts.get('Apotheke') ?? 0) > 0);
+
+console.log(failed ? `\n${failed} Mindestanforderung(en) nicht erfüllt\n` : '\nAlle Mindestanforderungen erfüllt\n');
+process.exit(failed ? 1 : 0);

@@ -33,6 +33,35 @@ Frontend: http://localhost:5173 · API-Health: http://localhost:8787/api/health
 ```bash
 pnpm build      # baut alle Pakete
 pnpm typecheck  # Typprüfung über alle Pakete
+pnpm check      # Prüfläufe ohne Daten (Datei-Import, Maße)
+```
+
+### Prüfläufe
+
+Statt eines Testrahmens liegen die Prüfungen als eigenständige Skripte bei —
+sie lesen dieselben Module wie die App und laufen unter Node:
+
+| Befehl | prüft | braucht |
+| --- | --- | --- |
+| `pnpm check:import` | GPX/KML/KMZ/GeoJSON-Leser, Ausdünnen, `geo.ts` | nichts |
+| `pnpm check:offline` | Graph, Router, Suchindex, Wegenetz | gebautes Regionspaket |
+| `pnpm check:via` | Zwischenziele, Naht der Abschnitte, Ausweichkanten | gebautes Regionspaket |
+| `pnpm check:terrain` | Höhenraster gegen bekannte Höhen | gebautes Höhenpaket |
+
+`pnpm check` läuft in der CI bei jedem Anstoß mit. Die drei anderen brauchen
+ein gebautes Paket und laufen deshalb im eigenen Ablauf **„Offline-Pakete"**
+(`.github/workflows/pakete.yml`): wenn sich der Paketbau oder der Offline-Teil
+der App ändert, einmal wöchentlich und auf Knopfdruck. Er baut Bremen aus dem
+Geofabrik-Auszug und prüft damit — Auszug und Höhenkacheln liegen im
+Zwischenlager der CI, weil für einen Prüflauf der Aufbau der Daten zählt und
+nicht ihr Alter.
+
+Lokal genauso:
+
+```bash
+node scripts/build-routing.mjs 04
+node scripts/build-terrain.mjs --out apps/api/maps 04
+pnpm check:pakete
 ```
 
 ## Kartenebenen
