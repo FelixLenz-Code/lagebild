@@ -37,7 +37,8 @@ import {
 } from './mapPresets.js';
 import type { LayerRowId } from './layerCatalog.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
-import { elevationOffline, poisOffline, routeOffline, stopsOffline, terrainImageOffline } from './offline/client.js';
+import { elevationOffline, poisOffline, routeOffline, stopsOffline, terrainImageOffline, trailsOffline } from './offline/client.js';
+import type { TrailFeature } from './offline/trails.js';
 import { imageFromRgba } from './gridImage.js';
 import type { ElevationProfile } from './offline/terrain.js';
 import { routeFromLine, viaPointsFromLine } from './offline/router.js';
@@ -197,6 +198,7 @@ export function App() {
     aurora: false,
     fire: false,
     terrain: false,
+    trails: false,
     aprsTargets: [],
   });
   const radarForecast = useApi(
@@ -800,6 +802,44 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, destKey, startKey, planTime, planArriveBy, online]);
 
+  /* ---------- Wander- und Radwegenetz ---------- */
+  const [trails, setTrails] = useState<TrailFeature[]>([]);
+  /** Das Paket ist noch ohne Wegenetz gebaut — dann bleibt die Ebene leer. */
+  const [trailsStale, setTrailsStale] = useState(false);
+  useEffect(() => {
+    if (!layers.trails || !viewport) {
+      setTrails([]);
+      return;
+    }
+    // Bei sehr weitem Ausschnitt bringt die Ebene nichts als Rechenlast — die
+    // Kartenebene blendet sich unter Zoom 10 ohnehin aus.
+    const span = Math.max(viewport.north - viewport.south, viewport.east - viewport.west);
+    if (span > 1.2) {
+      setTrails([]);
+      return;
+    }
+    const codes = statesForCorridor(
+      { lat: viewport.south, lon: viewport.west },
+      { lat: viewport.north, lon: viewport.east },
+    ).filter((code) => offlineFiles[code]?.route);
+    if (!codes.length) {
+      setTrails([]);
+      return;
+    }
+    let cancelled = false;
+    trailsOffline(codes, viewport, 7)
+      .then((r) => {
+        if (cancelled) return;
+        setTrails(r.features);
+        setTrailsStale(r.stale);
+      })
+      .catch(() => !cancelled && setTrails([]));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers.trails, viewKey, offlineFiles]);
+
   /* ---------- Geländeebene ---------- */
   const [terrainImage, setTerrainImage] = useState<
     { url: string; bounds: [number, number, number, number]; key: number } | null
@@ -1279,6 +1319,12 @@ export function App() {
             addDraw={addDraw}
             fitBbox={fitBbox}
             terrainImage={terrainImage}
+            trails={trails}
+            trailsHint={
+              trailsStale
+                ? 'Das gespeicherte Routing-Paket dieser Region kennt noch kein Wegenetz — neu laden oder neu bauen.'
+                : null
+            }
             onLayersChange={setLayers}
             hiddenLayers={settings.hiddenLayers}
             onActiveLayers={setActiveLayers}

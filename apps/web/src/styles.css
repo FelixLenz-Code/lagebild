@@ -827,6 +827,8 @@ svg { display: block; }
 .region.is-hidden .rinfo b { text-decoration: line-through; text-decoration-thickness: 1px; }
 .raction .rdel:disabled { opacity: .3; cursor: default; }
 
+.legend-note { max-width: 260px; font-size: .72rem; line-height: 1.35; color: var(--sev2); }
+
 /* Kompass und Peilung */
 .cp-wrap { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 .cp-rose { width: 220px; height: 220px; flex: none; }

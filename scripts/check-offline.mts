@@ -87,6 +87,31 @@ for (const [name, to] of targets) {
   }
 }
 
+/* --- Wander- und Radwegenetz --- */
+if (graph.hasTrails) {
+  let hike = 0;
+  let bike = 0;
+  let named = 0;
+  const names = new Set<string>();
+  for (let e = 0; e < graph.edgeCount; e++) {
+    const mask = graph.trail(e);
+    if (!mask) continue;
+    if (mask & 1) hike++;
+    if (mask & 2) bike++;
+    const name = graph.trailName(e);
+    if (name) {
+      named++;
+      names.add(name);
+    }
+  }
+  console.log(
+    `\nWegenetz: ${hike} Kanten Wandern, ${bike} Rad, ${named} benannt, ${names.size} verschiedene Routen`,
+  );
+  console.log('   z. B. ' + [...names].slice(0, 5).join(' · '));
+} else {
+  console.log('\nWegenetz: im Paket nicht enthalten (älterer Bau)');
+}
+
 /* --- Suche --- */
 const queries = ['Schlengstraße 31', 'Apotheke', 'Bremerhaven', 'Am Wall 12', 'Universität', 'Tankstelle'];
 for (const q of queries) {

@@ -57,6 +57,7 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { DrawMenu, type DrawTool } from './DrawMenu.js';
+import type { TrailFeature } from './offline/trails.js';
 import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
 import { mufToDataUrl, MUF_BOUNDS, MUF_SCALE } from './mufGrid.js';
@@ -815,6 +816,10 @@ interface Props {
   track: [number, number][];
   /** true, solange aufgezeichnet wird (dann kein Endpunkt). */
   trackLive: boolean;
+  /** Wander- und Radwege im Ausschnitt. */
+  trails: TrailFeature[];
+  /** Warum die Ebene leer bleibt (z. B. altes Paket). */
+  trailsHint: string | null;
   /** Geländebild der Region (Höhenfarben mit Schummerung) samt Ausdehnung. */
   terrainImage: { url: string; bounds: [number, number, number, number]; key: number } | null;
   /** Eingelesene Markierungen, die zu den eigenen dazukommen. */
@@ -896,6 +901,8 @@ export interface ActiveLayers {
   fire: boolean;
   /** Geländebild aus dem Höhenpaket. */
   terrain: boolean;
+  /** Wander- und Radwegenetz. */
+  trails: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
   muf: boolean;
   /** Verortete Nachrichten. */
@@ -954,6 +961,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   fire: false,
   draw: false,
   terrain: false,
+  trails: false,
 };
 
 /**
@@ -1002,6 +1010,8 @@ export function LageMap({
   addDraw,
   fitBbox,
   terrainImage,
+  trails,
+  trailsHint,
   aurora,
   fire,
   flyTo,
@@ -1101,6 +1111,7 @@ export function LageMap({
     fire: showFire,
     draw: showDraw,
     terrain: showTerrain,
+    trails: showTrails,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -1153,12 +1164,13 @@ export function LageMap({
         aurora: showAurora,
         fire: showFire,
         terrain: showTerrain,
+        trails: showTrails,
         aprsTargets,
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
-      showAurora, showFire, showTerrain, showRest, showWebcams, showRescue, aprsTargets,
+      showAurora, showFire, showTerrain, showTrails, showRest, showWebcams, showRescue, aprsTargets,
       onLayersChange,
     ],
   );
@@ -1432,6 +1444,60 @@ export function LageMap({
       below,
     );
   }, [showTerrain, terrainImage?.key, ready, styleEpoch]);
+
+  /* ---------- Wander- und Radwegenetz ---------- */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('trails')) return;
+    map.addSource('trails', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'trails-line',
+      type: 'line',
+      source: 'trails',
+      minzoom: 10,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        // Rad schlägt Wandern, wo beides auf derselben Kante liegt — die
+        // Radroute ist die, der man auf der Karte folgt.
+        'line-color': ['case', ['>', ['%', ['floor', ['/', ['get', 'kind'], 2]], 2], 0], '#1d63a8', '#1f7a4d'],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.6, 15, 3.4],
+        'line-opacity': 0.85,
+        'line-dasharray': [3, 1.6],
+      },
+    });
+    map.addLayer({
+      id: 'trails-label',
+      type: 'symbol',
+      source: 'trails',
+      minzoom: 12,
+      filter: ['has', 'name'],
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Medium'],
+        'text-size': 11,
+        'symbol-placement': 'line',
+        'symbol-spacing': 260,
+      },
+      paint: { 'text-color': '#1f7a4d', 'text-halo-color': '#fff', 'text-halo-width': 1.5 },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('trails') as GeoJSONSource | undefined;
+    src?.setData({
+      type: 'FeatureCollection',
+      features: showTrails
+        ? trails.map((t) => ({
+            type: 'Feature' as const,
+            properties: { kind: t.kind, ...(t.name ? { name: t.name } : {}) },
+            geometry: { type: 'LineString' as const, coordinates: t.coordinates },
+          }))
+        : [],
+    });
+  }, [trails, showTrails, ready, styleEpoch]);
 
   // Eigene Markierungen ein-/ausblenden. Die Hilfslinien des laufenden
   // Werkzeugs (Fortschritt, Ecken) bleiben sichtbar — sonst zeichnete man
@@ -3674,6 +3740,7 @@ export function LageMap({
         )}
 
         <div className="legends">
+          {showTrails && trailsHint && <div className="legend legend-note">{trailsHint}</div>}
           {showWarnings && (
             <div className="legend" role="group" aria-label="Warnstufen filtern">
               <span className="legend-title">Warnstufen</span>

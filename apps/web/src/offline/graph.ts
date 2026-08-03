@@ -90,6 +90,9 @@ export interface GraphData {
   edgeClass: Uint8Array;
   edgeSpeed: Uint8Array;
   edgeName: Uint32Array;
+  /** Wegenetz-Maske je Kante (Wandern/Rad/MTB) — fehlt in älteren Paketen. */
+  edgeTrail: Uint8Array;
+  edgeTrailName: Uint32Array;
   edgeGeomOff: Uint32Array;
   edgeGeomLen: Uint16Array;
   geom: Uint8Array;
@@ -119,6 +122,8 @@ export class RouteGraph {
   readonly edgeClass: Uint8Array;
   readonly edgeSpeed: Uint8Array;
   readonly edgeName: Uint32Array;
+  readonly edgeTrail: Uint8Array;
+  readonly edgeTrailName: Uint32Array;
   readonly edgeGeomOff: Uint32Array;
   readonly edgeGeomLen: Uint16Array;
   readonly geom: Uint8Array;
@@ -163,6 +168,10 @@ export class RouteGraph {
       edgeClass: container.section('edgeClass', 'u8'),
       edgeSpeed: container.section('edgeSpeed', 'u8'),
       edgeName: container.section('edgeName', 'u32'),
+      // Wegenetz gibt es erst seit einer späteren Fassung des Paketbaus —
+      // ältere Dateien sollen deswegen nicht unlesbar werden.
+      edgeTrail: (optional('edgeTrail', 'u8') as Uint8Array) ?? new Uint8Array(0),
+      edgeTrailName: (optional('edgeTrailName', 'u32') as Uint32Array) ?? new Uint32Array(0),
       edgeGeomOff: container.section('edgeGeomOff', 'u32'),
       edgeGeomLen: container.section('edgeGeomLen', 'u16'),
       geom: container.section('geom', 'u8'),
@@ -185,6 +194,8 @@ export class RouteGraph {
     this.edgeClass = data.edgeClass;
     this.edgeSpeed = data.edgeSpeed;
     this.edgeName = data.edgeName;
+    this.edgeTrail = data.edgeTrail;
+    this.edgeTrailName = data.edgeTrailName;
     this.edgeGeomOff = data.edgeGeomOff;
     this.edgeGeomLen = data.edgeGeomLen;
     this.geom = data.geom;
@@ -278,6 +289,19 @@ export class RouteGraph {
   /** Straßenname einer Kante. */
   name(edge: number): string | null {
     return this.names.get(this.edgeName[edge]!);
+  }
+  /** Gehört die Kante zu einem Wander- oder Radwegenetz? (Bitmaske) */
+  trail(edge: number): number {
+    return this.edgeTrail[edge] ?? 0;
+  }
+  /** Name der Route, zu der die Kante gehört. */
+  trailName(edge: number): string | null {
+    const id = this.edgeTrailName[edge];
+    return id == null ? null : this.names.get(id);
+  }
+  /** Liegen in diesem Paket überhaupt Wegenetz-Daten? */
+  get hasTrails(): boolean {
+    return this.edgeTrail.length > 0;
   }
   /** Länge einer Kante in Metern. */
   lengthM(edge: number): number {
@@ -472,6 +496,24 @@ export function mergeGraphs(graphs: RouteGraph[]): RouteGraph {
       at += part.length;
     }
   }
+  // Wegenetz: Maske einfach aneinanderhängen, die Namens-IDs wie bei
+  // edgeName um den Namensversatz der Region verschieben.
+  const anyTrails = graphs.some((g) => g.hasTrails);
+  const edgeTrail = anyTrails ? new Uint8Array(edgeAll) : new Uint8Array(0);
+  const edgeTrailName = anyTrails ? new Uint32Array(edgeAll) : new Uint32Array(0);
+  if (anyTrails) {
+    let at = 0;
+    for (let i = 0; i < graphs.length; i++) {
+      const g = graphs[i]!;
+      const add = edgeNameOffset[i]!;
+      for (let k = 0; k < g.edgeCount; k++) {
+        edgeTrail[at + k] = g.edgeTrail[k] ?? 0;
+        const id = g.edgeTrailName[k];
+        edgeTrailName[at + k] = id == null || id === 0xffffffff ? 0xffffffff : id + add;
+      }
+      at += g.edgeCount;
+    }
+  }
   const edgeGeomOff = concatU32(graphs.map((g) => g.edgeGeomOff), edgeAll, (i) => geomOffset[i]!);
 
   const edgeFlags = new Uint8Array(edgeAll);
@@ -547,6 +589,8 @@ export function mergeGraphs(graphs: RouteGraph[]): RouteGraph {
     edgeClass,
     edgeSpeed,
     edgeName,
+    edgeTrail,
+    edgeTrailName,
     edgeGeomOff,
     edgeGeomLen,
     geom,

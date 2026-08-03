@@ -13,6 +13,7 @@ import { Container, HEADER_PROBE_BYTES, parseHeader } from './container.js';
 import { RouteGraph, mergeGraphs } from './graph.js';
 import { routeVia } from './router.js';
 import { Terrain, elevationProfile, renderTerrain } from './terrain.js';
+import type { TrailFeature } from './trails.js';
 import { SearchIndex } from './search.js';
 
 export type WorkerRequest =
@@ -45,6 +46,15 @@ export type WorkerRequest =
       own?: (number | undefined)[];
     }
   | { id: number; type: 'terrainImage'; code: string; maxSize?: number }
+  | {
+      id: number;
+      type: 'trails';
+      codes: string[];
+      bbox: { west: number; south: number; east: number; north: number };
+      /** Bitmaske: 1 = Wandern, 2 = Rad, 4 = Mountainbike. */
+      kinds: number;
+      limit?: number;
+    }
   | {
       id: number;
       type: 'route';
@@ -182,6 +192,30 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
       }
       // Ohne Raster bleibt noch die Höhe aus der Datei.
       return elevationProfile(msg.line, null, msg.own);
+    }
+    case 'trails': {
+      const g = await loadRoute(msg.codes);
+      if (!g.hasTrails) return { features: [], stale: true };
+      const { west, south, east, north } = msg.bbox;
+      const limit = msg.limit ?? 4000;
+      const features: TrailFeature[] = [];
+      for (let e = 0; e < g.edgeCount && features.length < limit; e++) {
+        const mask = g.trail(e);
+        if (!mask || !(mask & msg.kinds)) continue;
+        // Grobe Vorauswahl über die beiden Endknoten — die Geometrie einer
+        // Kante liegt dazwischen, und die Kanten sind kurz.
+        const aLat = g.nodeLat(g.edgeA[e]!);
+        const aLon = g.nodeLon(g.edgeA[e]!);
+        const bLat = g.nodeLat(g.edgeB[e]!);
+        const bLon = g.nodeLon(g.edgeB[e]!);
+        if (Math.max(aLat, bLat) < south || Math.min(aLat, bLat) > north) continue;
+        if (Math.max(aLon, bLon) < west || Math.min(aLon, bLon) > east) continue;
+        const pts = g.geometry(e, true);
+        const coordinates: [number, number][] = [];
+        for (let i = 0; i < pts.length; i += 2) coordinates.push([pts[i + 1]!, pts[i]!]);
+        features.push({ coordinates, kind: mask, name: g.trailName(e) });
+      }
+      return { features, stale: false };
     }
     case 'terrainImage': {
       const t = await loadTerrain(msg.code);

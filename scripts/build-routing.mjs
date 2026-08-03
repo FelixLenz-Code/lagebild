@@ -306,6 +306,42 @@ function parseRestriction(tags, members) {
   return { from, via, to, only, mask };
 }
 
+/** Streckenarten der Wegenetze — passt in ein Byte je Kante. */
+export const TRAIL = { HIKE: 1, BIKE: 2, MTB: 4 };
+
+/** Rang des Netzes: je kleiner, desto überregionaler (iwn/icn = 0). */
+const NETWORK_RANK = { iwn: 0, icn: 0, nwn: 1, ncn: 1, rwn: 2, rcn: 2, lwn: 3, lcn: 3 };
+
+/**
+ * Wertet eine `type=route`-Relation aus (Wander-, Fuß-, Rad- und
+ * Mountainbike-Routen). Zurück kommen die Mitglieds-**Wege** — Knoten und
+ * Unterrelationen interessieren nicht, gezeichnet wird die Linie.
+ */
+function parseTrail(tags, members) {
+  if (tags.type !== 'route') return null;
+  const route = tags.route;
+  let mask = 0;
+  if (route === 'hiking' || route === 'foot' || route === 'walking') mask = TRAIL.HIKE;
+  else if (route === 'bicycle') mask = TRAIL.BIKE;
+  else if (route === 'mtb') mask = TRAIL.MTB;
+  else return null;
+
+  const ways = [];
+  for (const m of members) if (m.type === 1) ways.push(m.ref);
+  if (!ways.length) return null;
+
+  // Ohne Namen bleibt die Route trotzdem im Netz — sie wird nur nicht
+  // beschriftet. `ref` ist oft die eigentliche Kennung („E1", „D8").
+  const name = tags.name ?? null;
+  const ref = tags.ref ?? null;
+  return {
+    ways,
+    mask,
+    label: ref && name ? `${ref} ${name}` : (name ?? ref),
+    rank: NETWORK_RANK[tags.network] ?? 4,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Durchlauf 1 — Wege                                                  */
 /* ------------------------------------------------------------------ */
@@ -332,6 +368,7 @@ function passWays(pbfPath, strings) {
 
   const restrictions = [];
   const skipped = { viaWay: 0, unknown: 0 };
+  const trails = [];
 
   readPbf(pbfPath, {
     progress: (f) => process.stdout.write(`\r   Wege … ${Math.round(f * 100)} %   `),
@@ -340,6 +377,8 @@ function passWays(pbfPath, strings) {
       if (parsed === 'via-way') skipped.viaWay++;
       else if (parsed === 'unknown') skipped.unknown++;
       else if (parsed) restrictions.push(parsed);
+      const trail = parseTrail(tags, members);
+      if (trail) trails.push(trail);
     },
     way(id, wayRefs, tags) {
       const road = classifyRoad(tags);
@@ -380,6 +419,7 @@ function passWays(pbfPath, strings) {
     wayIds,
     restrictions,
     restrictionsSkipped: skipped,
+    trails,
     areaRefs,
     areaStart,
     areaCount,
@@ -1091,6 +1131,42 @@ async function buildState(code, stateName, slug) {
 
   // Straßennamen als eigene Zeichenkettentabelle (nur die benutzten).
   const namePool = new StringPool();
+  /* --- Wander- und Radwegenetz auf die Kanten legen --- */
+  // Die Relationen stehen in der PBF hinter den Wegen; nachgeschlagen wird
+  // deshalb erst hier, und zwar nur für die Wege, die im Graphen gelandet
+  // sind — eine Map über alle Wege des Landes wäre unnötig groß.
+  const trailByWay = new Map();
+  for (const t of w.trails) {
+    for (const id of t.ways) {
+      const found = trailByWay.get(id);
+      if (!found) trailByWay.set(id, { mask: t.mask, label: t.label, rank: t.rank });
+      else {
+        found.mask |= t.mask;
+        // Die überregionalere Route gibt den Namen — sonst gewönne eine
+        // beliebige Ortsrunde gegen den Europäischen Fernwanderweg.
+        if (t.rank < found.rank || (found.label == null && t.label != null)) {
+          found.label = t.label ?? found.label;
+          found.rank = Math.min(found.rank, t.rank);
+        }
+      }
+    }
+  }
+  const edgeTrail = new Uint8Array(g.edgeA.length);
+  const edgeTrailName = new Uint32Array(g.edgeA.length);
+  let trailEdges = 0;
+  if (trailByWay.size) {
+    for (let e = 0; e < g.edgeA.length; e++) {
+      const found = trailByWay.get(w.wayIds.get(g.edgeWay.get(e)));
+      if (!found) continue;
+      edgeTrail[e] = found.mask;
+      edgeTrailName[e] = namePool.intern(found.label ?? null);
+      trailEdges++;
+    }
+  }
+  log(
+    `   Wegenetz: ${w.trails.length} Routen, ${trailEdges} Kanten (${Math.round((trailEdges / Math.max(1, g.edgeA.length)) * 100)} %)`,
+  );
+
   const edgeName = new Uint32Array(g.edgeName.length);
   for (let i = 0; i < g.edgeName.length; i++) {
     edgeName[i] = namePool.intern(strings.get(g.edgeName.get(i)));
@@ -1115,6 +1191,8 @@ async function buildState(code, stateName, slug) {
       nodeCount: nl.length,
       edgeCount: g.edgeA.length,
       restrictionCount: restrictions.resolved,
+      trailEdges,
+      trails: TRAIL,
       bbox: [minLon, minLat, maxLon, maxLat],
       classes: ROAD_CLASSES,
       flags: FLAG,
@@ -1130,6 +1208,8 @@ async function buildState(code, stateName, slug) {
       { name: 'edgeClass', data: g.edgeCls.view() },
       { name: 'edgeSpeed', data: g.edgeSpeed.view() },
       { name: 'edgeName', data: edgeName },
+      { name: 'edgeTrail', data: edgeTrail },
+      { name: 'edgeTrailName', data: edgeTrailName },
       { name: 'edgeGeomOff', data: g.edgeGeomOff.view() },
       { name: 'edgeGeomLen', data: g.edgeGeomLen.view() },
       { name: 'geom', data: g.geom.view() },

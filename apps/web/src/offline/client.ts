@@ -8,6 +8,7 @@ import type { Coords, GeoResult, RouteOutcome, RouteProfile } from '@lagebild/sh
 import type { WorkerRequest, WorkerResponse } from './worker.js';
 import type { HouseNumber } from './search.js';
 import type { ElevationProfile, TerrainImage } from './terrain.js';
+import type { TrailResult } from './trails.js';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -94,6 +95,14 @@ export const elevationOffline = (
   line: [number, number][],
   own?: (number | undefined)[],
 ) => call<ElevationProfile | null>({ type: 'elevation', codes, line, own });
+
+/** Wander- und Radwege im Ausschnitt (aus dem Routing-Paket). */
+export const trailsOffline = (
+  codes: string[],
+  bbox: { west: number; south: number; east: number; north: number },
+  kinds: number,
+  limit?: number,
+) => call<TrailResult>({ type: 'trails', codes, bbox, kinds, limit });
 
 /** Geländebild einer Region (Höhenfarben mit Schummerung) für die Kartenebene. */
 export const terrainImageOffline = (code: string, maxSize?: number) =>

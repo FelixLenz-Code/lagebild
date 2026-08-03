@@ -535,6 +535,32 @@ Nicht unterstützt: Abbiegeverbote mit `via`-**Weg** (statt via-Knoten) — meis
 Wendeverbote an getrennten Fahrbahnen; sie werden beim Bauen gezählt und
 übersprungen.
 
+## Wander- und Radwegenetz
+
+Die Ebene **„Wander- und Radwege"** zeigt die ausgeschilderten Routen: Rad blau,
+Wandern grün, gestrichelt, ab Zoom 10; ab Zoom 12 steht der Name der Route an
+der Linie (`E1`, `EV3 EuroVelo 3`, `Weserradweg`).
+
+Die Daten liegen **nicht doppelt im Gerät**: Beim Paketbau werden die
+OSM-Relationen `type=route` mit `route=hiking|foot|walking|bicycle|mtb`
+ausgewertet und ihre Mitgliedswege als **Bitmaske an den Kanten** des
+Routing-Graphen vermerkt (ein Byte je Kante, dazu der Routenname). Gezeichnet
+wird aus derselben Geometrie, auf der auch das Routing läuft.
+
+Zwei Feinheiten:
+
+- Die Relationen stehen in der PBF **hinter** den Wegen. Nachgeschlagen wird
+  deshalb erst am Ende und nur für die Wege, die tatsächlich im Graphen gelandet
+  sind — eine Tabelle über alle Wege des Landes wäre unnötig groß.
+- Liegen mehrere Routen auf derselben Kante, gibt die **überregionalere** den
+  Namen (`network=iwn/icn` vor `nwn/ncn` vor `rwn/rcn` vor `lwn/lcn`). Sonst
+  gewönne eine beliebige Ortsrunde gegen den Europäischen Fernwanderweg.
+
+Bremen: 353 Routen, 15.774 Kanten (13 %), 57 verschiedene Namen — das Paket
+wuchs dadurch von 1,85 auf 1,90 MB. **Ältere Pakete kennen das Netz noch
+nicht**; die Ebene sagt das dann und bleibt leer, bis die Region neu geladen
+ist.
+
 ## Offline-Pakete pro Bundesland
 
 Je Bundesland gibt es drei Dateien, die der Browser in den OPFS lädt
