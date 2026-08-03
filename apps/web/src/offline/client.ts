@@ -7,7 +7,7 @@
 import type { Coords, GeoResult, RouteOutcome, RouteProfile } from '@lagebild/shared';
 import type { WorkerRequest, WorkerResponse } from './worker.js';
 import type { HouseNumber } from './search.js';
-import type { ElevationProfile } from './terrain.js';
+import type { ElevationProfile, TerrainImage } from './terrain.js';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -94,6 +94,10 @@ export const elevationOffline = (
   line: [number, number][],
   own?: (number | undefined)[],
 ) => call<ElevationProfile | null>({ type: 'elevation', codes, line, own });
+
+/** Geländebild einer Region (Höhenfarben mit Schummerung) für die Kartenebene. */
+export const terrainImageOffline = (code: string, maxSize?: number) =>
+  call<TerrainImage | null>({ type: 'terrainImage', code, maxSize });
 
 export const routeOffline = (
   codes: string[],

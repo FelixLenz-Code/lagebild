@@ -37,7 +37,8 @@ import {
 } from './mapPresets.js';
 import type { LayerRowId } from './layerCatalog.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
-import { elevationOffline, poisOffline, routeOffline, stopsOffline } from './offline/client.js';
+import { elevationOffline, poisOffline, routeOffline, stopsOffline, terrainImageOffline } from './offline/client.js';
+import { imageFromRgba } from './gridImage.js';
 import type { ElevationProfile } from './offline/terrain.js';
 import { routeFromLine, viaPointsFromLine } from './offline/router.js';
 import { useNavigation } from './navigation.js';
@@ -191,6 +192,7 @@ export function App() {
     rescue: false,
     aurora: false,
     fire: false,
+    terrain: false,
     aprsTargets: [],
   });
   const radarForecast = useApi(
@@ -794,6 +796,34 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, destKey, startKey, planTime, planArriveBy, online]);
 
+  /* ---------- Geländeebene ---------- */
+  const [terrainImage, setTerrainImage] = useState<
+    { url: string; bounds: [number, number, number, number]; key: number } | null
+  >(null);
+  /** Region mit Höhenpaket in der Mitte des Ausschnitts. */
+  const terrainCode = useMemo(
+    () => regionFor(coords, 'terrain'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [coords.lat, coords.lon, offlineFiles],
+  );
+  useEffect(() => {
+    if (!layers.terrain || !terrainCode) {
+      setTerrainImage(null);
+      return;
+    }
+    let cancelled = false;
+    terrainImageOffline(terrainCode)
+      .then((img) => {
+        if (cancelled || !img) return;
+        const url = imageFromRgba(img.width, img.height, img.rgba);
+        if (url) setTerrainImage({ url, bounds: img.bounds, key: Date.now() });
+      })
+      .catch(() => !cancelled && setTerrainImage(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [layers.terrain, terrainCode]);
+
   /* ---------- Höhenprofil (aus dem Geländepaket oder aus der Datei) ---------- */
   const [elevation, setElevation] = useState<ElevationProfile | null>(null);
   /** Regionen mit heruntergeladenem Höhenpaket entlang der Strecke. */
@@ -1236,6 +1266,7 @@ export function App() {
             trackLive={recorder.recording}
             addDraw={addDraw}
             fitBbox={fitBbox}
+            terrainImage={terrainImage}
             onLayersChange={setLayers}
             hiddenLayers={settings.hiddenLayers}
             onActiveLayers={setActiveLayers}
@@ -1284,6 +1315,13 @@ export function App() {
               routes={shownRoutes}
               routeIndex={gpxRoute ? 0 : routeIndex}
               elevation={elevation}
+              elevationHint={
+                elevation || profile === 'transit'
+                  ? null
+                  : terrainCodes.length
+                    ? null
+                    : 'Für das Höhenprofil fehlt das Geländepaket dieser Region — im Offline-Bildschirm ladbar.'
+              }
               onSelectRoute={setRouteIndex}
               avoidMotorways={avoidMotorways}
               onToggleMotorways={() => setAvoidMotorways((v) => !v)}

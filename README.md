@@ -148,7 +148,18 @@ Werkzeuge hineinwachsen:
 - **Werkzeuge**: Punkt setzen, Fläche zeichnen, **Messen**.
 - **Datei**: Tour oder Punkte einlesen (GPX, KML, KMZ, GeoJSON).
 - **Meine Markierungen**: Liste mit Maßen, Umbenennen, Löschen, „auf der Karte
-  zeigen".
+  zeigen", **einzeln aus- und einblenden** und **Ausgabe als GPX bzw. GeoJSON**
+  (einzeln oder alles zusammen).
+
+Die ganze Ebene schaltet das Menü **„Ebenen" → „Meine Markierungen"**. Sie ist
+die einzige Ebene, die **eingeschaltet startet**: Wer etwas eingezeichnet hat,
+soll es beim nächsten Öffnen sehen. Einzelne Markierungen lassen sich in der
+Liste mit dem Auge ausblenden — sie bleiben gespeichert und in der Suche
+auffindbar, liegen nur nicht auf der Karte.
+
+**GPX kennt keine Flächen**: Ein Gebiet wird darin zur geschlossenen Linie. Wer
+die Fläche als Fläche braucht, nimmt GeoJSON — deshalb stehen beide Ausgaben
+nebeneinander.
 
 Das laufende Werkzeug bekommt eine **eigene Leiste auf der Karte** statt eines
 Bereichs im Menü. Der Grund ist handfest: Wer misst, tippt auf die Karte — und
@@ -365,6 +376,11 @@ Hintergrund. Grundlage ist der Routing-Graph der heruntergeladenen Region:
   `no_left_turn` & Co. sowie das Wendeverbot exakt statt geschätzt;
 * deutsche Fahranweisungen inklusive Kreisverkehr-Ausfahrten, Auf- und
   Ausfahrten; Ansagen nur dort, wo es an der Kreuzung wirklich eine Wahl gibt;
+* **Ausgabe als GPX**: Der Knopf „GPX" unter der Route schreibt eine Datei mit
+  **allen drei Sichten** — `<trk>` mit dem vollständigen Linienzug (dem folgt
+  jedes Wander- und Radgerät), `<rte>` mit einem Punkt je Fahranweisung samt
+  Text, und `<wpt>` für Start, Zwischenziele und Ziel. Liegt ein Höhenprofil
+  vor, stehen die Höhen mit in den Trackpunkten;
 * **Zielführung** mit Positionsverfolgung, mitdrehender Karte, Restweg/Ankunft,
   Sprachansagen (SpeechSynthesis des Geräts, abschaltbar) und automatischer
   Neuberechnung, wenn man von der Route abkommt.
@@ -427,6 +443,18 @@ eine flache Fahrt durch Bremen käme auf dreistellige Höhenmeter.
 
 Geprüft mit `scripts/check-terrain.mts` gegen bekannte Höhen (Bremer
 Marschland, Nordsee, Großer Feldberg 848 m, Wasserkuppe 930 m).
+
+**Während der Zielführung** zeigt die Navigationsleiste bei **Rad und zu Fuß**
+das Profil in schmaler Form mit der aktuellen Stelle und dem **Restanstieg** —
+am Berg sagt die Gesamtsumme nichts mehr. Beim Auto bleibt es weg.
+
+Das Höhenpaket speist außerdem die Kartenebene **„Gelände"**: Höhenfarben mit
+Schummerung (Licht von Nordwesten, 45° hoch — so liest das Auge die Form richtig
+herum). Das Raster liegt bereits in Web Mercator, also genau in der Projektion,
+in der MapLibre eine `image`-Quelle aufspannt; anders als bei den Gittern in
+Länge/Breite braucht es keine Umrechnung je Bildzeile. Gerechnet wird das Bild
+im Worker, gemalt im Hauptfaden. Bei `--zoom 11` wird das Raster doppelt so fein
+(≈48 m) und die Datei rund viermal so groß.
 
 ### Einer GPX-Tour folgen
 

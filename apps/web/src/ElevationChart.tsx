@@ -15,7 +15,17 @@ const H = 96;
 const PAD_TOP = 8;
 const PAD_BOTTOM = 16;
 
-export function ElevationChart({ profile }: { profile: ElevationProfile }) {
+export function ElevationChart({
+  profile,
+  atM,
+  compact,
+}: {
+  profile: ElevationProfile;
+  /** Aktuelle Stelle auf der Strecke (Zielführung). */
+  atM?: number;
+  /** Schmale Fassung ohne Zusammenfassung — für die Navigationsleiste. */
+  compact?: boolean;
+}) {
   const [at, setAt] = useState<number | null>(null);
   const points = profile.points.filter((p) => p.eleM != null);
   if (points.length < 2 || profile.minM == null || profile.maxM == null) return null;
@@ -36,8 +46,11 @@ export function ElevationChart({ profile }: { profile: ElevationProfile }) {
 
   const hover = at == null ? null : points[Math.max(0, Math.min(points.length - 1, at))];
 
+  const here = atM == null ? null : Math.max(0, Math.min(total, atM));
+
   return (
-    <div className="elev">
+    <div className={`elev${compact ? ' is-compact' : ''}`}>
+      {!compact && (
       <div className="elev-sum">
         <span className="elev-up">
           ↑ <b>{profile.gainM} m</b>
@@ -52,6 +65,7 @@ export function ElevationChart({ profile }: { profile: ElevationProfile }) {
           {profile.source === 'file' ? 'Höhen aus der Datei' : 'Höhen aus dem Gelände­paket'}
         </span>
       </div>
+      )}
 
       <svg
         viewBox={`0 0 ${W} ${H}`}
@@ -71,8 +85,17 @@ export function ElevationChart({ profile }: { profile: ElevationProfile }) {
         {hover && (
           <line className="elev-cursor" x1={x(hover.distanceM)} y1={PAD_TOP} x2={x(hover.distanceM)} y2={H - PAD_BOTTOM} />
         )}
+        {here != null && (
+          <>
+            {/* Schon Gefahrenes abdunkeln — die Marke allein ist bei Fahrt
+                schlecht zu treffen. */}
+            <rect className="elev-done" x={0} y={PAD_TOP} width={x(here)} height={H - PAD_TOP - PAD_BOTTOM} />
+            <line className="elev-now" x1={x(here)} y1={PAD_TOP} x2={x(here)} y2={H - PAD_BOTTOM} />
+          </>
+        )}
       </svg>
 
+      {!compact && (
       <div className="elev-foot">
         {hover ? (
           <span className="mono">
@@ -85,6 +108,7 @@ export function ElevationChart({ profile }: { profile: ElevationProfile }) {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

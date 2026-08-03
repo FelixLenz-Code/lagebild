@@ -820,6 +820,13 @@ svg { display: block; }
 .rp-legs li { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
 .rp-leg-to { color: var(--muted); }
 .rp-legs li .tr-meta { margin-left: auto; }
+/* Markierungsliste: ausgeblendete Einträge */
+.dl-bulk { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 4px; }
+.dl-note { font-size: .72rem; margin: 0 0 10px; }
+.region.is-hidden .rinfo, .region.is-hidden .draw-kind { opacity: .45; }
+.region.is-hidden .rinfo b { text-decoration: line-through; text-decoration-thickness: 1px; }
+.raction .rdel:disabled { opacity: .3; cursor: default; }
+
 /* Höhenprofil */
 .elev { margin: 2px 0 4px; }
 .elev-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; font-size: .76rem; }
@@ -832,6 +839,18 @@ svg { display: block; }
 .elev-line { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .elev-cursor { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; }
 .elev-foot { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); }
+.elev-done { fill: rgba(0,0,0,.16); }
+.elev-now { stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.elev.is-compact .elev-chart { height: 46px; margin: 0; }
+/* In der Navigationsleiste (dunkler Grund) braucht die Kurve helle Farben. */
+.nav-elev { display: flex; align-items: center; gap: 10px; }
+.nav-elev .elev { flex: 1; min-width: 0; }
+.nav-elev .elev-line { stroke: #fff; }
+.nav-elev .elev-area { fill: rgba(255,255,255,.22); }
+.nav-elev .elev-now { stroke: #ffd7a1; }
+.nav-elev .elev-done { fill: rgba(0,0,0,.25); }
+.nav-elev-rest { font-size: .78rem; white-space: nowrap; }
+.nav-elev-rest b { font-weight: 650; }
 
 .rp-point .dot.gpx { background: #0d9488; }
 .rp-gpx { color: var(--muted); }

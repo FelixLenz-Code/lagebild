@@ -12,7 +12,7 @@ import { getOfflineFile } from '../offlineMaps.js';
 import { Container, HEADER_PROBE_BYTES, parseHeader } from './container.js';
 import { RouteGraph, mergeGraphs } from './graph.js';
 import { routeVia } from './router.js';
-import { Terrain, elevationProfile } from './terrain.js';
+import { Terrain, elevationProfile, renderTerrain } from './terrain.js';
 import { SearchIndex } from './search.js';
 
 export type WorkerRequest =
@@ -44,6 +44,7 @@ export type WorkerRequest =
       /** Höhen aus der Datei selbst (GPX), wenn vorhanden. */
       own?: (number | undefined)[];
     }
+  | { id: number; type: 'terrainImage'; code: string; maxSize?: number }
   | {
       id: number;
       type: 'route';
@@ -181,6 +182,10 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
       }
       // Ohne Raster bleibt noch die Höhe aus der Datei.
       return elevationProfile(msg.line, null, msg.own);
+    }
+    case 'terrainImage': {
+      const t = await loadTerrain(msg.code);
+      return t ? renderTerrain(t, msg.maxSize ?? 1024) : null;
     }
     case 'route': {
       const g = await loadRoute(msg.codes);

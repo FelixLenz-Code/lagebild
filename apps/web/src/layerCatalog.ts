@@ -33,7 +33,9 @@ export type LayerId =
   | 'radiation'
   | 'rest'
   | 'webcams'
-  | 'rescue';
+  | 'rescue'
+  | 'draw'
+  | 'terrain';
 
 /** Zusätzlich zu den Ebenen: eingerückte Anzeigeoptionen. */
 export type LayerRowId = LayerId | 'wind-labels';
@@ -89,6 +91,10 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'rescue', label: 'Rettungspunkte', color: '#1f8a4c', group: 'Lage', hint: 'nummerierte Schilder für den Notruf · ab Zoom 11', source: 'osm-overpass' },
   { id: 'quakes', label: 'Erdbeben', color: '#8a4b1d', group: 'Lage', hint: 'letzte Woche, ab Stärke 2,5', source: 'usgs' },
   { id: 'news', label: 'Nachrichten', color: '#6a7580', group: 'Lage', hint: 'regionale Meldungen mit Ortsbezug', source: 'tagesschau' },
+  // Startet als einzige Ebene AN: sie zeigt, was der Nutzer selbst angelegt
+  // hat — das darf beim Öffnen der App nicht verschwunden sein.
+  { id: 'draw', label: 'Meine Markierungen', color: '#0d9488', group: 'Lage', hint: 'eigene Punkte, Linien und Flächen' },
+  { id: 'terrain', label: 'Gelände', color: 'linear-gradient(90deg,#acd0a5,#e5e09a,#c49e79,#ebebf0)', group: 'Lage', hint: 'Höhen mit Schummerung — braucht das Geländepaket', source: 'terrain-tiles' },
 
   // Funk
   { id: 'muf', label: 'Ausbreitung (MUF)', color: 'linear-gradient(90deg,#3b4a7a,#2c8f6a,#d0a71a,#a4218c)', group: 'Funk', hint: 'Kurzwelle: höchste brauchbare Frequenz', source: 'kc2g' },

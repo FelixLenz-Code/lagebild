@@ -63,3 +63,22 @@ export const corners = (
   [east, south],
   [west, south],
 ];
+
+/**
+ * Fertige RGBA-Bildpunkte zu einer Daten-URL. Gerechnet wird das Bild im
+ * Worker (Gelände), gemalt werden muss es im Hauptfaden — MapLibre nimmt für
+ * eine `image`-Quelle eine URL.
+ */
+export function imageFromRgba(width: number, height: number, rgba: Uint8ClampedArray): string | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  // Der Worker schickt die Bildpunkte als eigenes Feld; ImageData will genau
+  // diesen Puffer, verlangt aber die Standardsicht darauf.
+  const image = ctx.createImageData(width, height);
+  image.data.set(rgba);
+  ctx.putImageData(image, 0, 0);
+  return canvas.toDataURL('image/png');
+}

@@ -10,7 +10,9 @@ import type {
 } from '@lagebild/shared';
 import { TransitPlan } from './TransitPlan.js';
 import { ElevationChart } from './ElevationChart.js';
-import type { ElevationProfile } from './offline/terrain.js';
+import { routeToGpx } from './routeExport.js';
+import { downloadText, fileNameOf } from './drawStore.js';
+import { remainingClimb, type ElevationProfile } from './offline/terrain.js';
 
 /** Fortbewegungsart inklusive ÖPNV (der nicht über den Offline-Graphen läuft). */
 export type PlanMode = RouteProfile | 'transit';
@@ -58,6 +60,8 @@ interface Props {
   regionReady: boolean;
   /** Höhenprofil der Route (nur mit Geländepaket bzw. Höhen aus der Datei). */
   elevation: ElevationProfile | null;
+  /** Warum es kein Profil gibt (z. B. fehlendes Geländepaket). */
+  elevationHint: string | null;
   navigating: boolean;
   progress: RouteProgress | null;
   muted: boolean;
@@ -175,6 +179,17 @@ export function RoutePanel(props: Props) {
             </svg>
           </button>
         </div>
+        {/* Bei Rad und zu Fuß entscheidet der Berg über die Zeit — also
+            gehört das Profil in die laufende Zielführung, nicht nur in die
+            Planung. Beim Auto wäre es nur Zierde. */}
+        {props.elevation && (props.profile === 'bike' || props.profile === 'foot') && (
+          <div className="nav-elev">
+            <ElevationChart profile={props.elevation} atM={route.distanceM - remainingM} compact />
+            <span className="nav-elev-rest">
+              noch ↑ <b>{remainingClimb(props.elevation, route.distanceM - remainingM).gainM} m</b>
+            </span>
+          </div>
+        )}
         <div className="nav-foot">
           <span>
             noch <b>{formatDistance(remainingM)}</b>
@@ -325,7 +340,7 @@ export function RoutePanel(props: Props) {
             )}
             <button type="button" className="rp-chip" onClick={() => gpxInput.current?.click()}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3v10M8 9l4 4 4-4M4 19h16" />
+                <path d="M12 16V4M8 8l4-4 4 4M4 20h16" />
               </svg>
               GPX-Tour
             </button>
@@ -402,6 +417,9 @@ export function RoutePanel(props: Props) {
             </label>
           </div>
           {props.elevation && <ElevationChart profile={props.elevation} />}
+          {!props.elevation && props.elevationHint && (
+            <p className="rp-hint">{props.elevationHint}</p>
+          )}
 
           {route.legs && route.legs.length > 1 && (
             <ol className="rp-legs">
@@ -424,6 +442,27 @@ export function RoutePanel(props: Props) {
             </button>
             <button type="button" className="btn-quiet" onClick={() => setShowSteps((v) => !v)}>
               {showSteps ? 'Anweisungen ausblenden' : `${route.steps.length} Anweisungen`}
+            </button>
+            <button
+              type="button"
+              className="btn-quiet"
+              title="Route als GPX herunterladen (Linie, Anweisungen und Zielpunkte)"
+              onClick={() => {
+                const name = `${props.origin?.name ?? 'Mein Standort'} → ${props.destination.name}`;
+                downloadText(
+                  fileNameOf(name, 'gpx'),
+                  routeToGpx(route, {
+                    name,
+                    startName: props.origin?.name ?? 'Mein Standort',
+                    viaNames: props.via.map((v) => v.name),
+                    endName: props.destination.name,
+                    profile: props.elevation,
+                  }),
+                  'application/gpx+xml',
+                );
+              }}
+            >
+              GPX
             </button>
           </div>
           {showSteps && (

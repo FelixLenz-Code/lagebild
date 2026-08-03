@@ -112,7 +112,7 @@ export function DrawMenu(props: Props) {
               <button type="button" className="lm-item" onClick={props.onOpenImport}>
                 <span className="dm-ico" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3v12M8 11l4 4 4-4M4 19h16" />
+                    <path d="M12 16V4M8 8l4-4 4 4M4 20h16" />
                   </svg>
                 </span>
                 <span className="lm-label">

@@ -121,11 +121,15 @@ function drawToGeoJson(
   /** Beim Messen wird die Fläche schon während des Setzens gefüllt. */
   closeRing = false,
 ): GeoJSON.FeatureCollection {
-  const out: GeoJSON.Feature[] = features.map((d) => ({
-    type: 'Feature',
-    properties: { kind: d.kind, name: d.name },
-    geometry: d.geometry,
-  }));
+  // Einzeln ausgeblendete Markierungen bleiben gespeichert, kommen aber gar
+  // nicht erst auf die Karte — dadurch sind sie auch nicht antippbar.
+  const out: GeoJSON.Feature[] = features
+    .filter((d) => !d.hidden)
+    .map((d) => ({
+      type: 'Feature',
+      properties: { kind: d.kind, name: d.name },
+      geometry: d.geometry,
+    }));
   if (closeRing && areaVertices.length >= 3) {
     out.push({
       type: 'Feature',
@@ -811,6 +815,8 @@ interface Props {
   track: [number, number][];
   /** true, solange aufgezeichnet wird (dann kein Endpunkt). */
   trackLive: boolean;
+  /** Geländebild der Region (Höhenfarben mit Schummerung) samt Ausdehnung. */
+  terrainImage: { url: string; bounds: [number, number, number, number]; key: number } | null;
   /** Eingelesene Markierungen, die zu den eigenen dazukommen. */
   addDraw: { features: DrawFeature[]; key: number } | null;
   /** Ausschnitt, den die Karte zeigen soll ([west, süd, ost, nord]). */
@@ -888,6 +894,8 @@ export interface ActiveLayers {
   rescue: boolean;
   aurora: boolean;
   fire: boolean;
+  /** Geländebild aus dem Höhenpaket. */
+  terrain: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
   muf: boolean;
   /** Verortete Nachrichten. */
@@ -944,7 +952,15 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   quakes: false,
   aurora: false,
   fire: false,
+  draw: false,
+  terrain: false,
 };
+
+/**
+ * Anfangszustand. Alle Fachebenen starten aus — die eigenen Markierungen
+ * nicht: Wer etwas eingezeichnet hat, soll es beim nächsten Öffnen sehen.
+ */
+const DEFAULT_LAYERS: Record<LayerId, boolean> = { ...ALL_LAYERS_OFF, draw: true };
 
 export function LageMap({
   coords,
@@ -985,6 +1001,7 @@ export function LageMap({
   trackLive,
   addDraw,
   fitBbox,
+  terrainImage,
   aurora,
   fire,
   flyTo,
@@ -1054,7 +1071,7 @@ export function LageMap({
   const [styleEpoch, setStyleEpoch] = useState(0);
   const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
   // Alle Fachebenen starten aus — der Nutzer schaltet gezielt zu.
-  const [on, setOn] = useState<Record<LayerId, boolean>>(() => ({ ...ALL_LAYERS_OFF }));
+  const [on, setOn] = useState<Record<LayerId, boolean>>(() => ({ ...DEFAULT_LAYERS }));
   const toggleLayer = (id: LayerId) => setOn((prev) => ({ ...prev, [id]: !prev[id] }));
   const {
     warnings: showWarnings,
@@ -1082,6 +1099,8 @@ export function LageMap({
     rescue: showRescue,
     aurora: showAurora,
     fire: showFire,
+    draw: showDraw,
+    terrain: showTerrain,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -1133,12 +1152,13 @@ export function LageMap({
         rescue: showRescue,
         aurora: showAurora,
         fire: showFire,
+        terrain: showTerrain,
         aprsTargets,
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
-      showAurora, showFire, showRest, showWebcams, showRescue, aprsTargets,
+      showAurora, showFire, showTerrain, showRest, showWebcams, showRescue, aprsTargets,
       onLayersChange,
     ],
   );
@@ -1381,6 +1401,49 @@ export function LageMap({
     }
     if (!showWarnings) warnPopup.current?.remove();
   }, [showWarnings, ready, styleEpoch]);
+
+  // Geländebild: eine Bildquelle über den Ausschnitt der Region. Das Raster
+  // liegt schon in Web Mercator — genau der Projektion, in der MapLibre eine
+  // `image`-Quelle aufspannt.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (map.getLayer('terrain')) map.removeLayer('terrain');
+    if (map.getSource('terrain')) map.removeSource('terrain');
+    if (!showTerrain || !terrainImage) return;
+    const [west, south, east, north] = terrainImage.bounds;
+    map.addSource('terrain', {
+      type: 'image',
+      url: terrainImage.url,
+      coordinates: [
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+      ],
+    });
+    // Ganz unten, direkt über der Hintergrundkarte: das Gelände ist Untergrund,
+    // keine Meldung.
+    const below = ['warnings-fill', 'radar', 'route-line'].find((id) => map.getLayer(id));
+    map.addLayer(
+      // 0,6 lässt die Straßen darunter noch lesbar — das Gelände ist
+      // Untergrund, nicht Inhalt.
+      { id: 'terrain', type: 'raster', source: 'terrain', paint: { 'raster-opacity': 0.6 } },
+      below,
+    );
+  }, [showTerrain, terrainImage?.key, ready, styleEpoch]);
+
+  // Eigene Markierungen ein-/ausblenden. Die Hilfslinien des laufenden
+  // Werkzeugs (Fortschritt, Ecken) bleiben sichtbar — sonst zeichnete man
+  // blind, sobald die Ebene aus ist.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const visibility = showDraw ? 'visible' : 'none';
+    for (const id of ['draw-area-fill', 'draw-area-line', 'draw-line', 'draw-point', 'draw-label', 'draw-line-label']) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility);
+    }
+  }, [showDraw, ready, styleEpoch]);
 
   // Warn-Daten aktualisieren
   useEffect(() => {
@@ -3457,6 +3520,8 @@ export function LageMap({
             onTool={(tool) => {
               setDrawMode(tool);
               setAreaVertices([]);
+              // Wer zeichnet, will das Ergebnis auch sehen.
+              if (tool !== 'off') setOn((prev) => ({ ...prev, draw: true }));
             }}
             counts={drawCount.current}
             onOpenList={() => setListOpen(true)}
@@ -3834,6 +3899,10 @@ export function LageMap({
         <DrawList
           features={drawFeatures}
           onRename={(id, name) => setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, name } : f)))}
+          onToggle={(id) =>
+            setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, hidden: !f.hidden } : f)))
+          }
+          onToggleAll={(hidden) => setDrawFeatures((prev) => prev.map((f) => ({ ...f, hidden })))}
           onDelete={(id) => setDrawFeatures((prev) => prev.filter((f) => f.id !== id))}
           onClear={() => {
             setDrawFeatures([]);

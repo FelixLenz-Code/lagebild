@@ -65,6 +65,11 @@ export class Terrain {
   }
 
   /** Rasterpunkt (x, y) — außerhalb und ohne Daten: null. */
+  sample(x: number, y: number): number | null {
+    return this.at(x, y);
+  }
+
+  /** Rasterpunkt (x, y) — außerhalb und ohne Daten: null. */
   private at(x: number, y: number): number | null {
     if (x < 0 || y < 0 || x >= this.meta.width || y >= this.meta.height) return null;
     const value = this.grid[y * this.meta.width + x]!;
@@ -208,4 +213,154 @@ export function elevationProfile(
     maxM: maxM == null ? null : Math.round(maxM),
     source: useOwn ? 'file' : 'terrain',
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Geländebild für die Kartenebene
+ * ------------------------------------------------------------------ */
+
+export interface TerrainImage {
+  width: number;
+  height: number;
+  /** RGBA, Zeile für Zeile — wird im Hauptfaden auf eine Leinwand gelegt. */
+  rgba: Uint8ClampedArray;
+  /** [west, süd, ost, nord] des Rasters. */
+  bounds: [number, number, number, number];
+}
+
+/** Höhenstufen der Einfärbung (Meter → Farbe), dazwischen wird gemischt. */
+const RAMP: [number, [number, number, number]][] = [
+  [0, [172, 208, 165]],
+  [100, [199, 219, 154]],
+  [300, [229, 224, 154]],
+  [600, [222, 195, 141]],
+  [1000, [196, 158, 121]],
+  [1600, [186, 160, 148]],
+  [2400, [235, 235, 240]],
+  [3500, [255, 255, 255]],
+];
+
+function rampColor(ele: number): [number, number, number] {
+  if (ele <= RAMP[0]![0]) return RAMP[0]![1];
+  for (let i = 1; i < RAMP.length; i++) {
+    if (ele > RAMP[i]![0]) continue;
+    const [e0, c0] = RAMP[i - 1]!;
+    const [e1, c1] = RAMP[i]!;
+    const t = (ele - e0) / (e1 - e0);
+    return [
+      c0[0] + (c1[0] - c0[0]) * t,
+      c0[1] + (c1[1] - c0[1]) * t,
+      c0[2] + (c1[2] - c0[2]) * t,
+    ];
+  }
+  return RAMP[RAMP.length - 1]![1];
+}
+
+const tileToLon = (x: number, z: number) => (x / 2 ** z) * 360 - 180;
+const tileToLat = (y: number, z: number) => {
+  const n = Math.PI - 2 * Math.PI * (y / 2 ** z);
+  return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+};
+
+/**
+ * Geländebild: Höhenfarben plus **Schummerung** (Licht von Nordwesten, 45°
+ * hoch — so sind Reliefkarten seit jeher gezeichnet, und das Auge liest die
+ * Form dann richtig herum).
+ *
+ * Das Raster liegt bereits in Web Mercator, also genau in der Projektion, in
+ * der MapLibre eine `image`-Quelle aufspannt — es braucht keine Umrechnung je
+ * Bildzeile wie bei den Gittern in Länge/Breite.
+ */
+export function renderTerrain(terrain: Terrain, maxSize = 1024): TerrainImage {
+  const { width: srcW, height: srcH, zoom, tileX, tileY } = terrain.meta;
+  const step = Math.max(1, Math.ceil(Math.max(srcW, srcH) / maxSize));
+  const width = Math.floor(srcW / step);
+  const height = Math.floor(srcH / step);
+  const rgba = new Uint8ClampedArray(width * height * 4);
+
+  // Kantenlänge einer Zelle in Metern — ohne sie hinge die Steilheit von der
+  // geographischen Breite ab und die Alpen sähen flacher aus als der Harz.
+  const midLat = tileToLat(tileY + srcH / 512, zoom);
+  const cell = ((156543.03392 * Math.cos((midLat * Math.PI) / 180)) / 2 ** zoom) * step;
+
+  const raw = (x: number, y: number): number | null => {
+    const sx = Math.min(srcW - 1, x * step);
+    const sy = Math.min(srcH - 1, y * step);
+    return terrain.sample(sx, sy);
+  };
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const here = raw(x, y);
+      const at = (y * width + x) * 4;
+      if (here == null) {
+        rgba[at + 3] = 0; // Meer und Randbereiche bleiben durchsichtig
+        continue;
+      }
+      const left = raw(Math.max(0, x - 1), y) ?? here;
+      const right = raw(Math.min(width - 1, x + 1), y) ?? here;
+      const up = raw(x, Math.max(0, y - 1)) ?? here;
+      const down = raw(x, Math.min(height - 1, y + 1)) ?? here;
+
+      // Neigung in x- und y-Richtung; y zeigt nach Süden, deshalb umgekehrt.
+      const dzdx = (right - left) / (2 * cell);
+      const dzdy = (up - down) / (2 * cell);
+      const slope = Math.atan(Math.hypot(dzdx, dzdy));
+      const aspect = Math.atan2(dzdy, -dzdx);
+      // Sonne aus Nordwesten (315°), 45° über dem Horizont.
+      const azimuth = (Math.PI * 5) / 4;
+      const zenith = Math.PI / 4;
+      const shade =
+        Math.cos(zenith) * Math.cos(slope) +
+        Math.sin(zenith) * Math.sin(slope) * Math.cos(azimuth - aspect);
+
+      const [r, g, b] = rampColor(here);
+      // Die Schummerung hellt auf und dunkelt ab, überzeichnet die Farbe aber
+      // nicht — sonst verschwindet die Höhenstufe im Schatten.
+      const factor = 0.55 + 0.75 * Math.max(0, Math.min(1, shade));
+      rgba[at] = r * factor;
+      rgba[at + 1] = g * factor;
+      rgba[at + 2] = b * factor;
+      rgba[at + 3] = 255;
+    }
+  }
+
+  return {
+    width,
+    height,
+    rgba,
+    bounds: [
+      tileToLon(tileX, zoom),
+      tileToLat(tileY + srcH / 256, zoom),
+      tileToLon(tileX + srcW / 256, zoom),
+      tileToLat(tileY, zoom),
+    ],
+  };
+}
+
+/**
+ * Was noch vor einem liegt: Anstieg und Abstieg ab einer bestimmten Stelle der
+ * Strecke. Während der Fahrt zählt genau das — die Gesamtsumme sagt am Berg
+ * nichts mehr.
+ */
+export function remainingClimb(profile: ElevationProfile, fromM: number): { gainM: number; lossM: number } {
+  let gainM = 0;
+  let lossM = 0;
+  let reference: number | null = null;
+  for (const p of profile.points) {
+    if (p.distanceM < fromM || p.eleM == null) continue;
+    if (reference == null) {
+      reference = p.eleM;
+      continue;
+    }
+    const change = p.eleM - reference;
+    if (change > NOISE_M) {
+      gainM += change;
+      reference = p.eleM;
+    } else if (change < -NOISE_M) {
+      lossM -= change;
+      reference = p.eleM;
+    }
+  }
+  return { gainM: Math.round(gainM), lossM: Math.round(lossM) };
 }
