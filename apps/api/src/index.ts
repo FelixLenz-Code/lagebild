@@ -32,11 +32,25 @@ import { pollenRoute } from './routes/pollen.js';
 import { restRoute } from './routes/rest.js';
 import { webcamsRoute } from './routes/webcams.js';
 import { rescueRoute } from './routes/rescue.js';
+import { authRoute, requireAuth } from './routes/auth.js';
+import { authRequired } from './lib/auth.js';
 
 const app = new Hono();
 
 app.use('*', logger());
-app.use('/api/*', cors());
+app.use('/api/*', cors({ origin: (o) => o, credentials: true }));
+
+// Anmeldung selbst und die Erreichbarkeitsprüfung bleiben offen — sonst käme
+// niemand mehr an das Passwortfeld heran.
+app.route('/api/auth', authRoute);
+// Alles andere hinter dem gemeinsamen Passwort. Das statische PWA-Bundle
+// bleibt bewusst frei: Sonst könnte sich die App weder installieren noch
+// aktualisieren, und ein gesperrtes Gerät bekäme eine leere Seite statt des
+// Passwortfelds.
+app.use('/api/*', async (c, next) => {
+  if (c.req.path === '/api/health' || c.req.path.startsWith('/api/auth')) return next();
+  return requireAuth(c, next);
+});
 
 // --- API ---
 app.get('/api/health', async (c) =>
@@ -44,6 +58,7 @@ app.get('/api/health', async (c) =>
     ok: true,
     service: 'lagebild-api',
     ts: new Date().toISOString(),
+    auth: authRequired(),
     features: {
       flow: await flowUsable(),
       ais: aisUsable(),

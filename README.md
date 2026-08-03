@@ -64,6 +64,52 @@ node scripts/build-terrain.mjs --out apps/api/maps 04
 pnpm check:pakete
 ```
 
+## Passwort vor dem Server
+
+Der Server kann mit **einem gemeinsamen Passwort** geschützt werden — damit
+nicht jeder, der die Adresse kennt, die Proxy-Routen und die Offline-Pakete auf
+deine Rechnung benutzt:
+
+```bash
+# apps/api/.env
+APP_PASSWORD=…        # leer = offen, alles läuft wie bisher
+```
+
+Geschützt ist `/api/*` bis auf `/api/health` und `/api/auth/*`. **Das statische
+Bundle bleibt frei** — sonst könnte sich die PWA weder installieren noch
+aktualisieren, und ein gesperrtes Gerät bekäme eine leere Seite statt des
+Passwortfelds.
+
+**Der Server bleibt zustandslos.** Der Schlüssel für das Merkmal wird aus dem
+Passwort abgeleitet (scrypt mit festem Salz) und nirgends gespeichert — es gibt
+keine Sitzungsverwaltung. Angenehme Nebenwirkung: **Passwort ändern meldet alle
+Geräte ab**, ganz ohne Buchführung.
+
+### Kein Aussperren unterwegs
+
+Das ist der Teil, an dem so etwas üblicherweise scheitert. Drei Regeln:
+
+1. Das Merkmal liegt in einem **HttpOnly-Cookie** mit 400 Tagen Laufzeit und
+   wird bei jeder Anfrage erneuert, die älter als ein Tag ist. Es läuft also
+   nicht ab, solange die App benutzt wird.
+2. Ob die App entsperrt ist, entscheidet ein **lokaler Merker**, nicht eine
+   Anfrage an den Server. Ein Netzfehler ändert daran nie etwas.
+3. Nur eine **echte Antwort mit 401** sperrt wieder zu. Alle rund vierzig
+   Abrufe laufen durch ein `getJson`, die Paketdownloads prüfen es zusätzlich
+   selbst — es gibt genau diese eine Stelle.
+
+Abgesperrt wird nur von Hand, in den Einstellungen unter „App", mit einer
+Rückfrage, die es beim Namen nennt: *ohne Verbindung kommst du danach nicht
+wieder hinein*.
+
+Nachgeprüft mit `pnpm check:auth` (Merkmal, Passwortwechsel, Bremse gegen
+Durchprobieren, Cookie) und im Browser gegen das gebaute Bundle: Schloss →
+entsperren → neu laden bleibt offen → **offline neu laden bleibt offen** →
+eingespielte 401 sperrt zu.
+
+**Der Schutz taugt nur mit HTTPS** — sonst geht das Passwort im Klartext über
+die Leitung. Bei der Installation über `install.sh` übernimmt das Caddy.
+
 ## Kartenebenen
 
 Die Karte startet **ohne** Fachebenen. Alle Ebenen liegen im Ausklapp-Menü

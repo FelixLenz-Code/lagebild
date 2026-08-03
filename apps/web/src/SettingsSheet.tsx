@@ -22,6 +22,8 @@ interface Props {
   /** Welche Ebenen der Server überhaupt anbietet (Schlüssel vorhanden). */
   available: { flow: boolean; ais: boolean; aprs: boolean; lightning: boolean };
   onOpenRegions: () => void;
+  /** Gerät wieder absperren (nur wenn der Server ein Passwort verlangt). */
+  onLock?: () => void;
   onClose: () => void;
   /* --- Diashow --- */
   presets: MapPreset[];
@@ -251,6 +253,31 @@ export function SettingsSheet(props: Props) {
               Offline-Regionen verwalten
             </button>
           </div>
+
+          {props.onLock && (
+            <>
+              <div className="sect-label" style={{ marginTop: 18 }}>
+                Zugang
+              </div>
+              <p className="muted st-intro">
+                Dieses Gerät ist entsperrt und bleibt es — auch unterwegs ohne Netz. Absperren
+                braucht danach wieder eine Verbindung und das Passwort.
+              </p>
+              <button
+                type="button"
+                className="btn-quiet st-lock"
+                onClick={() => {
+                  const sure = window.confirm(
+                    'Gerät absperren?\n\nOhne Verbindung kommst du danach nicht wieder hinein — ' +
+                      'zum Entsperren braucht es einmal Netz und das Passwort.',
+                  );
+                  if (sure) props.onLock!();
+                }}
+              >
+                Gerät absperren
+              </button>
+            </>
+          )}
 
           <div className="sect-label" style={{ marginTop: 18 }}>
             Über Lagebild

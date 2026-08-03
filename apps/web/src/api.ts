@@ -38,12 +38,19 @@ import type {
   WindField,
   Coords,
 } from '@lagebild/shared';
+import { reportUnauthorized } from './auth.js';
 
 /** Standard-Standort, solange keine Geolocation vorliegt (Berlin-Mitte). */
 export const DEFAULT_COORDS: Coords = { lat: 52.52, lon: 13.405 };
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: { accept: 'application/json' } });
+  // Ein 401 ist die **einzige** Antwort, die die App wieder zusperrt. Alle
+  // rund 40 Abrufe laufen hier durch, deshalb genügt diese eine Stelle.
+  if (res.status === 401) {
+    reportUnauthorized();
+    throw new Error(`${path} → gesperrt`);
+  }
   if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
   return (await res.json()) as T;
 }
@@ -176,6 +183,8 @@ export const fetchGeocode = (query: string, near?: Coords): Promise<ApiEnvelope<
 
 export interface Health {
   ok: boolean;
+  /** true, wenn der Server ein gemeinsames Passwort verlangt. */
+  auth?: boolean;
   features?: { flow?: boolean; ais?: boolean; aprs?: boolean; lightning?: boolean };
 }
 export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);

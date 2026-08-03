@@ -43,6 +43,11 @@ export const config = {
   cacheTtlSeconds: Number(process.env.CACHE_TTL_SECONDS ?? 300),
   /** Pfad zum gebauten PWA-Bundle, das der Server im Prod-Betrieb ausliefert. */
   webRoot: process.env.WEB_ROOT ?? join(here, 'public'),
+  /**
+   * Gemeinsames Passwort vor dem Server. **Leer heißt: kein Schutz** — dann
+   * läuft alles wie bisher, was die Entwicklung einfach hält.
+   */
+  password: process.env.APP_PASSWORD ?? '',
   /** TomTom-API-Key für die Verkehrsfluss-Kacheln (bleibt serverseitig). */
   tomtomKey: process.env.TOMTOM_KEY ?? '',
   /** Verzeichnis mit den Offline-PMTiles pro Bundesland (z.B. 04.pmtiles). */

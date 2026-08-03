@@ -12,6 +12,8 @@
  * gezielt aus der Datei lesen.
  */
 
+import { reportUnauthorized } from './auth.js';
+
 /** Basis-URL der herunterladbaren Pakete (Prod: eigener VPS-Host). */
 export const MAPS_BASE: string = import.meta.env.VITE_MAPS_BASE ?? '/api/maps';
 
@@ -87,6 +89,12 @@ export async function downloadPackage(
   onProgress: (fraction: number, bytes: number) => void,
 ): Promise<void> {
   const res = await fetch(`${MAPS_BASE}/${fileName(code, kind)}`);
+  // Die Pakete laufen nicht über getJson, brauchen die 401-Behandlung aber
+  // genauso — sonst bliebe hier nur „Download fehlgeschlagen (401)" stehen.
+  if (res.status === 401) {
+    reportUnauthorized();
+    throw new Error('Server gesperrt — bitte neu entsperren.');
+  }
   if (!res.ok || !res.body) throw new Error(`Download fehlgeschlagen (${res.status})`);
   const total = Number(res.headers.get('content-length')) || 0;
 

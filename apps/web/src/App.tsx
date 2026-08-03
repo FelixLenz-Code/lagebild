@@ -93,7 +93,7 @@ const EMPTY_WIND = { points: [], cols: 0, rows: 0, time: null };
 const bboxKey = (b: Bbox) =>
   `${b.west.toFixed(2)},${b.south.toFixed(2)},${b.east.toFixed(2)},${b.north.toFixed(2)}`;
 
-export function App() {
+export function App({ onLock }: { onLock: () => Promise<void> }) {
   const [coords, setCoords] = useState<Coords>(DEFAULT_COORDS);
   const [place, setPlace] = useState('Berlin-Mitte');
   // Sichtbarer Kartenausschnitt — steuert alle ortsbezogenen Kartendaten.
@@ -819,6 +819,9 @@ export function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, destKey, startKey, planTime, planArriveBy, online]);
+
+  /** Verlangt der Server ein Passwort? Nur dann gibt es „Gerät absperren". */
+  const authRequired = health.data?.auth === true;
 
   /* ---------- Ansicht teilen ---------- */
   const [shareOpen, setShareOpen] = useState(false);
@@ -1946,6 +1949,7 @@ export function App() {
 
       {settingsOpen && (
         <SettingsSheet
+          onLock={authRequired ? onLock : undefined}
           settings={settings}
           onChange={setSettings}
           available={{

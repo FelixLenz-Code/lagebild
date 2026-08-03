@@ -829,6 +829,27 @@ svg { display: block; }
 
 .legend-note { max-width: 260px; font-size: .72rem; line-height: 1.35; color: var(--sev2); }
 
+/* Schloss vor der App */
+.lock { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
+.lock-box {
+  width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md, 14px);
+  padding: 24px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+}
+.lock-brand { display: flex; gap: 12px; align-items: flex-start; }
+.lock-brand svg { width: 34px; height: 34px; flex: none; color: var(--accent); }
+.lock-brand h1 { font-size: 1.3rem; margin: 0; letter-spacing: -.02em; }
+.lock-brand p { font-size: .82rem; color: var(--muted); margin: 2px 0 0; }
+.lock-field { display: flex; flex-direction: column; gap: 5px; }
+.lock-field span { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.lock-field input {
+  font-size: 1rem; padding: 11px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink);
+}
+.lock-field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lock-note { font-size: .74rem; margin: 0; }
+.st-lock { align-self: flex-start; color: var(--sev3); }
+
 /* Notfallblatt */
 .em-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .em-num {

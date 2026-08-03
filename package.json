@@ -12,12 +12,13 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "start": "node apps/api/dist/index.js",
-    "check": "pnpm check:import",
+    "check": "pnpm check:import && pnpm check:auth",
     "check:import": "tsx scripts/check-import.mts",
     "check:offline": "tsx scripts/check-offline.mts",
     "check:via": "tsx scripts/check-via.mts",
     "check:terrain": "tsx scripts/check-terrain.mts",
-    "check:pakete": "pnpm check:offline && pnpm check:via && pnpm check:terrain"
+    "check:pakete": "pnpm check:offline && pnpm check:via && pnpm check:terrain",
+    "check:auth": "tsx scripts/check-auth.mts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
