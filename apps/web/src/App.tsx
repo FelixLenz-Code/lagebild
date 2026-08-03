@@ -15,7 +15,10 @@ import type {
 import { FEDERAL_STATES } from '@lagebild/shared';
 import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
-import { LageMap, type ActiveLayers } from './LageMap.js';
+import { LageMap, type ActiveLayers, type MapApi } from './LageMap.js';
+import { ShareSheet } from './ShareSheet.js';
+import { EmergencySheet } from './EmergencySheet.js';
+import { clearShareUrl, readShareUrl } from './share.js';
 import { STOP_COLOR } from './mapIcons.js';
 import { SearchSheet } from './SearchSheet.js';
 import { LocationSheet } from './LocationSheet.js';
@@ -44,7 +47,18 @@ import type { ElevationProfile } from './offline/terrain.js';
 import { routeFromLine, viaPointsFromLine } from './offline/router.js';
 import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
-import { loadFavorites, saveFavorites, pointInGeometry, type Place } from './places.js';
+import {
+  loadFavorites,
+  saveFavorites,
+  pointInGeometry,
+  loadWatched,
+  saveWatched,
+  newPlaceId,
+  MAX_WATCHED,
+  type Place,
+  type WatchedPlace,
+} from './places.js';
+import { WatchedPlacesSheet, useWatchedStatus, worstSeverity } from './WatchedPlaces.js';
 import { AlertBanner, collectAlerts } from './AlertBanner.js';
 import { TrackPanel, useTrackRecorder } from './TrackPanel.js';
 import { trackLength, type Track } from './trackStore.js';
@@ -114,8 +128,11 @@ export function App() {
   // Ortung beim Start ist abschaltbar (Einstellungen) — dann bleibt der
   // zuletzt gewählte Ort stehen, bis von Hand geortet wird.
   const locateOnStart = useRef(loadSettings().locateOnStart);
+  // Ein geteilter Link hat Vorrang: Wer ihn öffnet, will genau diesen
+  // Ausschnitt sehen und nicht die eigene Straße.
+  const sharedView = useRef(readShareUrl());
   useEffect(() => {
-    if (locateOnStart.current) locate();
+    if (locateOnStart.current && !sharedView.current) locate();
   }, [locate]);
 
   /** Standort von Hand setzen (Karte) — nie aus der Suche. */
@@ -176,6 +193,7 @@ export function App() {
   /** Kompass: angepeilter Punkt und ob das Blatt offen ist. */
   const [bearingTarget, setBearingTarget] = useState<{ name: string; lat: number; lon: number } | null>(null);
   const [compassOpen, setCompassOpen] = useState(false);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [layers, setLayers] = useState<ActiveLayers>({
     radar: false,
     aircraft: false,
@@ -802,6 +820,39 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, destKey, startKey, planTime, planArriveBy, online]);
 
+  /* ---------- Ansicht teilen ---------- */
+  const [shareOpen, setShareOpen] = useState(false);
+  const [mapApi, setMapApi] = useState<MapApi | null>(null);
+  // Ein geteilter Link bringt Ausschnitt und Ebenen mit — einmal beim Start
+  // anwenden und den Hash danach entfernen, damit er nicht kleben bleibt.
+  useEffect(() => {
+    const shared = sharedView.current;
+    if (!shared) return;
+    setCoords({ lat: shared.lat, lon: shared.lon });
+    setViewport(boxAround({ lat: shared.lat, lon: shared.lon }));
+    setPlace('Geteilte Ansicht');
+    setFlyTo({ lat: shared.lat, lon: shared.lon, zoom: shared.zoom, key: Date.now() });
+    if (shared.layers.length) setApplyLayers({ layers: shared.layers, key: Date.now() });
+    clearShareUrl();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ---------- Meine Orte ---------- */
+  const [watched, setWatched] = useState<WatchedPlace[]>(() => loadWatched());
+  const [watchedOpen, setWatchedOpen] = useState(false);
+  useEffect(() => saveWatched(watched), [watched]);
+  const watchedStates = useWatchedStatus(watched, refreshTick);
+  const watchedWorst = worstSeverity(watchedStates);
+  const watchedAlerts = Object.values(watchedStates).reduce((n, s) => n + s.alerts.length, 0);
+  const addWatched = (place: { name: string; lat: number; lon: number }) => {
+    setWatched((prev) =>
+      prev.length >= MAX_WATCHED ||
+      prev.some((p) => Math.abs(p.lat - place.lat) < 1e-4 && Math.abs(p.lon - place.lon) < 1e-4)
+        ? prev
+        : [...prev, { id: newPlaceId(), ...place }],
+    );
+  };
+
   /* ---------- Wander- und Radwegenetz ---------- */
   const [trails, setTrails] = useState<TrailFeature[]>([]);
   /** Das Paket ist noch ohne Wegenetz gebaut — dann bleibt die Ebene leer. */
@@ -1027,11 +1078,19 @@ export function App() {
    */
   const pickPoint = (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch',
     label?: string,
   ) => {
     if (kind === 'radio') {
       setHfTarget(point);
+      return;
+    }
+    if (kind === 'watch') {
+      addWatched({
+        name: label ?? `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`,
+        ...point,
+      });
+      setWatchedOpen(true);
       return;
     }
     if (kind === 'bearing') {
@@ -1320,6 +1379,8 @@ export function App() {
             fitBbox={fitBbox}
             terrainImage={terrainImage}
             trails={trails}
+            onMapApi={setMapApi}
+            onShare={() => setShareOpen(true)}
             trailsHint={
               trailsStale
                 ? 'Das gespeicherte Routing-Paket dieser Region kennt noch kein Wegenetz — neu laden oder neu bauen.'
@@ -1487,6 +1548,34 @@ export function App() {
             </>
           )}
         </Tile>
+
+        {watched.length > 0 && (
+          <Tile
+            title="Meine Orte"
+            badge={watchedAlerts > 0 ? `${watchedAlerts} Warnung${watchedAlerts === 1 ? '' : 'en'}` : undefined}
+            badgeKind={watchedWorst === 'extreme' || watchedWorst === 'severe' ? 'alert' : 'warn'}
+            source={watchedAlerts === 0 ? 'alles ruhig' : undefined}
+            onOpen={() => setWatchedOpen(true)}
+          >
+            <ul className="wp-mini">
+              {watched.slice(0, 4).map((p) => {
+                const worst = watchedStates[p.id]?.alerts[0];
+                return (
+                  <li key={p.id}>
+                    <span
+                      className="wp-dot"
+                      style={{ background: worst ? `var(${SEVERITY_VAR[worst.severity]})` : 'var(--ok)' }}
+                      aria-hidden="true"
+                    />
+                    <span className="wp-mini-name">{p.name}</span>
+                    <span className="muted">{worst ? worst.headline : 'ruhig'}</span>
+                  </li>
+                );
+              })}
+              {watched.length > 4 && <li className="muted">… und {watched.length - 4} weitere</li>}
+            </ul>
+          </Tile>
+        )}
 
         <Tile title="Im Ausschnitt" source="im Kartenausschnitt gezählt">
           <div className="counts">
@@ -1792,6 +1881,46 @@ export function App() {
         </Sheet>
       )}
 
+      {emergencyOpen && (
+        <EmergencySheet
+          coords={coords}
+          offlineCode={searchCode}
+          rescue={rescue.data?.data ?? []}
+          onRoute={(p) => {
+            setEmergencyOpen(false);
+            startRouteTo(p);
+          }}
+          onClose={() => setEmergencyOpen(false)}
+        />
+      )}
+
+      {shareOpen && (
+        <ShareSheet api={mapApi} layers={activeLayers} onClose={() => setShareOpen(false)} />
+      )}
+
+      {watchedOpen && (
+        <WatchedPlacesSheet
+          places={watched}
+          states={watchedStates}
+          coords={coords}
+          currentName={place}
+          onAddCurrent={() => addWatched({ name: place, lat: coords.lat, lon: coords.lon })}
+          onRename={(id, name) =>
+            setWatched((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)))
+          }
+          onRemove={(id) => setWatched((prev) => prev.filter((p) => p.id !== id))}
+          onShow={(p) => {
+            showOnMap(p.lat, p.lon, 11);
+            setWatchedOpen(false);
+          }}
+          onOpenAlert={(d) => {
+            setWatchedOpen(false);
+            setDetail(d);
+          }}
+          onClose={() => setWatchedOpen(false)}
+        />
+      )}
+
       {compassOpen && (
         <CompassSheet
           from={coords}
@@ -1894,6 +2023,10 @@ export function App() {
           onUseGeolocation={() => {
             locate();
             setLocationOpen(false);
+          }}
+          onEmergency={() => {
+            setLocationOpen(false);
+            setEmergencyOpen(true);
           }}
           onCompass={() => {
             setLocationOpen(false);

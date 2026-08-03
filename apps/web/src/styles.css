@@ -829,6 +829,79 @@ svg { display: block; }
 
 .legend-note { max-width: 260px; font-size: .72rem; line-height: 1.35; color: var(--sev2); }
 
+/* Notfallblatt */
+.em-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.em-num {
+  display: flex; flex-direction: column; gap: 1px; text-decoration: none; color: inherit;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 10px 12px;
+}
+.em-num:hover { border-color: var(--sev3); }
+.em-num b { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.em-num span { font-size: .8rem; }
+.em-num em { font-size: .7rem; color: var(--muted); font-style: normal; }
+.em-num.is-first { grid-column: 1 / -1; border-color: var(--sev3); background: color-mix(in srgb, var(--sev3) 8%, transparent); }
+.em-num.is-first b { font-size: 2.4rem; color: var(--sev3); }
+.em-w { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.em-w li { font-size: .82rem; }
+.em-w b { display: block; }
+.em-w span { color: var(--muted); font-size: .76rem; }
+.em-say { font-size: .82rem; margin: 0 0 4px; }
+.em-list { list-style: none; margin: 0; padding: 0; }
+.em-list li { border-top: 1px solid var(--line); }
+.em-list button {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left;
+  background: transparent; border: 0; padding: 9px 0; color: inherit; cursor: pointer; font-size: .84rem;
+}
+.em-list button:hover b { color: var(--accent); }
+.em-list span { font-size: .74rem; color: var(--muted); }
+.em-poison { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; font-size: .8rem; }
+.em-poison li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.em-poison a { color: var(--accent); }
+.em-note { font-size: .74rem; margin: 0 0 6px; }
+.em-print { margin-top: 16px; }
+.pp-action.is-emergency { color: var(--sev3); }
+.pp-action.is-emergency:hover { border-color: var(--sev3); }
+
+/* Beim Drucken bleibt nur das offene Blatt stehen. */
+@media print {
+  .app > header, .statusline, .map-col, .tiles-col, .alertbar { display: none !important; }
+  .scrim { position: static !important; background: none !important; display: block !important; }
+  .sheet { box-shadow: none !important; max-height: none !important; border: 0 !important; }
+  .sheet .iconbtn.close, .em-print { display: none !important; }
+  .em-numbers { break-inside: avoid; }
+}
+
+/* Karte teilen */
+.share-btn { bottom: 72px; }
+.sh-url input {
+  width: 100%; font-size: .78rem; font-family: var(--mono, ui-monospace, monospace);
+  padding: 9px 11px; border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink);
+}
+.sh-layers { font-size: .74rem; margin: 6px 0 0; }
+.sh-image { display: block; width: 100%; border-radius: var(--r-sm); border: 1px solid var(--line); margin: 8px 0; }
+
+/* Meine Orte */
+.wp-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.wp-list li { padding: 12px 0; border-top: 1px solid var(--line); }
+.wp-list li.is-alert { border-left: 3px solid var(--sev3); padding-left: 9px; }
+.wp-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.wp-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; align-self: center; }
+.wp-quiet { font-size: .78rem; margin: 0 0 6px; }
+.wp-alert {
+  display: flex; gap: 9px; width: 100%; text-align: left; cursor: pointer;
+  background: transparent; border: 0; padding: 0 0 8px; color: inherit;
+}
+.wp-sev { flex: none; align-self: flex-start; color: #fff; font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border-radius: 4px; padding: 2px 6px; }
+.wp-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: .82rem; }
+.wp-text .muted { font-size: .72rem; }
+.wp-instr { font-size: .76rem; color: var(--sev2); }
+.wp-mini { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: .8rem; }
+.wp-mini li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wp-mini-name { font-weight: 600; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-mini .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Kompass und Peilung */
 .cp-wrap { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 .cp-rose { width: 220px; height: 220px; flex: none; }

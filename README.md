@@ -122,6 +122,58 @@ Die **Suche** nimmt Koordinaten ebenfalls entgegen — „52.5163, 13.3777",
 Passt die Eingabe, steht die Koordinate als eigener Treffer ganz oben und lässt
 sich wie jedes andere Ziel anfahren.
 
+## Meine Orte
+
+Der Warnstreifen oben gilt für den **eigenen Standort**. Wer unterwegs ist, will
+aber auch wissen, ob zu Hause oder bei den Eltern etwas los ist — dafür gibt es
+**„Meine Orte"**: bis zu acht beobachtete Punkte, jeder mit derselben Prüfung
+wie am Standort (DWD ab `severe`, Behördenwarnungen in jeder Stufe, Flächen
+per Strahlverfahren geprüft). Aufgenommen werden sie über das Kartenmenü („Ort
+beobachten") oder als aktueller Standort.
+
+Die Kachel zeigt je Ort einen Punkt (grün = ruhig) und die Schlagzeile; das
+Blatt nennt Stufe, Herkunft und **Handlungsanweisung** und führt in die
+Warnliste. Abgefragt wird **je Ort ein eigenes Rechteck**, nicht ein
+gemeinsames: Bei Orten in Bremen und München wäre das gemeinsame Rechteck halb
+Deutschland, und die DWD-Warnabfrage liefert national über 20.000 Flächen.
+
+## Karte teilen
+
+Der Knopf mit dem Verzweigungssymbol rechts an der Karte öffnet **„Karte
+teilen"**:
+
+- **Als Link** — Ausschnitt und eingeschaltete Ebenen stehen im **Hash** der
+  Adresse (`#karte=53.08360,8.81370,11.0&ebenen=warnings,radar`). Der Hash geht
+  nie an einen Server; die App bleibt eine reine Browseranwendung. Wer den Link
+  öffnet, landet auf demselben Ausschnitt mit denselben Ebenen — die Ortung
+  beim Start wird dann übersprungen, sonst spränge die Karte sofort zur eigenen
+  Straße. Danach räumt die App den Hash wieder weg.
+- **Als Bild** — ein Abzug der Leinwand. Dafür läuft die Karte mit
+  `preserveDrawingBuffer`, sonst gibt WebGL den Puffer nach jedem Bild frei und
+  das Ergebnis wäre schwarz. Standort-, Start- und Zielmarke liegen als HTML
+  neben der Leinwand und werden nachträglich daraufgemalt.
+
+## Notfallblatt
+
+Erreichbar über das Standort-Blatt. Gedacht für den Augenblick, in dem man den
+Notruf wählt, und **vollständig ohne Netz** nutzbar:
+
+- **112** groß, dazu 110, 116117 und die Telefonseelsorge — alles als
+  Wählen-Verweis;
+- **die fünf W** (Wo, Was, Wie viele, Welche Verletzungen, Warten);
+- die **eigene Position** in allen Schreibweisen, mit der Zeile „Für die
+  Leitstelle vorlesen" in Grad und Dezimalminuten — so wollen es Leitstellen;
+- die nächsten **Rettungspunkte** und je Art die nächste **Anlaufstelle**
+  (Klinik, Apotheke, Arzt, Polizei, Feuerwehr) aus dem Offline-Suchindex, jede
+  direkt anfahrbar;
+- die **Giftinformationszentralen** — bewusst als Liste der Städte und nicht
+  nach Bundesland zugeordnet: Die Zuständigkeiten überschneiden sich, und eine
+  falsche Zuordnung wäre im Ernstfall schlimmer als eine Zeile mehr zum Lesen.
+
+Das Blatt lässt sich **drucken** (eigenes Druck-Stylesheet: Kopfzeile, Karte
+und Kacheln fallen weg). Wer es einmal ausdruckt, hat es auch dann, wenn das
+Gerät leer ist.
+
 ## Kompass und Peilung
 
 Das Standort-Blatt öffnet **„Kompass und Peilung"**; ein Ziel setzt das

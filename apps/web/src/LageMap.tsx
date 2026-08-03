@@ -820,6 +820,10 @@ interface Props {
   trails: TrailFeature[];
   /** Warum die Ebene leer bleibt (z. B. altes Paket). */
   trailsHint: string | null;
+  /** Zugriff auf Ansicht und Bild der Karte (einmal beim Laden gemeldet). */
+  onMapApi?: (api: MapApi) => void;
+  /** „Karte teilen" öffnen. */
+  onShare: () => void;
   /** Geländebild der Region (Höhenfarben mit Schummerung) samt Ausdehnung. */
   terrainImage: { url: string; bounds: [number, number, number, number]; key: number } | null;
   /** Eingelesene Markierungen, die zu den eigenen dazukommen. */
@@ -853,7 +857,7 @@ interface Props {
   /** Punkt aus dem Kartenmenü als Ziel bzw. Start übernehmen. */
   onPickPoint: (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch',
     label?: string,
   ) => void;
   /** Großkreis der bewerteten Funkstrecke ([lon, lat]). */
@@ -881,6 +885,17 @@ interface Props {
 }
 
 /** Ebenen, deren Daten nur bei Bedarf geholt werden. */
+/** Was die Karte nach außen über sich verrät (für „Ansicht teilen"). */
+export interface MapApi {
+  /** Aktueller Ausschnitt. */
+  view: () => { lat: number; lon: number; zoom: number };
+  /**
+   * Bild der Karte als Daten-URL. HTML-Marken (Standort, Start und Ziel)
+   * liegen nicht in der Leinwand und werden nachträglich daraufgemalt.
+   */
+  snapshot: () => string | null;
+}
+
 export interface ActiveLayers {
   radar: boolean;
   /** Fahrzeuge, Notfallpunkte, Erdbeben, Polarlicht, Waldbrandgefahr. */
@@ -1012,6 +1027,8 @@ export function LageMap({
   terrainImage,
   trails,
   trailsHint,
+  onMapApi,
+  onShare,
   aurora,
   fire,
   flyTo,
@@ -1233,6 +1250,10 @@ export function LageMap({
       center: [coords.lon, coords.lat],
       zoom: 11,
       attributionControl: { compact: true },
+      // Ohne das ist die Leinwand beim Auslesen leer — WebGL gibt den Puffer
+      // sonst nach jedem Bild frei. Kostet etwas Speicher, ist aber die
+      // einzige Möglichkeit, ein Bild der Karte zu bekommen.
+      preserveDrawingBuffer: true,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
@@ -3053,6 +3074,51 @@ export function LageMap({
     );
   }, [auroraUrl, ready, styleEpoch]);
 
+  // Zugriff für „Ansicht teilen" — einmal melden, sobald die Karte steht.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !onMapApi) return;
+    onMapApi({
+      view: () => {
+        const c = map.getCenter();
+        return { lat: c.lat, lon: c.lng, zoom: map.getZoom() };
+      },
+      snapshot: () => {
+        const canvas = map.getCanvas();
+        const out = document.createElement('canvas');
+        out.width = canvas.width;
+        out.height = canvas.height;
+        const ctx = out.getContext('2d');
+        if (!ctx) return null;
+        // Die Karte selbst …
+        map.triggerRepaint();
+        ctx.drawImage(canvas, 0, 0);
+        const ratio = canvas.width / map.getContainer().clientWidth;
+        // … und die Marken, die als HTML danebenliegen.
+        const dot = (point: Coords, fill: string) => {
+          const p = map.project([point.lon, point.lat]);
+          ctx.beginPath();
+          ctx.arc(p.x * ratio, p.y * ratio, 7 * ratio, 0, Math.PI * 2);
+          ctx.fillStyle = fill;
+          ctx.fill();
+          ctx.lineWidth = 3 * ratio;
+          ctx.strokeStyle = '#fff';
+          ctx.stroke();
+        };
+        dot(coords, '#1d4e73');
+        if (route) {
+          dot(route.snappedStart, '#2c7448');
+          for (const w of route.waypoints ?? []) dot(w, '#1d4e73');
+          dot(route.snappedEnd, '#a92318');
+        } else if (pin) {
+          dot({ lat: pin.lat, lon: pin.lon }, '#1d4e73');
+        }
+        return out.toDataURL('image/png');
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, onMapApi, coords.lat, coords.lon, route, pin]);
+
   // Auf einen Punkt schwenken (Nachrichtenliste, Suchtreffer).
   useEffect(() => {
     const map = mapRef.current;
@@ -3665,6 +3731,21 @@ export function LageMap({
 
         <button
           type="button"
+          className="loc-btn share-btn"
+          aria-label="Karte teilen"
+          title="Karte teilen"
+          onClick={onShare}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="2.6" />
+            <circle cx="6" cy="12" r="2.6" />
+            <circle cx="18" cy="19" r="2.6" />
+            <path d="M8.3 10.8 15.7 6.4M8.3 13.2l7.4 4.4" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
           className="loc-btn"
           aria-label="Zurück zum Standort"
           title="Zurück zum Standort"
@@ -3726,6 +3807,15 @@ export function LageMap({
               }}
             >
               Peilung hierher
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'watch', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Ort beobachten
             </button>
             <button
               type="button"
