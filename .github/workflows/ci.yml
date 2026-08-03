@@ -11,9 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Ohne `version`: die Fassung steht in package.json unter
+      # `packageManager`, und die Aktion bricht ab, wenn beides gesetzt ist.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
