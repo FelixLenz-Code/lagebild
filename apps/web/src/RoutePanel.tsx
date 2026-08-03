@@ -445,7 +445,7 @@ export function RoutePanel(props: Props) {
             </button>
             <button
               type="button"
-              className="btn-quiet"
+              className="rp-export"
               title="Route als GPX herunterladen (Linie, Anweisungen und Zielpunkte)"
               onClick={() => {
                 const name = `${props.origin?.name ?? 'Mein Standort'} → ${props.destination.name}`;
@@ -462,6 +462,9 @@ export function RoutePanel(props: Props) {
                 );
               }}
             >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 4v11M8 11l4 4 4-4M5 19h14" />
+              </svg>
               GPX
             </button>
           </div>

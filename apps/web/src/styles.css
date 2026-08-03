@@ -827,6 +827,28 @@ svg { display: block; }
 .region.is-hidden .rinfo b { text-decoration: line-through; text-decoration-thickness: 1px; }
 .raction .rdel:disabled { opacity: .3; cursor: default; }
 
+/* Kompass und Peilung */
+.cp-wrap { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.cp-rose { width: 220px; height: 220px; flex: none; }
+.cp-ring { fill: color-mix(in srgb, var(--ink) 4%, transparent); stroke: var(--line-strong); }
+.cp-tick { stroke: var(--muted); stroke-width: 1; }
+.cp-tick.major { stroke: var(--ink); stroke-width: 1.6; }
+.cp-label { fill: var(--muted); font-size: 13px; font-weight: 650; text-anchor: middle; dominant-baseline: middle; }
+.cp-label.is-north { fill: var(--sev3); }
+.cp-needle { fill: var(--accent); }
+.cp-needle-line { stroke: var(--accent); stroke-width: 2; }
+.cp-front { fill: var(--sev2); }
+.cp-hub { fill: var(--ink); }
+.cp-values { flex: 1; min-width: 210px; display: flex; flex-direction: column; gap: 10px; }
+.cp-turn b { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; }
+.cp-turn b.is-on { color: var(--ok); }
+.cp-list { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.cp-list > div { display: flex; flex-direction: column; gap: 1px; }
+.cp-list dt { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.cp-list dd { margin: 0; font-size: .92rem; font-variant-numeric: tabular-nums; }
+.cp-note { font-size: .72rem; margin: 0; }
+.cp-ask { margin-bottom: 12px; }
+
 /* Höhenprofil */
 .elev { margin: 2px 0 4px; }
 .elev-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; font-size: .76rem; }
@@ -869,6 +891,14 @@ svg { display: block; }
 .rp-summary { display: flex; align-items: baseline; gap: 14px; font-size: .82rem; color: var(--muted); }
 .rp-summary b { font-size: 1.15rem; font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
 .rp-actions { display: flex; align-items: center; gap: 8px; }
+.rp-export {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  min-height: 34px; padding: 0 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: transparent; color: var(--ink);
+  font-size: .78rem; font-weight: 600; cursor: pointer;
+}
+.rp-export svg { width: 15px; height: 15px; }
+.rp-export:hover { border-color: var(--accent); color: var(--accent); }
 .rp-hint { font-size: .76rem; color: var(--muted); margin: 0; }
 .rp-hint.err { color: var(--sev2); }
 .btn-primary { flex: 1; min-height: 40px; border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: .86rem; font-weight: 650; cursor: pointer; }

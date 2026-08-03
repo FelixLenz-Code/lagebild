@@ -49,6 +49,7 @@ import { TrackPanel, useTrackRecorder } from './TrackPanel.js';
 import { trackLength, type Track } from './trackStore.js';
 import { drawFrom, tracksFrom, readImport, ImportError, type ImportResult } from './importFiles.js';
 import { ImportBox } from './ImportBox.js';
+import { CompassSheet } from './CompassSheet.js';
 import { lineLength } from './geo.js';
 import { type DrawFeature } from './drawStore.js';
 import { Sheet } from './Sheet.js';
@@ -171,6 +172,9 @@ export function App() {
 
   /** Gegenstelle der Funkstrecken-Bewertung (Kartenmenü). */
   const [hfTarget, setHfTarget] = useState<Coords | null>(null);
+  /** Kompass: angepeilter Punkt und ob das Blatt offen ist. */
+  const [bearingTarget, setBearingTarget] = useState<{ name: string; lat: number; lon: number } | null>(null);
+  const [compassOpen, setCompassOpen] = useState(false);
   const [layers, setLayers] = useState<ActiveLayers>({
     radar: false,
     aircraft: false,
@@ -983,11 +987,19 @@ export function App() {
    */
   const pickPoint = (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing',
     label?: string,
   ) => {
     if (kind === 'radio') {
       setHfTarget(point);
+      return;
+    }
+    if (kind === 'bearing') {
+      setBearingTarget({
+        name: label ?? `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`,
+        ...point,
+      });
+      setCompassOpen(true);
       return;
     }
     const coordName = `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`;
@@ -1734,6 +1746,15 @@ export function App() {
         </Sheet>
       )}
 
+      {compassOpen && (
+        <CompassSheet
+          from={coords}
+          target={bearingTarget}
+          onClearTarget={() => setBearingTarget(null)}
+          onClose={() => setCompassOpen(false)}
+        />
+      )}
+
       {importOpen && (
         <Sheet
           title="Datei einlesen"
@@ -1827,6 +1848,10 @@ export function App() {
           onUseGeolocation={() => {
             locate();
             setLocationOpen(false);
+          }}
+          onCompass={() => {
+            setLocationOpen(false);
+            setCompassOpen(true);
           }}
           onPickOnMap={() => {
             setLocationOpen(false);

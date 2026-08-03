@@ -848,7 +848,7 @@ interface Props {
   /** Punkt aus dem Kartenmenü als Ziel bzw. Start übernehmen. */
   onPickPoint: (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing',
     label?: string,
   ) => void;
   /** Großkreis der bewerteten Funkstrecke ([lon, lat]). */
@@ -3651,6 +3651,15 @@ export function LageMap({
               }}
             >
               Hierher wechseln
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'bearing', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Peilung hierher
             </button>
             <button
               type="button"

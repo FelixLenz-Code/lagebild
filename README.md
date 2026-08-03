@@ -122,6 +122,27 @@ Die **Suche** nimmt Koordinaten ebenfalls entgegen — „52.5163, 13.3777",
 Passt die Eingabe, steht die Koordinate als eigener Treffer ganz oben und lässt
 sich wie jedes andere Ziel anfahren.
 
+## Kompass und Peilung
+
+Das Standort-Blatt öffnet **„Kompass und Peilung"**; ein Ziel setzt das
+Kartenmenü (langes Antippen) mit **„Peilung hierher"**. Gedacht ist das fürs
+Anlaufen eines Punktes **ohne Karte im Blick** — Rettungspunkt im Wald,
+Sammelplatz im Nebel, Ausrichten einer Richtantenne.
+
+Deshalb ist die größte Zahl nicht die Peilung, sondern **wie weit man sich
+drehen muss** („135° nach links drehen"). Darunter stehen Peilung mit
+Himmelsrichtung, Entfernung, die eigene Blickrichtung und die Zielkoordinate in
+Grad/Dezimalminuten. Die Rose dreht sich gegen die Blickrichtung, oben ist immer
+„vorn"; die Nadel zeigt zum Ziel.
+
+**Zur Nordrichtung:** `deviceorientationabsolute` und Safaris
+`webkitCompassHeading` liefern rechtweisend Nord. Das gewöhnliche
+`deviceorientation` liefert je nach Gerät nur eine relative Ausrichtung — dann
+sagt das Blatt das ausdrücklich, statt eine Genauigkeit vorzutäuschen, die es
+nicht gibt. iOS verlangt ab Version 13 eine Erlaubnis; dafür steht ein Knopf
+bereit. Die Rohwerte zappeln um mehrere Grad und werden deshalb geglättet —
+**über den Nullpunkt hinweg**, sonst läge das Mittel von 359° und 1° bei 180°.
+
 ## Spur aufzeichnen
 
 Der Knopf mit der Wegelinie in der Kopfzeile öffnet die **Spuraufzeichnung**.
