@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Coords } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
+import { ElevationChart } from './ElevationChart.js';
+import type { ElevationProfile } from './offline/terrain.js';
 import {
   downloadGpx,
   loadTracks,
@@ -108,6 +110,8 @@ interface Props {
   /** Zum Startpunkt einer Spur zurückführen. */
   onBackToStart: (point: Coords, name: string) => void;
   shownId: string | null;
+  /** Höhenprofil der gerade gezeigten Spur (aus Gelände oder Datei). */
+  profile: ElevationProfile | null;
   onClose: () => void;
 }
 
@@ -170,6 +174,11 @@ export function TrackPanel(props: Props) {
                     {t.source === 'import' && ` · aus ${t.origin ?? 'Datei'}`}
                   </span>
                 </div>
+                {/* Das Profil steht bei der Spur, die gerade auf der Karte
+                    liegt — für alle gleichzeitig wäre es Rechnerei ohne Anlass. */}
+                {props.shownId === t.id && props.profile && (
+                  <ElevationChart profile={props.profile} />
+                )}
                 <div className="tr-actions">
                   <button
                     type="button"

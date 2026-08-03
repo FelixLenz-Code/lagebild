@@ -212,6 +212,11 @@ export interface RadarForecast {
   height: number;
   /** Bildecken im Uhrzeigersinn ab Nordwest: NW, NO, SO, SW. */
   corners: [number, number][];
+  /**
+   * Wo der angefragte Punkt im Gitter liegt (Bruchteile von Zellen). Die
+   * Schnittstelle sagt es selbst — verlässlicher, als die Mitte anzunehmen.
+   */
+  position?: { x: number; y: number };
   frames: RadarForecastFrame[];
 }
 

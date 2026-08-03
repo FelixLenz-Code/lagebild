@@ -104,6 +104,10 @@ export const trailsOffline = (
   limit?: number,
 ) => call<TrailResult>({ type: 'trails', codes, bbox, kinds, limit });
 
+/** Höhe eines einzelnen Punktes (Meter über NN) aus dem Geländepaket. */
+export const elevationAtOffline = (codes: string[], lat: number, lon: number) =>
+  call<number | null>({ type: 'elevationAt', codes, lat, lon });
+
 /** Höhenlinien im Ausschnitt (aus dem Geländepaket). */
 export const contoursOffline = (
   codes: string[],

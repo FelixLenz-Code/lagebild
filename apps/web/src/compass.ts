@@ -185,3 +185,97 @@ export function projectPoint(from: Coords, bearingDeg: number, distanceM: number
 
   return { lat: φ2 / RAD, lon: (((λ2 / RAD + 540) % 360) - 180) };
 }
+
+/** Eine Peilung von einem Standort aus. */
+export interface Sighting {
+  lat: number;
+  lon: number;
+  bearingDeg: number;
+}
+
+export type CrossResult =
+  | {
+      ok: true;
+      point: Coords;
+      /** Schnittwinkel der beiden Peilungen in Grad (0–90). */
+      cutAngleDeg: number;
+      /**
+       * true, wenn der Schnitt zu spitz ist, um brauchbar zu sein. Seefahrt und
+       * Vermessung verlangen seit jeher 30°–90°; unter 15° wandert der
+       * Schnittpunkt bei einem Grad Peilfehler um Kilometer.
+       */
+      weak: boolean;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * Kreuzpeilung: Wo schneiden sich zwei Peilungen?
+ *
+ * So ortet man eine Rauchsäule, einen Sender oder ein Signal, das man nur
+ * sehen oder hören, aber nicht erreichen kann: einmal von hier peilen, ein
+ * Stück zur Seite gehen, noch einmal peilen — der Schnittpunkt ist die Quelle.
+ *
+ * Gerechnet auf der Kugel (Schnitt zweier Großkreise, Formel nach Ed Williams).
+ * Die Fallunterscheidungen sind kein Zierrat: Zwei Peilungen können parallel
+ * laufen, sich hinter dem Rücken schneiden oder von demselben Punkt ausgehen —
+ * und in all diesen Fällen wäre jede Zahl gelogen.
+ */
+export function crossBearing(a: Sighting, b: Sighting): CrossResult {
+  const RAD = Math.PI / 180;
+  const φ1 = a.lat * RAD;
+  const λ1 = a.lon * RAD;
+  const φ2 = b.lat * RAD;
+  const λ2 = b.lon * RAD;
+  const θ13 = a.bearingDeg * RAD;
+  const θ23 = b.bearingDeg * RAD;
+  const Δφ = φ2 - φ1;
+  const Δλ = λ2 - λ1;
+
+  const δ12 =
+    2 *
+    Math.asin(
+      Math.sqrt(Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2),
+    );
+  if (δ12 < 1e-9) {
+    return { ok: false, reason: 'Beide Peilungen stammen vom selben Punkt — geh ein Stück zur Seite.' };
+  }
+
+  const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+  const θa = Math.acos(clamp((Math.sin(φ2) - Math.sin(φ1) * Math.cos(δ12)) / (Math.sin(δ12) * Math.cos(φ1))));
+  const θb = Math.acos(clamp((Math.sin(φ1) - Math.sin(φ2) * Math.cos(δ12)) / (Math.sin(δ12) * Math.cos(φ2))));
+  const θ12 = Math.sin(Δλ) > 0 ? θa : 2 * Math.PI - θa;
+  const θ21 = Math.sin(Δλ) > 0 ? 2 * Math.PI - θb : θb;
+
+  const α1 = θ13 - θ12;
+  const α2 = θ21 - θ23;
+  if (Math.abs(Math.sin(α1)) < 1e-12 && Math.abs(Math.sin(α2)) < 1e-12) {
+    // Auf der Kugel schneiden sich zwei Großkreise **immer** — außer sie sind
+    // derselbe. Genau dieser Fall ist hier gemeint.
+    return { ok: false, reason: 'Beide Peilungen liegen auf derselben Linie — so lässt sich nichts kreuzen.' };
+  }
+  if (Math.sin(α1) * Math.sin(α2) < 0) {
+    return { ok: false, reason: 'Die Peilungen schneiden sich nur hinter dem Rücken. Richtungen prüfen.' };
+  }
+
+  const α3 = Math.acos(clamp(-Math.cos(α1) * Math.cos(α2) + Math.sin(α1) * Math.sin(α2) * Math.cos(δ12)));
+  const δ13 = Math.atan2(
+    Math.sin(δ12) * Math.sin(α1) * Math.sin(α2),
+    Math.cos(α2) + Math.cos(α1) * Math.cos(α3),
+  );
+  const φ3 = Math.asin(clamp(Math.sin(φ1) * Math.cos(δ13) + Math.cos(φ1) * Math.sin(δ13) * Math.cos(θ13)));
+  const Δλ13 = Math.atan2(
+    Math.sin(θ13) * Math.sin(δ13) * Math.cos(φ1),
+    Math.cos(δ13) - Math.sin(φ1) * Math.sin(φ3),
+  );
+
+  // Schnittwinkel: Er entscheidet, wie viel die Ortung taugt.
+  const cut = Math.abs(((a.bearingDeg - b.bearingDeg + 540) % 360) - 180);
+  const cutAngleDeg = cut > 90 ? 180 - cut : cut;
+
+  return {
+    ok: true,
+    point: { lat: φ3 / RAD, lon: ((((λ1 + Δλ13) / RAD + 540) % 360) - 180) },
+    cutAngleDeg,
+    weak: cutAngleDeg < 15,
+  };
+}

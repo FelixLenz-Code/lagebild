@@ -161,6 +161,49 @@ Mach), Kurs, Wind und Temperatur in Flughöhe, Squawk und Abstand. Halter und
 **Flugroute** (Start- und Zielflughafen) holt `/api/aircraft/<icao>` beim
 Antippen von [adsbdb.com](https://api.adsbdb.com) nach — frei und ohne Key.
 
+## „Was ist hier?"
+
+Langes Antippen auf der Karte, dann **„Was ist hier?"** — und alles, was die App
+über diese Stelle weiß, steht auf einem Blatt: Höhe, Sonnenauf- und -untergang,
+Sonnenstand, **wie lange es noch hell ist**, die Warnungen, die genau diesen
+Punkt überdecken (Flächenprüfung, nicht nur Rechteck), die nächsten
+Anlaufstellen und Rettungspunkte, dazu die Koordinaten in fünf Schreibweisen.
+
+Der Grund: Diese Angaben lagen an **sieben verschiedenen Stellen** verteilt.
+Wer wissen will, was an *dieser* Stelle los ist, sollte nicht sieben Mal
+nachsehen müssen. Neue Daten holt das Blatt keine — bis auf Höhe und
+Anlaufstellen, die aus den Offline-Paketen kommen.
+
+## Wann erreicht mich der Regen?
+
+Die Wetterkachel sagt es in einem Satz: *„sehr starker Regen bis gegen 19:40"*
+oder *„mäßiger Regen ab 15:40 (in 22 min)"* — rot hinterlegt, wenn es innerhalb
+einer halben Stunde da ist oder kräftig wird.
+
+Das ist **nicht** dasselbe wie die Stundenvorhersage daneben:
+
+| Anzeige | Quelle | Auflösung |
+| --- | --- | --- |
+| „Trocken", Temperatur | Messung der nächsten Station | letzter Stundenwert |
+| „Regen 24 h", Regenband im Detail | Modellvorhersage (ICON) | Stundenmittel |
+| diese Zeile | Radarvorhersage RADOLAN-RV | **5-Minuten-Schritte**, bis +2 h |
+
+Ein halbstündiger Schauer verschwindet im Stundenmittel — genau dafür gibt es
+Nowcasting. Im Test stand in derselben Kachel „Trocken" (Stundenmessung der
+Station), während es an der Stelle mit 31,5 mm/h schüttete.
+
+**Keine geschätzte Zugrichtung.** Der erste Entwurf wollte die Verlagerung aus
+zwei Radarbildern rechnen. Nicht nötig: Die DWD-Vorhersage *ist* bereits eine
+Vorhersage in Fünf-Minuten-Schritten, und sie wird um den eigenen Standort
+herum angefordert. Bright Sky nennt mit `latlon_position` sogar die genaue
+Gitterzelle — die wird ausgelesen, statt die Bildmitte anzunehmen. Eine selbst
+geschätzte Verlagerung wäre nur eine schlechtere Näherung dessen, was der
+Wetterdienst mit Windfeldern und Zellverfolgung ohnehin rechnet.
+
+Die Zeile erscheint **nur, wenn sie etwas zu melden hat**. Kein „die nächsten
+zwei Stunden trocken" — das steht mit „Regen 24 h 0 mm" schon in derselben
+Kachel.
+
 ## Warnstreifen am eigenen Standort
 
 Gilt am **eigenen Standort** eine ernste Warnung, steht sie als farbiger
@@ -269,6 +312,19 @@ Himmelsrichtung, Entfernung, die eigene Blickrichtung und die Zielkoordinate in
 Grad/Dezimalminuten. Die Rose dreht sich gegen die Blickrichtung, oben ist immer
 „vorn"; die Nadel zeigt zum Ziel.
 
+**Kreuzpeilung**: Von hier peilen, ein Stück zur Seite gehen, noch einmal
+peilen — der Schnittpunkt ist die Quelle. Für Rauch, ein Signal oder einen
+Sender, den man sehen, aber nicht erreichen kann. Jede Peilung holt eine
+**frische Ortung**; der Versatz zwischen beiden Standorten ist die Grundlage der
+ganzen Rechnung.
+
+Dabei nennt die App den **Schnittwinkel** und warnt unter 15°. Der Grund steht
+in Zahlen: Bei 90° Schnitt verschiebt ein Grad Peilfehler den Punkt um 0,0 km,
+bei 40° um 0,3 km — bei 8° um **9,3 km**. Auf der Kugel schneiden sich zwei
+Peilungen immer, auch fast parallele; das Ergebnis sieht dann exakt aus und ist
+trotzdem wertlos. Die Seefahrt verlangt seit jeher 30° bis 90°, und genau das
+steht jetzt im Werkzeug.
+
 **Punkt berechnen** (Wegpunkt-Projektion): „von hier 300 m auf 240°" ergibt
 einen neuen Punkt, der sich sofort als Markierung anlegen lässt. Gerechnet auf
 dem Großkreis, damit es auch über Kilometer stimmt — so kommen Ortsangaben über
@@ -305,6 +361,11 @@ Zweck ist nicht der Sportnachweis, sondern der **Rückweg**: Wer im Wald oder im
 Nebel umkehren muss, folgt der eigenen Spur zurück. Während der Aufzeichnung
 liegt sie als Linie auf der Karte (Startpunkt gefüllt, Endpunkt hohl), der
 Knopf blinkt rot.
+
+Die Spur, die gerade auf der Karte liegt, bekommt ihr **Höhenprofil** — aus
+ihren eigenen Höhen, wenn die Datei welche mitbringt, sonst aus dem
+Geländepaket. Nur für die angezeigte Spur: für alle gespeicherten gleichzeitig
+wäre es Rechnerei ohne Anlass.
 
 Gespeicherte Spuren lassen sich einzeln auf die Karte legen, als **GPX**
 herunterladen (das Format, das jede Wander- und Radsoftware liest) und mit

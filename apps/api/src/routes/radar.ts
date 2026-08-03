@@ -36,6 +36,7 @@ interface BsRadarResponse {
   radar?: { timestamp: string; precipitation_5: string }[];
   /** Ausschnitt im RADOLAN-Gitter: [oben, links, unten, rechts]. */
   bbox?: [number, number, number, number];
+  latlon_position?: { x: number; y: number };
   /** Ecken des Ausschnitts: NW, SW, SO, NO. */
   geometry?: { coordinates: [number, number][] };
 }
@@ -77,6 +78,9 @@ radarRoute.get('/forecast', async (c) => {
     height: bbox[2] - bbox[0] + 1,
     width: bbox[3] - bbox[1] + 1,
     corners: [nw!, ne!, se!, sw!],
+    // Bright Sky sagt selbst, wo der angefragte Punkt im Gitter liegt — das
+    // ist verlässlicher, als die Mitte anzunehmen.
+    ...(body.latlon_position ? { position: body.latlon_position } : {}),
     frames: body.radar.map((f) => ({
       time: f.timestamp,
       forecast: new Date(f.timestamp).getTime() > now,

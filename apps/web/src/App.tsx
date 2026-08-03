@@ -18,6 +18,7 @@ import { useApi } from './useApi.js';
 import { LageMap, type ActiveLayers, type MapApi } from './LageMap.js';
 import { ShareSheet } from './ShareSheet.js';
 import { EmergencySheet } from './EmergencySheet.js';
+import { PointSheet } from './PointSheet.js';
 import { clearShareUrl, readShareUrl } from './share.js';
 import { STOP_COLOR } from './mapIcons.js';
 import { SearchSheet } from './SearchSheet.js';
@@ -79,6 +80,7 @@ import {
 } from './details.js';
 import { kindOfProduct, relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
 import { WeatherIcon } from './WeatherIcon.js';
+import { nowcastAt, nowcastText, type Nowcast } from './radarNowcast.js';
 import { sunAltitude } from './sun.js';
 
 type DetailKey = 'weather' | 'warnings' | 'nina' | 'traffic' | 'pegel' | 'news' | 'transit' | 'hf';
@@ -193,6 +195,8 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   /** Kompass: angepeilter Punkt und ob das Blatt offen ist. */
   const [bearingTarget, setBearingTarget] = useState<{ name: string; lat: number; lon: number } | null>(null);
   const [compassOpen, setCompassOpen] = useState(false);
+  /** „Was ist hier?" — Steckbrief einer angetippten Stelle. */
+  const [pointInfo, setPointInfo] = useState<{ point: Coords; label: string | null } | null>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [layers, setLayers] = useState<ActiveLayers>({
     radar: false,
@@ -220,12 +224,34 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     contours: false,
     aprsTargets: [],
   });
+  // Wird jetzt **immer** geladen, nicht mehr nur bei eingeschalteter
+  // Radarebene: Daraus entsteht die Aussage „Regen erreicht dich um …", und
+  // die soll auch dann dastehen, wenn niemand ans Radar gedacht hat.
+  // Serverseitig sind die Daten drei Minuten gecacht, die Antwort ist klein.
   const radarForecast = useApi(
     `radar-forecast:${geoKey}`,
     () => fetchRadarForecast(coords),
     [coords, refreshTick],
-    { enabled: layers.radar },
+    { refreshMs: 300_000 },
   );
+
+  /** „Wann erreicht mich der Regen?" — aus derselben Vorhersage gerechnet. */
+  const [nowcast, setNowcast] = useState<Nowcast | null>(null);
+  useEffect(() => {
+    const data = radarForecast.data?.data;
+    if (!data?.frames.length) {
+      setNowcast(null);
+      return;
+    }
+    let cancelled = false;
+    nowcastAt(data)
+      .then((n) => !cancelled && setNowcast(n))
+      .catch(() => !cancelled && setNowcast(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [radarForecast.data]);
+  const rainAhead = nowcast ? nowcastText(nowcast) : null;
   // Das ADS-B-Netz liefert nur einen Umkreis um die Kartenmitte — bei sehr
   // weitem Ausschnitt wäre das Bild irreführend, also gar nicht erst abfragen.
   const wideViewport = viewport.east - viewport.west > 8;
@@ -908,6 +934,36 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers.trails, viewKey, offlineFiles]);
 
+  /* ---------- Höhenprofil der angezeigten Spur ---------- */
+  const [trackProfile, setTrackProfile] = useState<ElevationProfile | null>(null);
+  useEffect(() => {
+    const points = shownTrack?.points ?? [];
+    if (points.length < 2) {
+      setTrackProfile(null);
+      return;
+    }
+    const line = points.map((p) => [p.lon, p.lat] as [number, number]);
+    // Eigene Höhen aus der Aufzeichnung bzw. der eingelesenen Datei haben
+    // Vorrang — die wurden am Gerät gemessen.
+    const own = points.map((p) => p.ele);
+    const codes = statesForCorridor(
+      { lat: points[0]!.lat, lon: points[0]!.lon },
+      { lat: points[points.length - 1]!.lat, lon: points[points.length - 1]!.lon },
+    ).filter((code) => offlineFiles[code]?.terrain);
+    if (!codes.length && !own.some((e) => e != null)) {
+      setTrackProfile(null);
+      return;
+    }
+    let cancelled = false;
+    elevationOffline(codes, line, own)
+      .then((r) => !cancelled && setTrackProfile(r))
+      .catch(() => !cancelled && setTrackProfile(null));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownTrack, offlineFiles]);
+
   /* ---------- Höhenlinien ---------- */
   const [contours, setContours] = useState<ContourLine[]>([]);
   useEffect(() => {
@@ -1025,7 +1081,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
    * GPX-Datei für die Routenplanung einlesen. Genommen wird die **längste**
    * Linie der Datei — Tourenportale legen gern noch Anfahrtsschnipsel dazu.
    */
-  const loadGpxRoute = async (file: File) => {
+  const loadGpxRoute = async (file: File): Promise<string | null> => {
     setRouteError(null);
     try {
       const result = await readImport(file.name, await file.arrayBuffer());
@@ -1033,8 +1089,9 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         .map((l) => ({ line: l, length: trackLength(l.points) }))
         .sort((a, b) => b.length - a.length)[0];
       if (!longest) {
-        setRouteError(`In „${file.name}" steckt keine Linie, der man folgen könnte.`);
-        return;
+        const message = `In „${file.name}" steckt keine Linie, der man folgen könnte.`;
+        setRouteError(message);
+        return message;
       }
       setGpxChoice({
         name: longest.line.name,
@@ -1044,10 +1101,14 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         ele: longest.line.points.map((p) => p.ele),
         source: result.source,
       });
+      // Die Suche kann sich schließen — die Wahl der Folgeart übernimmt jetzt
+      // das Übernahme-Blatt.
+      setSearchOpen(false);
+      return null;
     } catch (e) {
-      setRouteError(
-        e instanceof ImportError ? e.message : `„${file.name}" ließ sich nicht lesen.`,
-      );
+      const message = e instanceof ImportError ? e.message : `„${file.name}" ließ sich nicht lesen.`;
+      setRouteError(message);
+      return message;
     }
   };
 
@@ -1127,11 +1188,15 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
    */
   const pickPoint = (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch' | 'info',
     label?: string,
   ) => {
     if (kind === 'radio') {
       setHfTarget(point);
+      return;
+    }
+    if (kind === 'info') {
+      setPointInfo({ point, label: label ?? null });
       return;
     }
     if (kind === 'watch') {
@@ -1576,6 +1641,23 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
                 {rain24h != null && <span>Regen 24 h <b>{rain24h.toString().replace('.', ',')} mm</b></span>}
               </div>
 
+              {/* Was in den nächsten zwei Stunden vom Himmel kommt — aus der
+                  Radarvorhersage des DWD, nicht aus der Stundenvorhersage.
+                  Fünf-Minuten-Schritte statt Stundenmittel: nur so lässt sich
+                  ein Schauer überhaupt ankündigen. */}
+              {rainAhead && (
+                <div className={`wx-nowcast${rainAhead.urgent ? ' is-urgent' : ''}`}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M7 17.5a4.5 4.5 0 0 1 .4-9 6 6 0 0 1 11.3 1.6 3.9 3.9 0 0 1-.7 7.4" />
+                    <path d="M9 20l-1 2M13 20l-1 2M17 20l-1 2" />
+                  </svg>
+                  <span>{rainAhead.text}</span>
+                  {nowcast && nowcast.peakMmH >= 0.3 && (
+                    <b className="mono">{nowcast.peakMmH.toFixed(1).replace('.', ',')} mm/h</b>
+                  )}
+                </div>
+              )}
+
               {/* Luftqualität sitzt jetzt hier statt in einer eigenen Kachel. */}
               {airNow && (
                 <div className="wx-air">
@@ -1806,6 +1888,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           online={online}
           onClose={() => setSearchOpen(false)}
           onRoute={startRouteTo}
+          onGpxFile={loadGpxRoute}
           onSaveFavorite={saveFavorite}
           onRemoveFavorite={removeFavorite}
         />
@@ -1896,6 +1979,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             setTrackOpen(false);
           }}
           shownId={shownTrack?.id ?? null}
+          profile={trackProfile}
           onClose={() => setTrackOpen(false)}
         />
       )}
@@ -1930,6 +2014,24 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             </button>
           </div>
         </Sheet>
+      )}
+
+      {pointInfo && (
+        <PointSheet
+          point={pointInfo.point}
+          label={pointInfo.label}
+          from={coords}
+          warnings={warnings.data?.data ?? []}
+          civil={nina.data?.data ?? []}
+          rescue={rescue.data?.data ?? []}
+          terrainCodes={terrainCode ? [terrainCode] : []}
+          searchCode={searchCode}
+          onRoute={(p) => {
+            setPointInfo(null);
+            startRouteTo(p);
+          }}
+          onClose={() => setPointInfo(null)}
+        />
       )}
 
       {emergencyOpen && (

@@ -829,6 +829,24 @@ svg { display: block; }
 
 .legend-note { max-width: 260px; font-size: .72rem; line-height: 1.35; color: var(--sev2); }
 
+/* „Wann erreicht mich der Regen?" in der Wetterkachel */
+.wx-nowcast {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  padding: 8px 10px; border-radius: var(--r-sm); font-size: .82rem;
+  background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--ink);
+}
+.wx-nowcast svg { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.wx-nowcast b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.wx-nowcast.is-urgent {
+  background: color-mix(in srgb, var(--sev3) 14%, transparent);
+  color: var(--sev3); font-weight: 600;
+}
+.wx-nowcast.is-urgent svg { color: var(--sev3); }
+
+/* GPX-Tour in der Zielsuche */
+.sr-gpx { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
+.sr-gpx .muted { font-size: .74rem; }
+
 /* Sichern und zurückholen */
 .bk-list { list-style: none; margin: 0 0 10px; padding: 0; font-size: .8rem; }
 .bk-list li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--line); }
@@ -875,6 +893,17 @@ svg { display: block; }
 .lock-field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .lock-note { font-size: .74rem; margin: 0; }
 .st-lock { align-self: flex-start; color: var(--sev3); }
+
+/* „Was ist hier?" */
+.ps-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-bottom: 6px; }
+.ps-facts > div { display: flex; flex-direction: column; gap: 1px; }
+.ps-facts dt { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.ps-facts dd { margin: 0; font-size: .92rem; font-variant-numeric: tabular-nums; }
+.ps-quiet { font-size: .8rem; margin: 0 0 6px; }
+.ps-warn { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ps-warn li { display: flex; gap: 8px; align-items: flex-start; font-size: .82rem; }
+.ps-poi { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; font-size: .84rem; }
+.ps-poi .mono { font-size: .74rem; color: var(--muted); }
 
 /* Notfallblatt */
 .em-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -978,6 +1007,21 @@ svg { display: block; }
   border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
+.cp-cross { display: flex; flex-direction: column; gap: 6px; }
+.cp-sight { display: flex; align-items: center; gap: 8px; font-size: .8rem; }
+.cp-sight-no {
+  width: 18px; height: 18px; flex: none; border-radius: 50%; background: var(--accent);
+  color: #fff; font-size: .68rem; font-weight: 700; display: grid; place-items: center;
+}
+.cp-sight input {
+  width: 68px; font-size: .9rem; padding: 5px 7px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.cp-crossout { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; align-items: flex-start; }
+.cp-crossout b { font-size: 1rem; }
+.cp-crossout .muted { display: block; font-size: .74rem; }
+.cp-weak { font-size: .76rem; margin: 2px 0 0; }
 .cp-projout { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 
 /* Höhenprofil */

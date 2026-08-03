@@ -896,7 +896,7 @@ interface Props {
   /** Punkt aus dem Kartenmenü als Ziel bzw. Start übernehmen. */
   onPickPoint: (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch' | 'info',
     label?: string,
   ) => void;
   /** Großkreis der bewerteten Funkstrecke ([lon, lat]). */
@@ -3904,6 +3904,17 @@ export function LageMap({
         {pointMenu && (
           <div className="pointmenu" style={{ left: pointMenu.x, top: pointMenu.y }} role="menu">
             {pointMenu.label && <div className="pm-title">{pointMenu.label}</div>}
+            {/* Ganz oben, weil es die Frage ist, die man beim langen Antippen
+                meistens hat: Was ist das hier überhaupt? */}
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'info', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Was ist hier?
+            </button>
             <button
               type="button"
               onClick={() => {

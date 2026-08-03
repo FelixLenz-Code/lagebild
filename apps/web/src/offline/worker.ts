@@ -45,6 +45,7 @@ export type WorkerRequest =
       /** Höhen aus der Datei selbst (GPX), wenn vorhanden. */
       own?: (number | undefined)[];
     }
+  | { id: number; type: 'elevationAt'; codes: string[]; lat: number; lon: number }
   | { id: number; type: 'terrainImage'; code: string; maxSize?: number }
   | {
       id: number;
@@ -250,6 +251,14 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
         return { lines: contourLines(t, msg.bbox, interval), intervalM: interval };
       }
       return { lines: [], intervalM: 0 };
+    }
+    case 'elevationAt': {
+      for (const code of msg.codes) {
+        const t = await loadTerrain(code);
+        const v = t?.elevationAt(msg.lat, msg.lon);
+        if (v != null) return Math.round(v);
+      }
+      return null;
     }
     case 'terrainImage': {
       const t = await loadTerrain(msg.code);

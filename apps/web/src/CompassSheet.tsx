@@ -1,7 +1,16 @@
 import type { Coords } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
 import { useState } from 'react';
-import { bearingTo, compassPoint, projectPoint, turnText, turnTo, useCompass } from './compass.js';
+import {
+  bearingTo,
+  compassPoint,
+  crossBearing,
+  projectPoint,
+  turnText,
+  turnTo,
+  useCompass,
+  type Sighting,
+} from './compass.js';
 import { formatDegMin } from './coords.js';
 import { formatLength } from './geo.js';
 import { distanceM } from './offline/graph.js';
@@ -30,6 +39,36 @@ const CENTER = 110;
 export function CompassSheet(props: Props) {
   const compass = useCompass(true);
   /** Wegpunkt-Projektion: Peilung und Entfernung als Text, damit auch „240,5" geht. */
+  /** Kreuzpeilung: zwei gemerkte Peilungen. */
+  const [sightings, setSightings] = useState<(Sighting | null)[]>([null, null]);
+  const cross =
+    sightings[0] && sightings[1] ? crossBearing(sightings[0], sightings[1]) : null;
+  /**
+   * Eine Peilung merken.
+   *
+   * Der Standort kommt **frisch aus der Ortung**, nicht aus dem gespeicherten
+   * Standort der App: Zwischen den beiden Peilungen geht man ein Stück zur
+   * Seite, und genau dieser Versatz ist die Grundlage der ganzen Rechnung.
+   * Ohne Ortung bleibt der bekannte Standort als Rückfall.
+   */
+  const takeSighting = (slot: number) => {
+    const store = (lat: number, lon: number) =>
+      setSightings((prev) => {
+        const next = [...prev];
+        next[slot] = { lat, lon, bearingDeg: heading ?? 0 };
+        return next;
+      });
+    if (!('geolocation' in navigator)) {
+      store(props.from.lat, props.from.lon);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => store(pos.coords.latitude, pos.coords.longitude),
+      () => store(props.from.lat, props.from.lon),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
+    );
+  };
+
   const [projBearing, setProjBearing] = useState('');
   const [projDistance, setProjDistance] = useState('');
   const projected =
@@ -150,6 +189,84 @@ export function CompassSheet(props: Props) {
               </p>
             </>
           )}
+          <div className="sect-label" style={{ marginTop: 16 }}>
+            Kreuzpeilung
+          </div>
+          <p className="muted cp-note">
+            Von hier peilen, ein Stück zur Seite gehen, noch einmal peilen — der Schnittpunkt ist
+            die Quelle. Für Rauch, ein Signal oder einen Sender, den man sehen, aber nicht
+            erreichen kann.
+          </p>
+          <div className="cp-cross">
+            {[0, 1].map((slot) => {
+              const s = sightings[slot];
+              return (
+                <div className="cp-sight" key={slot}>
+                  <span className="cp-sight-no">{slot + 1}</span>
+                  {s ? (
+                    <>
+                      <input
+                        type="number"
+                        aria-label={`Peilung ${slot + 1} in Grad`}
+                        value={Math.round(s.bearingDeg)}
+                        onChange={(e) =>
+                          setSightings((prev) => {
+                            const next = [...prev];
+                            next[slot] = { ...s, bearingDeg: Number(e.target.value) || 0 };
+                            return next;
+                          })
+                        }
+                      />
+                      <span className="mono">{formatDegMin({ lat: s.lat, lon: s.lon })}</span>
+                      <button
+                        type="button"
+                        className="btn-quiet"
+                        onClick={() =>
+                          setSightings((prev) => {
+                            const next = [...prev];
+                            next[slot] = null;
+                            return next;
+                          })
+                        }
+                      >
+                        löschen
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" className="rp-chip" onClick={() => takeSighting(slot)}>
+                      Hier peilen
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {cross && !cross.ok && <p className="err">{cross.reason}</p>}
+          {cross?.ok && (
+            <div className="cp-crossout">
+              <div>
+                <b className="mono">{formatDegMin(cross.point)}</b>
+                <span className="muted">
+                  {formatLength(distanceM(props.from.lat, props.from.lon, cross.point.lat, cross.point.lon))} von
+                  hier · Schnitt {Math.round(cross.cutAngleDeg)}°
+                </span>
+              </div>
+              {cross.weak && (
+                <p className="err cp-weak">
+                  Der Schnitt ist zu spitz. Schon ein Grad Peilfehler verschiebt den Punkt um
+                  Kilometer — geh weiter zur Seite, bis die Peilungen sich deutlicher kreuzen.
+                </p>
+              )}
+              <button
+                type="button"
+                className="btn-quiet"
+                onClick={() => props.onProject(cross.point, 'Kreuzpeilung')}
+              >
+                Als Markierung anlegen
+              </button>
+            </div>
+          )}
+
           <div className="sect-label" style={{ marginTop: 16 }}>
             Punkt berechnen
           </div>

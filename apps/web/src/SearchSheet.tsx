@@ -23,6 +23,8 @@ interface Props {
   onRoute: (place: Place, category?: string) => void;
   onSaveFavorite: (place: Place) => void;
   onRemoveFavorite: (place: Place) => void;
+  /** GPX-Tour als Route laden; gibt eine Fehlermeldung zurück oder null. */
+  onGpxFile: (file: File) => Promise<string | null>;
 }
 
 const distanceLabel = (m?: number): string | null => {
@@ -80,6 +82,8 @@ export function SearchSheet(props: Props) {
   const [indexLoading, setIndexLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runId = useRef(0);
+  const gpxInput = useRef<HTMLInputElement>(null);
+  const [gpxError, setGpxError] = useState<string | null>(null);
   /**
    * Sieht die Eingabe nach einer Koordinate aus? Dann steht sie als eigener
    * Treffer ganz oben — in allen Schreibweisen, die die App auch ausgibt
@@ -210,6 +214,34 @@ export function SearchSheet(props: Props) {
           aria-label="Ziel suchen"
         />
       </div>
+
+      {/* Nicht jedes Ziel lässt sich tippen: Eine fertige Tour ist auch ein
+          Ziel, nur eben als Datei. Deshalb steht der Weg dorthin hier und
+          nicht in einem Untermenü. */}
+      <div className="sr-gpx">
+        <button type="button" className="rp-chip" onClick={() => gpxInput.current?.click()}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 16V4M8 8l4-4 4 4M4 20h16" />
+          </svg>
+          GPX-Tour laden
+        </button>
+        <span className="muted">einer fertigen Strecke folgen</span>
+        <input
+          ref={gpxInput}
+          type="file"
+          accept=".gpx,.kml,.kmz,.geojson,.json"
+          hidden
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            setGpxError(null);
+            const message = await props.onGpxFile(file);
+            if (message) setGpxError(message);
+          }}
+        />
+      </div>
+      {gpxError && <p className="err">{gpxError}</p>}
 
       {coordHit && (
         <>
