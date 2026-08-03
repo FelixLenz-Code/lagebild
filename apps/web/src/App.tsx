@@ -66,7 +66,7 @@ import { drawFrom, tracksFrom, readImport, ImportError, type ImportResult } from
 import { ImportBox } from './ImportBox.js';
 import { CompassSheet } from './CompassSheet.js';
 import { lineLength } from './geo.js';
-import { type DrawFeature } from './drawStore.js';
+import { newId, type DrawFeature } from './drawStore.js';
 import { Sheet } from './Sheet.js';
 import {
   WeatherDetail,
@@ -1927,6 +1927,16 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
       {compassOpen && (
         <CompassSheet
           from={coords}
+          onProject={(point, name) => {
+            // Der berechnete Punkt landet als eigene Markierung — von dort aus
+            // ist er anfahrbar, teilbar und überlebt die Sitzung.
+            setAddDraw({
+              features: [{ id: newId(), name, kind: 'point', geometry: { type: 'Point', coordinates: [point.lon, point.lat] } }],
+              key: Date.now(),
+            });
+            setFlyTo({ lat: point.lat, lon: point.lon, zoom: 15, key: Date.now() });
+            setCompassOpen(false);
+          }}
           target={bearingTarget}
           onClearTarget={() => setBearingTarget(null)}
           onClose={() => setCompassOpen(false)}

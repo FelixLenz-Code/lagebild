@@ -161,3 +161,27 @@ export function useCompass(active: boolean): CompassState & { request: () => voi
 
   return { ...state, request };
 }
+
+/**
+ * Wegpunkt-Projektion: von einem Punkt aus `distanceM` Meter auf die Peilung
+ * `bearingDeg` gehen und den Zielpunkt zurückgeben.
+ *
+ * Klassisches Handwerkszeug: „von der Wegkreuzung 300 m auf 240°" ist eine
+ * Ortsangabe, die man am Funk bekommt oder auf einer Papierkarte abliest.
+ * Gerechnet auf der Kugel (Großkreis), damit es auch über Kilometer stimmt.
+ */
+export function projectPoint(from: Coords, bearingDeg: number, distanceM: number): Coords {
+  const R = 6371008.8;
+  const RAD = Math.PI / 180;
+  const δ = distanceM / R;
+  const θ = bearingDeg * RAD;
+  const φ1 = from.lat * RAD;
+  const λ1 = from.lon * RAD;
+
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ));
+  const λ2 =
+    λ1 +
+    Math.atan2(Math.sin(θ) * Math.sin(δ) * Math.cos(φ1), Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2));
+
+  return { lat: φ2 / RAD, lon: (((λ2 / RAD + 540) % 360) - 180) };
+}

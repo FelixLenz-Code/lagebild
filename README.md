@@ -262,6 +262,11 @@ Himmelsrichtung, Entfernung, die eigene Blickrichtung und die Zielkoordinate in
 Grad/Dezimalminuten. Die Rose dreht sich gegen die Blickrichtung, oben ist immer
 „vorn"; die Nadel zeigt zum Ziel.
 
+**Punkt berechnen** (Wegpunkt-Projektion): „von hier 300 m auf 240°" ergibt
+einen neuen Punkt, der sich sofort als Markierung anlegen lässt. Gerechnet auf
+dem Großkreis, damit es auch über Kilometer stimmt — so kommen Ortsangaben über
+Funk oder von einer Papierkarte.
+
 **Zur Nordrichtung:** `deviceorientationabsolute` und Safaris
 `webkitCompassHeading` liefern rechtweisend Nord. Das gewöhnliche
 `deviceorientation` liefert je nach Gerät nur eine relative Ausrichtung — dann
@@ -269,6 +274,22 @@ sagt das Blatt das ausdrücklich, statt eine Genauigkeit vorzutäuschen, die es
 nicht gibt. iOS verlangt ab Version 13 eine Erlaubnis; dafür steht ein Knopf
 bereit. Die Rohwerte zappeln um mehrere Grad und werden deshalb geglättet —
 **über den Nullpunkt hinweg**, sonst läge das Mittel von 359° und 1° bei 180°.
+
+## Sichern und zurückholen
+
+Alle eigenen Daten liegen im **localStorage dieses Browsers** — Markierungen,
+Spuren, beobachtete Orte, gespeicherte Ziele, Karten für die Diashow,
+Rufzeichen, Einstellungen. Unter **Einstellungen → App** schreibt „Sicherung
+speichern" alles in eine JSON-Datei; „Sicherung einspielen" holt sie zurück,
+wahlweise **dazulegen** (Vorhandenes bleibt, Doppel werden über die `id`
+erkannt) oder **ersetzen**.
+
+Nicht dabei sind der Zwischenspeicher der Fachdaten und die Offline-Pakete —
+beides ist jederzeit wieder ladbar und würde die Datei nur aufblähen.
+
+Der Offline-Bildschirm zeigt außerdem **freien Speicher und Akkustand**. Das
+sind beim Packen vor der Tour die zwei Zahlen, auf die es ankommt. Beides gibt
+nicht jeder Browser her; fehlt es, bleibt die Zeile weg statt zu raten.
 
 ## Spur aufzeichnen
 
@@ -537,6 +558,10 @@ Hintergrund. Grundlage ist der Routing-Graph der heruntergeladenen Region:
   jedes Wander- und Radgerät), `<rte>` mit einem Punkt je Fahranweisung samt
   Text, und `<wpt>` für Start, Zwischenziele und Ziel. Liegt ein Höhenprofil
   vor, stehen die Höhen mit in den Trackpunkten;
+* **Bildschirm bleibt an**, solange geführt wird (Screen Wake Lock) — sonst
+  geht das Telefon am Lenker nach einer halben Minute aus, und mit ihm die
+  Ansage. Beim Wechsel in den Hintergrund gibt das System die Sperre frei; kommt
+  die App zurück, fordert sie sie neu an;
 * **Zielführung** mit Positionsverfolgung, mitdrehender Karte, Restweg/Ankunft,
   Sprachansagen (SpeechSynthesis des Geräts, abschaltbar) und automatischer
   Neuberechnung, wenn man von der Route abkommt.

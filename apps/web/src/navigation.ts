@@ -157,5 +157,37 @@ export function useNavigation(
     };
   }, [active, handleFix]);
 
+  // Bildschirm wachhalten, solange geführt wird. Ohne das geht das Telefon am
+  // Lenker nach einer halben Minute aus — und mit ihm die Ansage.
+  useEffect(() => {
+    if (!active) return;
+    let sentinel: WakeLockSentinel | null = null;
+    let dropped = false;
+
+    const request = async () => {
+      try {
+        sentinel = (await navigator.wakeLock?.request('screen')) ?? null;
+        // Beim Wechsel in den Hintergrund gibt das System die Sperre frei; kommt
+        // die App zurück, muss sie neu angefordert werden.
+        sentinel?.addEventListener('release', () => {
+          sentinel = null;
+        });
+      } catch {
+        /* nicht erlaubt oder nicht unterstützt — dann eben nicht */
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !sentinel && !dropped) void request();
+    };
+
+    void request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      dropped = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      void sentinel?.release().catch(() => undefined);
+    };
+  }, [active]);
+
   return state;
 }

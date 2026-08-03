@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Sheet } from './Sheet.js';
+import { BackupError, backupSummary, makeBackup, restoreBackup } from './backup.js';
+import { downloadText } from './drawStore.js';
 import {
   ALWAYS_SHOWN,
   LAYER_CATALOG,
@@ -60,6 +62,9 @@ const DWELL_CHOICES = [10, 20, 30, 60, 120];
  */
 export function SettingsSheet(props: Props) {
   const [tab, setTab] = useState<Tab>('ebenen');
+  const restoreInput = useRef<HTMLInputElement>(null);
+  const [restored, setRestored] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
   const { settings } = props;
 
   const set = (patch: Partial<Settings>) => props.onChange({ ...settings, ...patch });
@@ -253,6 +258,77 @@ export function SettingsSheet(props: Props) {
               Offline-Regionen verwalten
             </button>
           </div>
+
+          <div className="sect-label" style={{ marginTop: 18 }}>
+            Sichern und zurückholen
+          </div>
+          <p className="muted st-intro">
+            Markierungen, Spuren, Orte, Ziele, Karten, Rufzeichen und Einstellungen liegen im
+            Browser dieses Geräts — und nur dort. Diese Datei ist der einzige Weg, sie auf ein
+            anderes Gerät zu bringen oder ein geleertes Browserprofil zu überleben. Fachdaten und
+            Offline-Pakete sind bewusst nicht dabei; die sind jederzeit wieder ladbar.
+          </p>
+          <ul className="bk-list">
+            {backupSummary().map((s) => (
+              <li key={s.label}>
+                <span>{s.label}</span>
+                <b className="mono">{s.count}</b>
+              </li>
+            ))}
+          </ul>
+          {restored && <p className="muted bk-note">{restored}</p>}
+          {backupError && <p className="err">{backupError}</p>}
+          <div className="tr-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                const stamp = new Date().toISOString().slice(0, 10);
+                downloadText(
+                  `lagebild-sicherung-${stamp}.json`,
+                  JSON.stringify(makeBackup(), null, 2),
+                  'application/json',
+                );
+              }}
+            >
+              Sicherung speichern
+            </button>
+            <button type="button" className="btn-quiet" onClick={() => restoreInput.current?.click()}>
+              Sicherung einspielen
+            </button>
+          </div>
+          <input
+            ref={restoreInput}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              setBackupError(null);
+              setRestored(null);
+              const merge = window.confirm(
+                'Sicherung einspielen\n\nOK: dazulegen (Vorhandenes bleibt).\nAbbrechen: ersetzen ' +
+                  '(alles Jetzige wird überschrieben).',
+              );
+              try {
+                const added = restoreBackup(await file.text(), merge ? 'merge' : 'replace');
+                const parts = Object.entries(added)
+                  .filter(([, n]) => n > 0)
+                  .map(([label, n]) => `${n} ${label}`);
+                setRestored(
+                  (parts.length ? `Eingespielt: ${parts.join(', ')}.` : 'Nichts Neues dabei.') +
+                    ' Die App lädt gleich neu.',
+                );
+                // Die Speicher werden beim Start gelesen — ohne Neuladen bliebe
+                // die halbe Oberfläche auf dem alten Stand.
+                window.setTimeout(() => window.location.reload(), 1200);
+              } catch (err) {
+                setBackupError(err instanceof BackupError ? err.message : 'Die Datei ließ sich nicht lesen.');
+              }
+            }}
+          />
 
           {props.onLock && (
             <>

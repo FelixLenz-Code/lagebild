@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { batteryState, storageEstimate, type BatteryState } from './backup.js';
 import { FEDERAL_STATES } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
 import {
@@ -23,6 +24,27 @@ const KINDS: PackageKind[] = ['map', 'route', 'search', 'terrain'];
 const mb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 
 export function OfflineRegions(props: Props) {
+  /** Platz und Akku — beides gibt nicht jeder Browser her, dann fehlt die Zeile. */
+  const [device, setDevice] = useState<{
+    freeBytes: number | null;
+    quotaBytes: number | null;
+    battery: BatteryState | null;
+  }>({ freeBytes: null, quotaBytes: null, battery: null });
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([storageEstimate(), batteryState()]).then(([storage, battery]) => {
+      if (cancelled) return;
+      setDevice({
+        freeBytes: storage ? Math.max(0, storage.quotaBytes - storage.usedBytes) : null,
+        quotaBytes: storage?.quotaBytes ?? null,
+        battery,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.offline]);
+
   const [progress, setProgress] = useState<{ code: string; kind: PackageKind; fraction: number } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +118,25 @@ export function OfflineRegions(props: Props) {
         <span className="u">Regionen offline</span>
         <span className="free">{totalBytes ? mb(totalBytes) : '0 MB'} belegt</span>
       </div>
+
+      {/* Beim Packen vor der Tour sind das die zwei Zahlen, auf die es
+          ankommt: Wie viel Platz ist noch da, und wie weit trägt der Akku. */}
+      {(device.freeBytes != null || device.battery) && (
+        <div className="device-bar">
+          {device.freeBytes != null && (
+            <span>
+              <b>{mb(device.freeBytes)}</b> frei
+              {device.quotaBytes ? ` von ${mb(device.quotaBytes)}` : ''}
+            </span>
+          )}
+          {device.battery && (
+            <span className={device.battery.level <= 0.2 && !device.battery.charging ? 'is-low' : ''}>
+              <b>{Math.round(device.battery.level * 100)} %</b> Akku
+              {device.battery.charging ? ' (lädt)' : ''}
+            </span>
+          )}
+        </div>
+      )}
       <div className="always-on">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M20 6 9 17l-5-5" />

@@ -829,6 +829,16 @@ svg { display: block; }
 
 .legend-note { max-width: 260px; font-size: .72rem; line-height: 1.35; color: var(--sev2); }
 
+/* Sichern und zurückholen */
+.bk-list { list-style: none; margin: 0 0 10px; padding: 0; font-size: .8rem; }
+.bk-list li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.bk-list b { font-variant-numeric: tabular-nums; }
+.bk-note { font-size: .76rem; margin: 0 0 8px; color: var(--ok); }
+/* Gerätewerte im Offline-Bildschirm */
+.device-bar { display: flex; flex-wrap: wrap; gap: 16px; font-size: .78rem; color: var(--muted); margin: -6px 0 12px; }
+.device-bar b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.device-bar .is-low b { color: var(--sev3); }
+
 /* Farb- und Symbolwahl für Markierungen */
 .sp { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 2px; }
 .sp-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -960,6 +970,15 @@ svg { display: block; }
 .cp-list dd { margin: 0; font-size: .92rem; font-variant-numeric: tabular-nums; }
 .cp-note { font-size: .72rem; margin: 0; }
 .cp-ask { margin-bottom: 12px; }
+.cp-proj { display: flex; gap: 10px; }
+.cp-proj label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.cp-proj span { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.cp-proj input {
+  width: 100%; font-size: .92rem; padding: 7px 9px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.cp-projout { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 
 /* Höhenprofil */
 .elev { margin: 2px 0 4px; }

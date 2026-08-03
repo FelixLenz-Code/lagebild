@@ -1,6 +1,7 @@
 import type { Coords } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
-import { bearingTo, compassPoint, turnText, turnTo, useCompass } from './compass.js';
+import { useState } from 'react';
+import { bearingTo, compassPoint, projectPoint, turnText, turnTo, useCompass } from './compass.js';
 import { formatDegMin } from './coords.js';
 import { formatLength } from './geo.js';
 import { distanceM } from './offline/graph.js';
@@ -8,6 +9,8 @@ import { distanceM } from './offline/graph.js';
 interface Props {
   /** Eigener Standort — Ausgangspunkt der Peilung. */
   from: Coords;
+  /** Einen errechneten Punkt als Markierung anlegen. */
+  onProject: (point: Coords, name: string) => void;
   /** Angepeilter Punkt (ohne Ziel bleibt es ein reiner Kompass). */
   target: { name: string; lat: number; lon: number } | null;
   onClearTarget: () => void;
@@ -26,6 +29,13 @@ const CENTER = 110;
  */
 export function CompassSheet(props: Props) {
   const compass = useCompass(true);
+  /** Wegpunkt-Projektion: Peilung und Entfernung als Text, damit auch „240,5" geht. */
+  const [projBearing, setProjBearing] = useState('');
+  const [projDistance, setProjDistance] = useState('');
+  const projected =
+    Number.isFinite(Number(projBearing)) && Number(projDistance) > 0 && projBearing !== ''
+      ? projectPoint(props.from, Number(projBearing), Number(projDistance))
+      : null;
   const heading = compass.headingDeg;
   const bearing = props.target ? bearingTo(props.from, props.target) : null;
   const distance = props.target
@@ -140,6 +150,50 @@ export function CompassSheet(props: Props) {
               </p>
             </>
           )}
+          <div className="sect-label" style={{ marginTop: 16 }}>
+            Punkt berechnen
+          </div>
+          <p className="muted cp-note">
+            Von hier aus so weit auf diese Peilung — für Angaben wie „300 m auf 240°".
+          </p>
+          <div className="cp-proj">
+            <label>
+              <span>Peilung °</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={360}
+                value={projBearing}
+                onChange={(e) => setProjBearing(e.target.value)}
+              />
+            </label>
+            <label>
+              <span>Entfernung m</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={projDistance}
+                onChange={(e) => setProjDistance(e.target.value)}
+              />
+            </label>
+          </div>
+          {projected && (
+            <div className="cp-projout">
+              <span className="mono">{formatDegMin(projected)}</span>
+              <button
+                type="button"
+                className="btn-quiet"
+                onClick={() =>
+                  props.onProject(projected, `${Math.round(Number(projDistance))} m auf ${Math.round(Number(projBearing))}°`)
+                }
+              >
+                Als Markierung anlegen
+              </button>
+            </div>
+          )}
+
           <p className="muted cp-note">
             {compass.absolute
               ? 'Richtung rechtweisend (geographisch Nord).'
