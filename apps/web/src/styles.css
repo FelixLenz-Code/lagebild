@@ -820,6 +820,19 @@ svg { display: block; }
 .rp-legs li { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
 .rp-leg-to { color: var(--muted); }
 .rp-legs li .tr-meta { margin-left: auto; }
+/* Höhenprofil */
+.elev { margin: 2px 0 4px; }
+.elev-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; font-size: .76rem; }
+.elev-sum b { font-variant-numeric: tabular-nums; font-size: .88rem; }
+.elev-up { color: var(--sev2); }
+.elev-down { color: var(--ok); }
+.elev-src { margin-left: auto; font-size: .7rem; }
+.elev-chart { display: block; width: 100%; height: 96px; margin-top: 4px; touch-action: pan-y; }
+.elev-area { fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: none; }
+.elev-line { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.elev-cursor { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; }
+.elev-foot { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); }
+
 .rp-point .dot.gpx { background: #0d9488; }
 .rp-gpx { color: var(--muted); }
 .rp-gpx .rp-chip { margin-left: auto; }

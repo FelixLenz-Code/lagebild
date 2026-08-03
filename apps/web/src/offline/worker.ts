@@ -12,6 +12,7 @@ import { getOfflineFile } from '../offlineMaps.js';
 import { Container, HEADER_PROBE_BYTES, parseHeader } from './container.js';
 import { RouteGraph, mergeGraphs } from './graph.js';
 import { routeVia } from './router.js';
+import { Terrain, elevationProfile } from './terrain.js';
 import { SearchIndex } from './search.js';
 
 export type WorkerRequest =
@@ -33,6 +34,15 @@ export type WorkerRequest =
       code: string;
       bbox: { west: number; south: number; east: number; north: number };
       limit?: number;
+    }
+  | {
+      id: number;
+      type: 'elevation';
+      /** Regionen, in denen die Linie liegen könnte. */
+      codes: string[];
+      line: [number, number][];
+      /** Höhen aus der Datei selbst (GPX), wenn vorhanden. */
+      own?: (number | undefined)[];
     }
   | {
       id: number;
@@ -59,6 +69,8 @@ let single: { code: string; graph: RouteGraph } | null = null;
 let joined: { key: string; graph: RouteGraph } | null = null;
 let index: SearchIndex | null = null;
 let indexCode = '';
+/** Zuletzt benutztes Höhenraster (nur eins — sie sind mehrere Megabyte groß). */
+let terrain: { code: string; data: Terrain } | null = null;
 
 async function readGraph(code: string): Promise<RouteGraph> {
   const file = await getOfflineFile(code, 'route');
@@ -93,6 +105,26 @@ async function loadRoute(codes: string[]): Promise<RouteGraph> {
   joined = { key, graph };
   single = null;
   return graph;
+}
+
+/**
+ * Höhenraster einer Region. Gehalten wird immer nur eines: Hessen sind schon
+ * 13 MB im Speicher, und gebraucht wird beim Profil ohnehin nur die Region,
+ * in der die Linie liegt.
+ */
+async function loadTerrain(code: string): Promise<Terrain | null> {
+  if (terrain?.code === code) return terrain.data;
+  try {
+    const file = await getOfflineFile(code, 'terrain');
+    const buffer = await file.arrayBuffer();
+    const data = new Terrain(new Container(parseHeader(buffer), buffer));
+    terrain = { code, data };
+    return data;
+  } catch {
+    // Kein Höhenpaket für diese Region — das ist keine Störung, sondern der
+    // Normalfall, solange es niemand heruntergeladen hat.
+    return null;
+  }
 }
 
 async function loadSearch(code: string): Promise<SearchIndex> {
@@ -137,6 +169,18 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
     case 'poi': {
       const s = await loadSearch(msg.code);
       return s.inBbox(msg.categories, msg.bbox, msg.limit ?? 400);
+    }
+    case 'elevation': {
+      // Die erste Region, die den Anfang der Linie kennt, gewinnt.
+      const start = msg.line[0];
+      for (const code of msg.codes) {
+        const t = await loadTerrain(code);
+        if (!t) continue;
+        if (start && !t.covers(start[1], start[0])) continue;
+        return elevationProfile(msg.line, t, msg.own);
+      }
+      // Ohne Raster bleibt noch die Höhe aus der Datei.
+      return elevationProfile(msg.line, null, msg.own);
     }
     case 'route': {
       const g = await loadRoute(msg.codes);

@@ -7,6 +7,7 @@
 import type { Coords, GeoResult, RouteOutcome, RouteProfile } from '@lagebild/shared';
 import type { WorkerRequest, WorkerResponse } from './worker.js';
 import type { HouseNumber } from './search.js';
+import type { ElevationProfile } from './terrain.js';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -84,6 +85,16 @@ export const houseNumbersOffline = (code: string, entryId: number) =>
  * Regionen, die auf dem Weg liegen könnten — sie werden zu einem Netz
  * verbunden, damit Routen nicht an der Landesgrenze enden.
  */
+/**
+ * Höhenprofil einer Linie aus dem Höhenpaket der Region (oder aus den Höhen,
+ * die eine eingelesene Datei selbst mitbringt).
+ */
+export const elevationOffline = (
+  codes: string[],
+  line: [number, number][],
+  own?: (number | undefined)[],
+) => call<ElevationProfile | null>({ type: 'elevation', codes, line, own });
+
 export const routeOffline = (
   codes: string[],
   from: Coords,

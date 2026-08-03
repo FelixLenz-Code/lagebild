@@ -398,6 +398,36 @@ merkt A* das erst, nachdem es das ganze übrige Netz abgesucht hat — gemessen
 Geprüft mit `scripts/check-via.mts` (Naht ohne Doppelpunkt, verschobene
 Anweisungsindizes, Summen der Abschnitte, Reihenfolge, Stichweg-Fall).
 
+### Höhenprofil
+
+Unter der Zusammenfassung steht das **Höhenprofil**: Anstieg, Abstieg, Spanne
+und die Kurve über die Strecke; der Zeiger darüber liest Entfernung und Höhe
+ab. Für Rad und zu Fuß entscheidet das oft mehr als die Länge.
+
+Die Höhen kommen **offline aus einem eigenen Paket** `<code>.terrain`, das
+neben Karte, Routing und Suche steht und einzeln abwählbar ist (Bremen 0,2 MB,
+Hessen 3,9 MB). Gebaut wird es aus den freien **Terrain Tiles** des
+AWS-Open-Data-Programms (`elevation-tiles-prod`, „terrarium"-PNG: Höhe =
+R·256 + G + B/256 − 32768; Daten u. a. SRTM/3DEP):
+
+```bash
+node scripts/build-terrain.mjs --out apps/api/maps --zoom 10 04 06
+```
+
+Gespeichert wird das Raster **im Kachelgitter der Quelle** (Web Mercator, Zoom
+10 ≈ 96 m je Punkt) als Int16 mit zeilenweisen Differenzen — Nachbarpunkte
+unterscheiden sich um wenige Meter, dadurch packt der Container das Raster um
+ein Vielfaches besser. Der PNG-Leser (`scripts/lib/png.mjs`) ist wie der Rest
+selbst geschrieben.
+
+Bringt eine **eingelesene GPX-Datei eigene Höhen** mit, haben die Vorrang — sie
+wurden am Gerät gemessen. Beim Aufsummieren der Höhenmeter zählen nur Anstiege
+über 4 m: sonst summiert sich das Rauschen des Rasters zu Fantasiewerten, und
+eine flache Fahrt durch Bremen käme auf dreistellige Höhenmeter.
+
+Geprüft mit `scripts/check-terrain.mts` gegen bekannte Höhen (Bremer
+Marschland, Nordsee, Großer Feldberg 848 m, Wasserkuppe 930 m).
+
 ### Einer GPX-Tour folgen
 
 In der Routenleiste liest **„GPX-Tour"** eine Datei ein (genommen wird die

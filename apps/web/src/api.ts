@@ -182,7 +182,7 @@ export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
 
 /** Auf dem Server bereitliegende Offline-Pakete je Bundesland (Bytes). */
 export interface MapsList {
-  data: { code: string; map?: number; route?: number; search?: number }[];
+  data: { code: string; map?: number; route?: number; search?: number; terrain?: number }[];
 }
 export const fetchMaps = (): Promise<MapsList> => getJson(`/api/maps`);
 

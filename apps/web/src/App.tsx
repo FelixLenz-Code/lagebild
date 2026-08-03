@@ -37,7 +37,8 @@ import {
 } from './mapPresets.js';
 import type { LayerRowId } from './layerCatalog.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
-import { poisOffline, routeOffline, stopsOffline } from './offline/client.js';
+import { elevationOffline, poisOffline, routeOffline, stopsOffline } from './offline/client.js';
+import type { ElevationProfile } from './offline/terrain.js';
 import { routeFromLine, viaPointsFromLine } from './offline/router.js';
 import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
@@ -344,7 +345,10 @@ export function App() {
 
   const maps = useApi('maps', () => fetchMaps(), [refreshTick]);
   const availableMap: Record<string, RegionFiles> = Object.fromEntries(
-    (maps.data?.data ?? []).map((m) => [m.code, { map: m.map, route: m.route, search: m.search }]),
+    (maps.data?.data ?? []).map((m) => [
+      m.code,
+      { map: m.map, route: m.route, search: m.search, terrain: m.terrain },
+    ]),
   );
   const [regionsOpen, setRegionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -637,10 +641,14 @@ export function App() {
    * gerechnet, sondern liegt fertig vor — deshalb steht sie neben `routes`
    * und schaltet die Berechnung ab, statt sie zu füttern.
    */
-  const [gpxLine, setGpxLine] = useState<{ coords: [number, number][]; name: string } | null>(null);
+  const [gpxLine, setGpxLine] = useState<
+    { coords: [number, number][]; name: string; ele?: (number | undefined)[] } | null
+  >(null);
   const [gpxRoute, setGpxRoute] = useState<RouteResult | null>(null);
   /** Eingelesene Tour, für die noch die Art der Übernahme fehlt. */
-  const [gpxChoice, setGpxChoice] = useState<{ name: string; coords: [number, number][]; source: string } | null>(null);
+  const [gpxChoice, setGpxChoice] = useState<
+    { name: string; coords: [number, number][]; ele: (number | undefined)[]; source: string } | null
+  >(null);
   const gpxRouteRef = useRef<RouteResult | null>(null);
   const [avoidMotorways, setAvoidMotorways] = useState(false);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -786,6 +794,40 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, destKey, startKey, planTime, planArriveBy, online]);
 
+  /* ---------- Höhenprofil (aus dem Geländepaket oder aus der Datei) ---------- */
+  const [elevation, setElevation] = useState<ElevationProfile | null>(null);
+  /** Regionen mit heruntergeladenem Höhenpaket entlang der Strecke. */
+  const terrainCodes = useMemo(() => {
+    if (!route?.coordinates.length) return [] as string[];
+    const first = route.coordinates[0]!;
+    const last = route.coordinates[route.coordinates.length - 1]!;
+    return statesForCorridor({ lat: first[1], lon: first[0] }, { lat: last[1], lon: last[0] }).filter(
+      (code) => offlineFiles[code]?.terrain,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, offlineFiles]);
+
+  useEffect(() => {
+    if (!route || route.coordinates.length < 2) {
+      setElevation(null);
+      return;
+    }
+    // Ohne Geländepaket bleibt nur, was die eingelesene Datei selbst mitbringt.
+    const own = gpxRoute && gpxLine?.ele ? gpxLine.ele : undefined;
+    if (!terrainCodes.length && !own) {
+      setElevation(null);
+      return;
+    }
+    let cancelled = false;
+    elevationOffline(terrainCodes, route.coordinates, own)
+      .then((p) => !cancelled && setElevation(p))
+      .catch(() => !cancelled && setElevation(null));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, terrainCodes.join(','), gpxRoute]);
+
   /** Fußweg einer Verbindung an die Offline-Navigation übergeben. */
   const walkLeg = (leg: TransitLeg) => {
     setRouteOrigin({ name: leg.from.name || 'Mein Standort', lat: leg.from.lat, lon: leg.from.lon });
@@ -823,6 +865,9 @@ export function App() {
       setGpxChoice({
         name: longest.line.name,
         coords: longest.line.points.map((p) => [p.lon, p.lat] as [number, number]),
+        // GPX bringt oft eigene Höhen mit — die sind am Gerät gemessen und
+        // schlagen jedes Geländemodell.
+        ele: longest.line.points.map((p) => p.ele),
         source: result.source,
       });
     } catch (e) {
@@ -844,7 +889,7 @@ export function App() {
     setPin(null);
     if (how === 'exact') {
       setVia([]);
-      setGpxLine({ coords: choice.coords, name: choice.name });
+      setGpxLine({ coords: choice.coords, name: choice.name, ele: choice.ele });
     } else {
       // Die Stützpunkte werden zu Zwischenzielen; den Rest macht der Router.
       setGpxLine(null);
@@ -1238,6 +1283,7 @@ export function App() {
               route={route}
               routes={shownRoutes}
               routeIndex={gpxRoute ? 0 : routeIndex}
+              elevation={elevation}
               onSelectRoute={setRouteIndex}
               avoidMotorways={avoidMotorways}
               onToggleMotorways={() => setAvoidMotorways((v) => !v)}

@@ -19,7 +19,7 @@ interface Props {
   onChanged: () => void;
 }
 
-const KINDS: PackageKind[] = ['map', 'route', 'search'];
+const KINDS: PackageKind[] = ['map', 'route', 'search', 'terrain'];
 const mb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 
 export function OfflineRegions(props: Props) {

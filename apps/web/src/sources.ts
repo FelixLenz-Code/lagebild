@@ -227,6 +227,14 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
           'gespendeter Dienst — nur der Kartenausschnitt, gerastert abgefragt und 12 Stunden zwischengespeichert',
       },
       {
+        key: 'terrain-tiles',
+        name: 'AWS Terrain Tiles (Mapzen)',
+        use: 'Geländehöhen für das Höhenprofil der Routen (offline im Geländepaket)',
+        url: 'https://registry.opendata.aws/terrain-tiles/',
+        terms:
+          'freies Open-Data-Programm; die Höhen stammen u. a. von SRTM (NASA), 3DEP (USGS) und GMTED — Nennung erbeten',
+      },
+      {
         key: 'geofabrik',
         name: 'Geofabrik',
         use: 'Länderauszüge (PBF), aus denen Routing und Suche gebaut werden',

@@ -9,6 +9,8 @@ import type {
   TransitLeg,
 } from '@lagebild/shared';
 import { TransitPlan } from './TransitPlan.js';
+import { ElevationChart } from './ElevationChart.js';
+import type { ElevationProfile } from './offline/terrain.js';
 
 /** Fortbewegungsart inklusive ÖPNV (der nicht über den Offline-Graphen läuft). */
 export type PlanMode = RouteProfile | 'transit';
@@ -54,6 +56,8 @@ interface Props {
   error: string | null;
   /** Für diese Gegend liegt überhaupt ein Routing-Paket im Gerät. */
   regionReady: boolean;
+  /** Höhenprofil der Route (nur mit Geländepaket bzw. Höhen aus der Datei). */
+  elevation: ElevationProfile | null;
   navigating: boolean;
   progress: RouteProgress | null;
   muted: boolean;
@@ -397,6 +401,8 @@ export function RoutePanel(props: Props) {
               Autobahn meiden
             </label>
           </div>
+          {props.elevation && <ElevationChart profile={props.elevation} />}
+
           {route.legs && route.legs.length > 1 && (
             <ol className="rp-legs">
               {route.legs.map((leg, i) => (

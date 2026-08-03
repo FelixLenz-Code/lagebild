@@ -9,6 +9,7 @@ import { config } from '../config.js';
  *
  *   04.pmtiles   Hintergrundkarte (Vektorkacheln)
  *   04.route     Routing-Graph für die Navigation
+ *   04.terrain   Höhenraster für das Höhenprofil (optional)
  *   04.search    Suchindex mit Adressen und POIs
  *
  * Ausgeliefert werden die Dateien über /api/maps/<datei> (serveStatic in
@@ -17,10 +18,11 @@ import { config } from '../config.js';
  */
 export const mapsRoute = new Hono();
 
-const KIND_BY_EXT: Record<string, 'map' | 'route' | 'search'> = {
+const KIND_BY_EXT: Record<string, 'map' | 'route' | 'search' | 'terrain'> = {
   pmtiles: 'map',
   route: 'route',
   search: 'search',
+  terrain: 'terrain',
 };
 
 export interface MapRegionInfo {
@@ -28,13 +30,14 @@ export interface MapRegionInfo {
   map?: number;
   route?: number;
   search?: number;
+  terrain?: number;
 }
 
 mapsRoute.get('/', (c) => {
   const byCode = new Map<string, MapRegionInfo>();
   if (existsSync(config.mapsDir)) {
     for (const file of readdirSync(config.mapsDir)) {
-      const m = file.match(/^(\d{2})\.(pmtiles|route|search)$/);
+      const m = file.match(/^(\d{2})\.(pmtiles|route|search|terrain)$/);
       if (!m) continue;
       const code = m[1]!;
       let entry = byCode.get(code);
