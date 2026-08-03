@@ -57,7 +57,19 @@ import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { DrawMenu, type DrawTool } from './DrawMenu.js';
+import { WATCH_COLORS } from './mapIcons.js';
+
+/** Ein beobachteter Ort, wie ihn die Karte braucht. */
+export interface WatchedPoint {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** `ok` oder die schwerste Warnstufe an diesem Ort. */
+  state: string;
+}
 import type { TrailFeature } from './offline/trails.js';
+import type { ContourLine } from './offline/terrain.js';
 import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
 import { DRAW_COLOR, colorOf, drawIconId } from './drawStyle.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
@@ -122,6 +134,8 @@ function drawToGeoJson(
   areaVertices: [number, number][],
   /** Beim Messen wird die Fläche schon während des Setzens gefüllt. */
   closeRing = false,
+  /** Beobachtete Orte liegen in derselben Ebene — sie sind auch „Meine". */
+  watched: WatchedPoint[] = [],
 ): GeoJSON.FeatureCollection {
   // Einzeln ausgeblendete Markierungen bleiben gespeichert, kommen aber gar
   // nicht erst auf die Karte — dadurch sind sie auch nicht antippbar.
@@ -139,6 +153,19 @@ function drawToGeoJson(
       },
       geometry: d.geometry,
     }));
+  for (const w of watched) {
+    out.push({
+      type: 'Feature',
+      properties: {
+        kind: 'point',
+        name: w.name,
+        color: WATCH_COLORS[w.state] ?? WATCH_COLORS.ok!,
+        icon: `watch-${w.state}`,
+        watched: true,
+      },
+      geometry: { type: 'Point', coordinates: [w.lon, w.lat] },
+    });
+  }
   if (closeRing && areaVertices.length >= 3) {
     out.push({
       type: 'Feature',
@@ -824,6 +851,10 @@ interface Props {
   track: [number, number][];
   /** true, solange aufgezeichnet wird (dann kein Endpunkt). */
   trackLive: boolean;
+  /** Beobachtete Orte — liegen in der Ebene „Meine Markierungen". */
+  watchedPoints: WatchedPoint[];
+  /** Höhenlinien im Ausschnitt. */
+  contours: ContourLine[];
   /** Wander- und Radwege im Ausschnitt. */
   trails: TrailFeature[];
   /** Warum die Ebene leer bleibt (z. B. altes Paket). */
@@ -926,6 +957,8 @@ export interface ActiveLayers {
   terrain: boolean;
   /** Wander- und Radwegenetz. */
   trails: boolean;
+  /** Höhenlinien aus dem Geländepaket. */
+  contours: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
   muf: boolean;
   /** Verortete Nachrichten. */
@@ -985,6 +1018,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   draw: false,
   terrain: false,
   trails: false,
+  contours: false,
 };
 
 /**
@@ -1033,6 +1067,8 @@ export function LageMap({
   addDraw,
   fitBbox,
   terrainImage,
+  watchedPoints,
+  contours,
   trails,
   trailsHint,
   onMapApi,
@@ -1137,6 +1173,7 @@ export function LageMap({
     draw: showDraw,
     terrain: showTerrain,
     trails: showTrails,
+    contours: showContours,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -1192,12 +1229,13 @@ export function LageMap({
         fire: showFire,
         terrain: showTerrain,
         trails: showTrails,
+        contours: showContours,
         aprsTargets,
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
-      showAurora, showFire, showTerrain, showTrails, showRest, showWebcams, showRescue, aprsTargets,
+      showAurora, showFire, showTerrain, showTrails, showContours, showRest, showWebcams, showRescue, aprsTargets,
       onLayersChange,
     ],
   );
@@ -1475,6 +1513,60 @@ export function LageMap({
       below,
     );
   }, [showTerrain, terrainImage?.key, ready, styleEpoch]);
+
+  /* ---------- Höhenlinien ---------- */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('contours')) return;
+    map.addSource('contours', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'contours-line',
+      type: 'line',
+      source: 'contours',
+      minzoom: 10,
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': '#8a6a3d',
+        // Jede fünfte Linie kräftiger — so liest man Höhenkarten.
+        'line-width': ['case', ['get', 'major'], 1.3, 0.7],
+        'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.35, 13, 0.75],
+      },
+    });
+    map.addLayer({
+      id: 'contours-label',
+      type: 'symbol',
+      source: 'contours',
+      minzoom: 12.5,
+      filter: ['get', 'major'],
+      layout: {
+        'text-field': ['concat', ['to-string', ['get', 'ele']], ' m'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'symbol-placement': 'line',
+        'symbol-spacing': 300,
+      },
+      paint: { 'text-color': '#6d5330', 'text-halo-color': '#fff', 'text-halo-width': 1.4 },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('contours') as GeoJSONSource | undefined;
+    src?.setData({
+      type: 'FeatureCollection',
+      features: showContours
+        ? contours.flatMap((c) =>
+            c.paths.map((path) => ({
+              type: 'Feature' as const,
+              properties: { ele: c.eleM, major: c.eleM % (5 * (contours[1] ? contours[1].eleM - contours[0]!.eleM : 50)) === 0 },
+              geometry: { type: 'LineString' as const, coordinates: path },
+            })),
+          )
+        : [],
+    });
+  }, [contours, showContours, ready, styleEpoch]);
 
   /* ---------- Wander- und Radwegenetz ---------- */
   useEffect(() => {
@@ -1935,8 +2027,8 @@ export function LageMap({
     const map = mapRef.current;
     if (!map || !ready) return;
     const src = map.getSource('draw') as maplibregl.GeoJSONSource | undefined;
-    src?.setData(drawToGeoJson(drawFeatures, areaVertices, drawMode === 'measure'));
-  }, [drawFeatures, areaVertices, drawMode, ready, styleEpoch]);
+    src?.setData(drawToGeoJson(drawFeatures, areaVertices, drawMode === 'measure', watchedPoints));
+  }, [drawFeatures, areaVertices, drawMode, watchedPoints, ready, styleEpoch]);
 
   // Zeichen-Cursor
   useEffect(() => {

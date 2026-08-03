@@ -40,10 +40,10 @@ import {
 } from './mapPresets.js';
 import type { LayerRowId } from './layerCatalog.js';
 import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
-import { elevationOffline, poisOffline, routeOffline, stopsOffline, terrainImageOffline, trailsOffline } from './offline/client.js';
+import { contoursOffline, elevationOffline, poisOffline, routeOffline, stopsOffline, terrainImageOffline, trailsOffline } from './offline/client.js';
 import type { TrailFeature } from './offline/trails.js';
 import { imageFromRgba } from './gridImage.js';
-import type { ElevationProfile } from './offline/terrain.js';
+import type { ContourLine, ElevationProfile } from './offline/terrain.js';
 import { routeFromLine, viaPointsFromLine } from './offline/router.js';
 import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
@@ -217,6 +217,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     fire: false,
     terrain: false,
     trails: false,
+    contours: false,
     aprsTargets: [],
   });
   const radarForecast = useApi(
@@ -847,6 +848,19 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const watchedStates = useWatchedStatus(watched, refreshTick);
   const watchedWorst = worstSeverity(watchedStates);
   const watchedAlerts = Object.values(watchedStates).reduce((n, s) => n + s.alerts.length, 0);
+  /** Für die Karte: Ort samt seiner Warnlage (`ok` oder die schwerste Stufe). */
+  const watchedPoints = useMemo(
+    () =>
+      watched.map((p) => ({
+        id: p.id,
+        name: p.name,
+        lat: p.lat,
+        lon: p.lon,
+        state: watchedStates[p.id]?.alerts[0]?.severity ?? 'ok',
+      })),
+    [watched, watchedStates],
+  );
+
   const addWatched = (place: { name: string; lat: number; lon: number }) => {
     setWatched((prev) =>
       prev.length >= MAX_WATCHED ||
@@ -893,6 +907,38 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers.trails, viewKey, offlineFiles]);
+
+  /* ---------- Höhenlinien ---------- */
+  const [contours, setContours] = useState<ContourLine[]>([]);
+  useEffect(() => {
+    if (!layers.contours || !viewport) {
+      setContours([]);
+      return;
+    }
+    // Weiter als ein Grad ergibt keine lesbare Höhenkarte mehr und kostet nur
+    // Rechenzeit — die Ebene blendet sich unter Zoom 10 ohnehin aus.
+    const span = Math.max(viewport.north - viewport.south, viewport.east - viewport.west);
+    if (span > 1) {
+      setContours([]);
+      return;
+    }
+    const codes = statesForCorridor(
+      { lat: viewport.south, lon: viewport.west },
+      { lat: viewport.north, lon: viewport.east },
+    ).filter((code) => offlineFiles[code]?.terrain);
+    if (!codes.length) {
+      setContours([]);
+      return;
+    }
+    let cancelled = false;
+    contoursOffline(codes, viewport)
+      .then((r) => !cancelled && setContours(r.lines))
+      .catch(() => !cancelled && setContours([]));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers.contours, viewKey, offlineFiles]);
 
   /* ---------- Geländeebene ---------- */
   const [terrainImage, setTerrainImage] = useState<
@@ -1382,6 +1428,8 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             fitBbox={fitBbox}
             terrainImage={terrainImage}
             trails={trails}
+            contours={contours}
+            watchedPoints={watchedPoints}
             onMapApi={setMapApi}
             onShare={() => setShareOpen(true)}
             trailsHint={

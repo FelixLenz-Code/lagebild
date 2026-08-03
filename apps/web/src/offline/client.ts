@@ -7,7 +7,7 @@
 import type { Coords, GeoResult, RouteOutcome, RouteProfile } from '@lagebild/shared';
 import type { WorkerRequest, WorkerResponse } from './worker.js';
 import type { HouseNumber } from './search.js';
-import type { ElevationProfile, TerrainImage } from './terrain.js';
+import type { ContourLine, ElevationProfile, TerrainImage } from './terrain.js';
 import type { TrailResult } from './trails.js';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
@@ -103,6 +103,13 @@ export const trailsOffline = (
   kinds: number,
   limit?: number,
 ) => call<TrailResult>({ type: 'trails', codes, bbox, kinds, limit });
+
+/** Höhenlinien im Ausschnitt (aus dem Geländepaket). */
+export const contoursOffline = (
+  codes: string[],
+  bbox: { west: number; south: number; east: number; north: number },
+  intervalM?: number,
+) => call<{ lines: ContourLine[]; intervalM: number }>({ type: 'contours', codes, bbox, intervalM });
 
 /** Geländebild einer Region (Höhenfarben mit Schummerung) für die Kartenebene. */
 export const terrainImageOffline = (code: string, maxSize?: number) =>

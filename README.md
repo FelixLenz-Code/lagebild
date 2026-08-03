@@ -141,6 +141,7 @@ Ebenen und „Alle aus"; das Einzeichnen-Menü liegt als eigener Knopf daneben:
 | Waldbrandgefahr | DWD | Stufe 1–5, Deutschland |
 | Polarlicht | NOAA SWPC (OVATION) | Wahrscheinlichkeit weltweit |
 | Tag/Nacht | selbst gerechnet | Dämmerungssaum, wandert minütlich mit |
+| Höhenlinien | aus dem Geländepaket gerechnet | Abstand nach Relief, ab Zoom 10 |
 | Einzeichnen | eigene Punkte/Linien/Flächen | Werkzeuge, Messen und Datei-Import (siehe unten) |
 
 Nicht gebrauchte Ebenen lassen sich unter **Einstellungen → Ebenen** ganz aus
@@ -205,6 +206,12 @@ aber auch wissen, ob zu Hause oder bei den Eltern etwas los ist — dafür gibt 
 wie am Standort (DWD ab `severe`, Behördenwarnungen in jeder Stufe, Flächen
 per Strahlverfahren geprüft). Aufgenommen werden sie über das Kartenmenü („Ort
 beobachten") oder als aktueller Standort.
+
+Auf der **Karte** liegen sie in der Ebene „Meine Markierungen" — als Haussymbol
+in der Farbe ihrer Warnlage (grün = ruhig, sonst die Stufe). Sie sind bewusst
+**keine** Markierungen im Sinne der Liste: dort lassen sie sich nicht
+umbenennen oder löschen, das geschieht in „Meine Orte". Geteilt wird nur die
+Ebene und damit der Schalter.
 
 Die Kachel zeigt je Ort einen Punkt (grün = ruhig) und die Schlagzeile; das
 Blatt nennt Stufe, Herkunft und **Handlungsanweisung** und führt in die
@@ -636,6 +643,20 @@ in der MapLibre eine `image`-Quelle aufspannt; anders als bei den Gittern in
 Länge/Breite braucht es keine Umrechnung je Bildzeile. Gerechnet wird das Bild
 im Worker, gemalt im Hauptfaden. Bei `--zoom 11` wird das Raster doppelt so fein
 (≈48 m) und die Datei rund viermal so groß.
+
+### Höhenlinien
+
+Die Ebene **„Höhenlinien"** rechnet sie im Worker aus demselben Raster —
+**Marching Squares**: Für jede Rasterzelle sagt das Muster ihrer vier Ecken,
+wo die Linie durchläuft; die Schnittpunkte werden zwischen den Ecken
+interpoliert, sonst gäbe es Treppen. Die Segmente werden anschließend an ihren
+Enden zu Zügen verkettet — ohne das wären es zehntausende Zweipunktlinien, und
+MapLibre könnte sie weder beschriften noch sauber zeichnen.
+
+Der Abstand richtet sich nach dem Relief im Ausschnitt: 5 m im Flachland,
+100 m im Gebirge. Jede fünfte Linie ist kräftiger und trägt ab Zoom 12,5 ihre
+Höhe. Gemessen über dem Taunus: 14 Höhenstufen, 1437 Linienzüge, 34.826 Punkte
+in 289 ms.
 
 ### Einer GPX-Tour folgen
 

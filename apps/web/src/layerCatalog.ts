@@ -36,7 +36,8 @@ export type LayerId =
   | 'rescue'
   | 'draw'
   | 'terrain'
-  | 'trails';
+  | 'trails'
+  | 'contours';
 
 /** Zusätzlich zu den Ebenen: eingerückte Anzeigeoptionen. */
 export type LayerRowId = LayerId | 'wind-labels';
@@ -96,6 +97,7 @@ export const LAYER_CATALOG: LayerInfo[] = [
   // hat — das darf beim Öffnen der App nicht verschwunden sein.
   { id: 'draw', label: 'Meine Markierungen', color: '#0d9488', group: 'Lage', hint: 'eigene Punkte, Linien und Flächen' },
   { id: 'trails', label: 'Wander- und Radwege', color: '#1f7a4d', group: 'Verkehr', hint: 'ausgeschilderte Routen aus dem Routing-Paket · ab Zoom 10', source: 'osm' },
+  { id: 'contours', label: 'Höhenlinien', color: '#8a6a3d', group: 'Lage', hint: 'aus dem Geländepaket gerechnet · Abstand nach Relief', source: 'terrain-tiles' },
   { id: 'terrain', label: 'Gelände', color: 'linear-gradient(90deg,#acd0a5,#e5e09a,#c49e79,#ebebf0)', group: 'Lage', hint: 'Höhen mit Schummerung — braucht das Geländepaket', source: 'terrain-tiles' },
 
   // Funk

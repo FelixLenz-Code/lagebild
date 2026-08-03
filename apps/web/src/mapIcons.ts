@@ -189,6 +189,9 @@ const GLYPH_CAMERA =
 /** Warndreieck für Behördenwarnungen (Mitte der Fläche). */
 /* Ausrufezeichen als Aussparung (fill-rule evenodd) — das Piktogramm wird
    weiß gefüllt, die inneren Flächen bleiben dadurch farbig. */
+/** Haus — für die beobachteten Orte (Zuhause, Arbeit, Eltern). */
+const GLYPH_HOME =
+  'M16 6 5 15.5h3V26h5.5v-6h5v6H24V15.5h3z';
 const GLYPH_ALERT = 'M16 6 28 27H4Z M14.7 13.5h2.6v7.2h-2.6z M14.7 22.2h2.6v2.6h-2.6z';
 
 /** Fahrzeugpfeil (zeigt nach Norden, wird per icon-rotate gedreht). */
@@ -243,6 +246,15 @@ export const STOP_COLOR: Record<string, string> = Object.fromEntries(
 );
 
 /** Alle Icons in die Karte laden (idempotent, nach jedem Stilwechsel nötig). */
+/** Farben der beobachteten Orte je Warnlage. */
+export const WATCH_COLORS: Record<string, string> = {
+  ok: '#2c7448',
+  minor: '#b58a10',
+  moderate: '#c96f0f',
+  severe: '#a92318',
+  extreme: '#6c2790',
+};
+
 export async function ensureMapIcons(map: MlMap): Promise<void> {
   await Promise.all([
     ...Object.entries(VARIANTS).map(([id, [path, fill, stroke]]) => draw(map, id, path, fill, stroke)),
@@ -257,6 +269,11 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     ),
     ...Object.entries(VEHICLE_COLORS).map(([kind, color]) =>
       draw(map, `veh-${kind}`, GLYPH_VEHICLE, color, '#ffffff'),
+    ),
+    // Beobachtete Orte: Haus in der Farbe ihrer Warnlage — ruhig ist grün,
+    // sonst die Stufe. So sieht man auf der Karte sofort, wo es klemmt.
+    ...Object.entries(WATCH_COLORS).map(([state, color]) =>
+      drawSvg(map, `watch-${state}`, badge(GLYPH_HOME, color)),
     ),
     drawSvg(map, 'rest-parking', badge(GLYPH_PARKING, '#1d4e73')),
     drawSvg(map, 'rest-charging', badge(GLYPH_PLUG, '#2c7448')),

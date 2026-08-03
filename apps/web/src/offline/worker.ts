@@ -12,7 +12,7 @@ import { getOfflineFile } from '../offlineMaps.js';
 import { Container, HEADER_PROBE_BYTES, parseHeader } from './container.js';
 import { RouteGraph, mergeGraphs } from './graph.js';
 import { routeVia } from './router.js';
-import { Terrain, elevationProfile, renderTerrain } from './terrain.js';
+import { Terrain, contourInterval, contourLines, elevationProfile, renderTerrain } from './terrain.js';
 import type { TrailFeature } from './trails.js';
 import { SearchIndex } from './search.js';
 
@@ -46,6 +46,14 @@ export type WorkerRequest =
       own?: (number | undefined)[];
     }
   | { id: number; type: 'terrainImage'; code: string; maxSize?: number }
+  | {
+      id: number;
+      type: 'contours';
+      codes: string[];
+      bbox: { west: number; south: number; east: number; north: number };
+      /** Höhenabstand in Metern; ohne Angabe nach Relief gewählt. */
+      intervalM?: number;
+    }
   | {
       id: number;
       type: 'trails';
@@ -216,6 +224,32 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
         features.push({ coordinates, kind: mask, name: g.trailName(e) });
       }
       return { features, stale: false };
+    }
+    case 'contours': {
+      const middle = {
+        lat: (msg.bbox.north + msg.bbox.south) / 2,
+        lon: (msg.bbox.east + msg.bbox.west) / 2,
+      };
+      for (const code of msg.codes) {
+        const t = await loadTerrain(code);
+        if (!t || !t.covers(middle.lat, middle.lon)) continue;
+        // Ohne Vorgabe richtet sich der Abstand nach dem Relief im Ausschnitt:
+        // im Flachland 5 m, im Gebirge 100 m.
+        let interval = msg.intervalM;
+        if (!interval) {
+          const corners = [
+            t.elevationAt(msg.bbox.north, msg.bbox.west),
+            t.elevationAt(msg.bbox.north, msg.bbox.east),
+            t.elevationAt(msg.bbox.south, msg.bbox.west),
+            t.elevationAt(msg.bbox.south, msg.bbox.east),
+            t.elevationAt(middle.lat, middle.lon),
+          ].filter((v): v is number => v != null);
+          const span = corners.length ? Math.max(...corners) - Math.min(...corners) : 0;
+          interval = contourInterval(span * 2.5);
+        }
+        return { lines: contourLines(t, msg.bbox, interval), intervalM: interval };
+      }
+      return { lines: [], intervalM: 0 };
     }
     case 'terrainImage': {
       const t = await loadTerrain(msg.code);

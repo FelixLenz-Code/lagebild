@@ -364,3 +364,174 @@ export function remainingClimb(profile: ElevationProfile, fromM: number): { gain
   }
   return { gainM: Math.round(gainM), lossM: Math.round(lossM) };
 }
+
+/* ------------------------------------------------------------------ *
+ * Höhenlinien
+ * ------------------------------------------------------------------ */
+
+export interface ContourLine {
+  eleM: number;
+  /** Linienzüge in [lon, lat]. */
+  paths: [number, number][][];
+}
+
+/** Abstand der Höhenlinien je nach Relief im Ausschnitt. */
+export function contourInterval(spanM: number): number {
+  if (spanM < 60) return 5;
+  if (spanM < 150) return 10;
+  if (spanM < 400) return 20;
+  if (spanM < 900) return 50;
+  return 100;
+}
+
+/**
+ * Höhenlinien aus dem Raster — **Marching Squares**.
+ *
+ * Für jede Rasterzelle wird geprüft, welche ihrer vier Ecken über der
+ * gesuchten Höhe liegen; daraus ergibt sich ein Muster von 16 Fällen und darin
+ * ein oder zwei Liniensegmente. Die Schnittpunkte werden zwischen den Ecken
+ * linear interpoliert, sonst bekämen die Linien Treppen.
+ *
+ * Die Segmente werden anschließend an ihren Enden zu Zügen verkettet — sonst
+ * wären es zehntausende Zweipunktlinien, und MapLibre könnte sie weder
+ * beschriften noch sauber zeichnen.
+ */
+export function contourLines(
+  terrain: Terrain,
+  bbox: { west: number; south: number; east: number; north: number },
+  intervalM: number,
+  maxCells = 240_000,
+): ContourLine[] {
+  const { zoom, tileX, tileY, width, height } = terrain.meta;
+  const scale = 2 ** zoom;
+  // Ausschnitt in Rasterkoordinaten.
+  const gx = (lon: number) => (((lon + 180) / 360) * scale - tileX) * 256;
+  const gy = (lat: number) => {
+    const r = (lat * Math.PI) / 180;
+    return (((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * scale - tileY) * 256;
+  };
+  const lonOf = (x: number) => ((x / 256 + tileX) / scale) * 360 - 180;
+  const latOf = (y: number) => {
+    const n = Math.PI - 2 * Math.PI * ((y / 256 + tileY) / scale);
+    return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  };
+
+  const x0 = Math.max(0, Math.floor(gx(bbox.west)) - 1);
+  const x1 = Math.min(width - 1, Math.ceil(gx(bbox.east)) + 1);
+  const y0 = Math.max(0, Math.floor(gy(bbox.north)) - 1);
+  const y1 = Math.min(height - 1, Math.ceil(gy(bbox.south)) + 1);
+  if (x1 - x0 < 2 || y1 - y0 < 2) return [];
+  // Bei sehr weitem Ausschnitt gröber abtasten, statt gar nichts zu liefern.
+  const step = Math.max(1, Math.ceil(Math.sqrt(((x1 - x0) * (y1 - y0)) / maxCells)));
+
+  let min = Infinity;
+  let max = -Infinity;
+  for (let y = y0; y <= y1; y += step) {
+    for (let x = x0; x <= x1; x += step) {
+      const v = terrain.sample(x, y);
+      if (v == null) continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
+
+  const out: ContourLine[] = [];
+  const first = Math.ceil(min / intervalM) * intervalM;
+  for (let level = first; level <= max; level += intervalM) {
+    const segments: [number, number, number, number][] = [];
+    for (let y = y0; y + step <= y1; y += step) {
+      for (let x = x0; x + step <= x1; x += step) {
+        const a = terrain.sample(x, y);
+        const b = terrain.sample(x + step, y);
+        const c = terrain.sample(x + step, y + step);
+        const d = terrain.sample(x, y + step);
+        if (a == null || b == null || c == null || d == null) continue;
+
+        const code = (a > level ? 8 : 0) | (b > level ? 4 : 0) | (c > level ? 2 : 0) | (d > level ? 1 : 0);
+        if (code === 0 || code === 15) continue;
+
+        // Schnittpunkte auf den vier Kanten (oben, rechts, unten, links).
+        const mix = (v1: number, v2: number) => (level - v1) / (v2 - v1 || 1e-9);
+        const top: [number, number] = [x + step * mix(a, b), y];
+        const right: [number, number] = [x + step, y + step * mix(b, c)];
+        const bottom: [number, number] = [x + step * mix(d, c), y + step];
+        const left: [number, number] = [x, y + step * mix(a, d)];
+
+        const add = (p: [number, number], q: [number, number]) =>
+          segments.push([p[0], p[1], q[0], q[1]]);
+        switch (code) {
+          case 1: case 14: add(left, bottom); break;
+          case 2: case 13: add(bottom, right); break;
+          case 3: case 12: add(left, right); break;
+          case 4: case 11: add(top, right); break;
+          case 6: case 9: add(top, bottom); break;
+          case 7: case 8: add(left, top); break;
+          // Sattelpunkte: zwei getrennte Segmente.
+          case 5: add(left, top); add(bottom, right); break;
+          case 10: add(top, right); add(left, bottom); break;
+          default: break;
+        }
+      }
+    }
+    if (!segments.length) continue;
+
+    // Segmente an ihren Enden zu Zügen verketten (Schlüssel gerundet, weil die
+    // Schnittpunkte zweier Nachbarzellen nur bis auf Rechengenauigkeit gleich sind).
+    const key = (x: number, y: number) => `${Math.round(x * 64)},${Math.round(y * 64)}`;
+    const open = new Map<string, [number, number][][]>();
+    const push = (k: string, path: [number, number][]) => {
+      const list = open.get(k);
+      if (list) list.push(path);
+      else open.set(k, [path]);
+    };
+    const take = (k: string, path: [number, number][]) => {
+      const list = open.get(k);
+      if (!list) return;
+      const at = list.indexOf(path);
+      if (at >= 0) list.splice(at, 1);
+      if (!list.length) open.delete(k);
+    };
+
+    const paths: [number, number][][] = [];
+    for (const [ax, ay, bx, by] of segments) {
+      const ka = key(ax, ay);
+      const kb = key(bx, by);
+      const before = open.get(ka)?.[0];
+      const after = open.get(kb)?.[0];
+
+      if (before && after && before !== after) {
+        take(ka, before);
+        take(kb, after);
+        // Beide Enden passen: die zwei Züge werden einer.
+        const joined = [...before, ...after.slice().reverse()];
+        const kStart = key(joined[0]![0], joined[0]![1]);
+        const kEnd = key(joined[joined.length - 1]![0], joined[joined.length - 1]![1]);
+        take(kStart, before);
+        take(kEnd, after);
+        push(kStart, joined);
+        push(kEnd, joined);
+        paths.push(joined);
+      } else if (before) {
+        take(ka, before);
+        before.push([bx, by]);
+        push(kb, before);
+      } else if (after) {
+        take(kb, after);
+        after.push([ax, ay]);
+        push(ka, after);
+      } else {
+        const path: [number, number][] = [[ax, ay], [bx, by]];
+        push(ka, path);
+        push(kb, path);
+        paths.push(path);
+      }
+    }
+
+    const geo = paths
+      .filter((path) => path.length > 2)
+      .map((path) => path.map(([x, y]) => [lonOf(x), latOf(y)] as [number, number]));
+    if (geo.length) out.push({ eleM: level, paths: geo });
+  }
+  return out;
+}
