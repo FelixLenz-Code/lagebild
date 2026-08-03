@@ -139,6 +139,40 @@ Messgenauigkeit herumspringen. Übernommen wird deshalb nur, was mindestens 8 m
 entfernt oder 30 s später kommt — sonst wüchse die Spur ins Unendliche und die
 Länge wäre zu groß.
 
+## Fremde Dateien einlesen
+
+Dasselbe Blatt liest **GPX, KML, KMZ und GeoJSON** ein — die Datei wird
+ausgewählt oder einfach auf das Fenster gezogen. Damit lassen sich fertige
+Touren (Komoot, Outdooractive), Punktsammlungen aus Google Earth und
+Übersichten aus einer Lagekarte öffnen:
+
+- **Linien** (`trk`, `rte`, `LineString`, `gx:Track`) werden zu Spuren und
+  liegen damit in derselben Ablage wie die eigene Aufzeichnung — samt „Zum
+  Start zurück" und GPX-Ausgabe.
+- **Einzelne Punkte** (`wpt`, `Point`) und **Flächen** (`Polygon`) werden zu
+  eigenen Markierungen. Sie erscheinen dadurch in der Suche als Ziel und lassen
+  sich anfahren.
+
+Vor der Übernahme steht eine **Zusammenfassung** — fremde Dateien enthalten oft
+mehr, als man erwartet, und niemand soll seine Markierungen ungefragt
+vollgeschüttet bekommen. Alles bleibt auf dem Gerät; es geht nichts an einen
+Server.
+
+Der Leser ist wie der Rest des Projekts selbst geschrieben (kein Paket) und
+kommt ohne DOM-Schnittstellen aus — deshalb läuft er unverändert im Prüfskript:
+
+```bash
+apps/api/node_modules/.bin/tsx scripts/check-import.mts
+```
+
+Eigenheiten, die dabei abgedeckt sind: Namensräume (`kml:Placemark`), CDATA,
+Entitäten, `ISO-8859-1`, mehrere Abschnitte in einem Track (die **nicht**
+zusammengezogen werden — sonst zöge sich eine gerade Linie über eine Pause),
+`MultiGeometry` und gepackte KMZ. Sehr lange Aufzeichnungen werden nach
+Douglas-Peucker ausgedünnt, wobei die Toleranz **verdoppelt** wird, bis die
+Spur unter 4000 Stützpunkte passt: „jeder n-te Punkt" wäre einfacher, verdreht
+den Verlauf aber messbar (13 m statt 4 m Abweichung bei einer 33-km-Spur).
+
 ## Einstellungen und Quellen
 
 Das Zahnrad in der Kopfzeile öffnet ein Blatt mit drei Reitern — hier wächst
@@ -309,6 +343,35 @@ Hintergrund. Grundlage ist der Routing-Graph der heruntergeladenen Region:
 * **Zielführung** mit Positionsverfolgung, mitdrehender Karte, Restweg/Ankunft,
   Sprachansagen (SpeechSynthesis des Geräts, abschaltbar) und automatischer
   Neuberechnung, wenn man von der Route abkommt.
+
+### Zwischenziele
+
+Die Route kennt neben Start und Ziel beliebig viele **Zwischenziele**. Gesetzt
+werden sie über den Knopf **„+ Zwischenziel"** in der Routenleiste (der nächste
+Tipper auf die Karte legt es fest) oder über das Punktmenü auf der Karte
+(langes Antippen → „Als Zwischenziel"). In der Zielliste lassen sie sich
+**verschieben und entfernen**; die Karte nummeriert sie mit, und unter der
+Zusammenfassung steht jeder Abschnitt einzeln mit Länge und Fahrzeit.
+
+Gerechnet wird abschnittsweise: A* sucht immer den kürzesten Weg zwischen zwei
+Punkten, also ist die **Reihenfolge eine Vorgabe des Nutzers**, keine
+Optimierungsaufgabe (kein Handlungsreisenden-Problem). Wer eine andere
+Reihenfolge will, sortiert die Liste um — „Start und Ziel tauschen" dreht auch
+die Zwischenziele um. Streckenvarianten gibt es mit Zwischenzielen nicht: sie
+entstehen aus Aufschlägen auf benutzte Kanten, und über mehrere Abschnitte
+hinweg käme dabei nur Willkür heraus.
+
+**Ausweichkanten beim Fangen** (dabei entstanden, betrifft aber jeden Punkt):
+Ein Tipper auf die Karte landet gern auf einer Parkplatzgasse oder einem für
+Autos gesperrten Parkweg — von dort führt kein Weg weg, und die Suche meldete
+„keine Verbindung". Das Fangen liefert deshalb jetzt **mehrere Kanten** (bis
+250 m hinter der nächsten), und vorab prüft ein paar Dutzend Schritte weite
+Suche, ob von einer Kante überhaupt etwas erreichbar ist. Ohne diese Vorprüfung
+merkt A* das erst, nachdem es das ganze übrige Netz abgesucht hat — gemessen
+1,7 s statt 46 ms.
+
+Geprüft mit `scripts/check-via.mts` (Naht ohne Doppelpunkt, verschobene
+Anweisungsindizes, Summen der Abschnitte, Reihenfolge, Stichweg-Fall).
 
 ### ÖPNV-Verbindungen
 

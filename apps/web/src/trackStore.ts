@@ -22,8 +22,13 @@ export interface Track {
   points: TrackPoint[];
   /** Länge in Metern (beim Speichern gerechnet). */
   distanceM: number;
+  /** 0, wenn die Spur keine Zeitstempel mitbringt (kommt bei Import vor). */
   startedAt: number;
   endedAt: number;
+  /** Selbst aufgezeichnet oder eingelesen? Fehlt bei alten Einträgen. */
+  source?: 'record' | 'import';
+  /** Dateiname, aus dem die Spur stammt. */
+  origin?: string;
 }
 
 const KEY = 'lagebild.tracks';
@@ -89,14 +94,18 @@ export function toGpx(track: Track): string {
       (p) =>
         `      <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}">` +
         (p.ele != null ? `<ele>${p.ele.toFixed(1)}</ele>` : '') +
-        `<time>${new Date(p.t).toISOString()}</time></trkpt>`,
+        // Eingelesene Spuren haben oft keine Zeit — dann lieber gar kein
+        // <time> als der 1.1.1970.
+        (p.t > 0 ? `<time>${new Date(p.t).toISOString()}</time>` : '') +
+        `</trkpt>`,
     )
     .join('\n');
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<gpx version="1.1" creator="Lagebild" xmlns="http://www.topografix.com/GPX/1/1">\n` +
     `  <metadata><name>${esc(track.name)}</name>` +
-    `<time>${new Date(track.startedAt).toISOString()}</time></metadata>\n` +
+    (track.startedAt > 0 ? `<time>${new Date(track.startedAt).toISOString()}</time>` : '') +
+    `</metadata>\n` +
     `  <trk>\n    <name>${esc(track.name)}</name>\n    <trkseg>\n${points}\n    </trkseg>\n  </trk>\n` +
     `</gpx>\n`
   );

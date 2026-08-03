@@ -127,6 +127,22 @@ svg { display: block; }
 .tr-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .tr-del:hover { color: var(--sev3); }
 
+/* Fremde Dateien einlesen (GPX/KML/KMZ/GeoJSON) */
+.imp-drop {
+  border: 1px dashed var(--line); border-radius: 10px; padding: 12px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  transition: border-color .15s, background .15s;
+}
+.imp-drop.is-over { border-color: #0d9488; background: color-mix(in srgb, #0d9488 8%, transparent); }
+.imp-drop .st-intro { margin-bottom: 6px; }
+.imp-sum { margin-top: 12px; }
+.imp-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.imp-list { list-style: none; margin: 0 0 8px; padding: 0; font-size: .82rem; }
+.imp-list li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+.imp-ic { color: #0d9488; width: 1em; text-align: center; flex: none; }
+.imp-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-note { font-size: .74rem; margin: 0 0 10px; }
+
 /* Koordinaten in allen Schreibweisen (Standort-Blatt, Punktmenü) */
 .coord-list { margin: 14px 0 4px; }
 .coord-row {
@@ -774,6 +790,20 @@ svg { display: block; }
 .rp-point .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .rp-point .dot.start { background: var(--ok); }
 .rp-point .dot.end { background: var(--sev3); }
+.rp-point .dot.via {
+  width: 16px; height: 16px; margin-left: -3.5px; background: var(--accent); color: #fff;
+  font-size: .64rem; font-weight: 700; font-style: normal; display: grid; place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.rp-via .rp-viaops { margin-left: auto; display: flex; gap: 2px; flex: none; }
+.rp-viaops .rp-chip.icon { padding: 3px; }
+.rp-viaops .rp-chip:disabled { opacity: .35; cursor: default; }
+.rp-addvia { padding-left: 18px; }
+.rp-addvia .rp-chip.is-on { border-color: var(--accent); color: var(--accent); }
+.rp-legs { list-style: none; margin: 2px 0 0; padding: 0; font-size: .78rem; }
+.rp-legs li { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
+.rp-leg-to { color: var(--muted); }
+.rp-legs li .tr-meta { margin-left: auto; }
 .rp-summary { display: flex; align-items: baseline; gap: 14px; font-size: .82rem; color: var(--muted); }
 .rp-summary b { font-size: 1.15rem; font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
 .rp-actions { display: flex; align-items: center; gap: 8px; }
@@ -806,6 +836,11 @@ svg { display: block; }
 .mk-route { width: 15px; height: 15px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
 .mk-route.mk-start { background: var(--ok); }
 .mk-route.mk-end { background: var(--sev3); }
+.mk-route.mk-via {
+  width: 20px; height: 20px; background: var(--accent); color: #fff; border-width: 2px;
+  font-size: .68rem; font-weight: 700; display: grid; place-items: center;
+  font-variant-numeric: tabular-nums;
+}
 .mk-route.mk-pin { width: 16px; height: 16px; background: var(--accent); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
 .mk-nav { width: 18px; height: 18px; background: var(--accent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 28%, transparent); }
 

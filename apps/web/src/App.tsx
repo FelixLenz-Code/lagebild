@@ -44,6 +44,8 @@ import { loadFavorites, saveFavorites, pointInGeometry, type Place } from './pla
 import { AlertBanner, collectAlerts } from './AlertBanner.js';
 import { TrackPanel, useTrackRecorder } from './TrackPanel.js';
 import { type Track } from './trackStore.js';
+import { drawFrom, tracksFrom, type ImportResult } from './importFiles.js';
+import { type DrawFeature } from './drawStore.js';
 import { Sheet } from './Sheet.js';
 import {
   WeatherDetail,
@@ -358,6 +360,50 @@ export function App() {
     return source.map((p) => [p.lon, p.lat] as [number, number]);
   }, [recorder.recording, recorder.points, shownTrack]);
 
+  /* ---------- Fremde Dateien einlesen (GPX/KML/KMZ/GeoJSON) ---------- */
+  /** Markierungen, die die Karte noch übernehmen muss. */
+  const [addDraw, setAddDraw] = useState<{ features: DrawFeature[]; key: number } | null>(null);
+  /** Ausschnitt, auf den die Karte springen soll. */
+  const [fitBbox, setFitBbox] = useState<{ bbox: [number, number, number, number]; key: number } | null>(null);
+  /** Auf das Fenster gezogene Datei — wird an den Spuren-Bildschirm gereicht. */
+  const [droppedFile, setDroppedFile] = useState<File | null>(null);
+
+  const takeImport = useCallback((result: ImportResult) => {
+    const tracks = tracksFrom(result);
+    const features = drawFrom(result);
+    if (tracks.length) {
+      recorder.setTracks((prev) => [...prev, ...tracks]);
+      // Die erste eingelesene Spur gleich zeigen — sonst bliebe die Karte leer
+      // und man müsste raten, ob etwas angekommen ist.
+      setShownTrack(tracks[0]!);
+    }
+    if (features.length) setAddDraw({ features, key: Date.now() });
+    if (result.bbox) setFitBbox({ bbox: result.bbox, key: Date.now() });
+    setTrackOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Eine Datei auf das Fenster ziehen ist der naheliegende Weg am Rechner.
+  // Der Browser würde sie sonst einfach öffnen und die App verlassen.
+  useEffect(() => {
+    const over = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    const drop = (e: DragEvent) => {
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      e.preventDefault();
+      setDroppedFile(file);
+      setTrackOpen(true);
+    };
+    window.addEventListener('dragover', over);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
+
   /* ---------- Gespeicherte Karten und Diashow ---------- */
   const [presets, setPresets] = useState<MapPreset[]>(() => loadPresets().presets);
   const [slideshow, setSlideshow] = useState<SlideshowSettings>(() => loadPresets().slideshow);
@@ -570,6 +616,10 @@ export function App() {
   /* ---------- Routenplanung (rein lokal) ---------- */
   const [destination, setDestination] = useState<(Place & { category?: string }) | null>(null);
   const [routeOrigin, setRouteOrigin] = useState<Place | null>(null);
+  /** Zwischenziele in Fahrreihenfolge — der Router hängt die Abschnitte aneinander. */
+  const [via, setVia] = useState<Place[]>([]);
+  /** Wartet die Karte auf einen Klick für ein Zwischenziel? */
+  const [pickingVia, setPickingVia] = useState(false);
   const [pin, setPin] = useState<(Place & { category?: string }) | null>(null);
   const [profile, setProfile] = useState<PlanMode>('car');
   /** ÖPNV-Verbindungen (nur online) samt Auswahl und Wunschzeit. */
@@ -594,16 +644,23 @@ export function App() {
   const startPoint: Coords = routeOrigin ? { lat: routeOrigin.lat, lon: routeOrigin.lon } : coords;
   const startKey = `${startPoint.lat.toFixed(5)},${startPoint.lon.toFixed(5)}`;
   const destKey = destination ? `${destination.lat.toFixed(5)},${destination.lon.toFixed(5)}` : '';
+  const viaKey = via.map((v) => `${v.lat.toFixed(5)},${v.lon.toFixed(5)}`).join(';');
 
   // Alle heruntergeladenen Regionen entlang der Luftlinie werden zu einem Netz
   // verbunden — sonst würde eine Route an der Landesgrenze enden.
   const routeCodes = useMemo(() => {
     if (!destination) return [] as string[];
-    return statesForCorridor(startPoint, { lat: destination.lat, lon: destination.lon }).filter(
-      (code) => offlineFiles[code]?.route,
-    );
+    // Mit Zwischenzielen zählt jeder Abschnitt einzeln — der Umweg über ein
+    // Zwischenziel kann durch ein Bundesland führen, das die Luftlinie zwischen
+    // Start und Ziel gar nicht berührt.
+    const stops: Coords[] = [startPoint, ...via, { lat: destination.lat, lon: destination.lon }];
+    const codes = new Set<string>();
+    for (let i = 1; i < stops.length; i++) {
+      for (const code of statesForCorridor(stops[i - 1]!, stops[i]!)) codes.add(code);
+    }
+    return [...codes].filter((code) => offlineFiles[code]?.route);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startKey, destKey, offlineFiles]);
+  }, [startKey, destKey, viaKey, offlineFiles]);
 
   const routeCodesKey = routeCodes.join(',');
 
@@ -640,6 +697,7 @@ export function App() {
     routeOffline(routeCodes, startPoint, target, profile as RouteProfile, {
       alternatives: navigatingRef.current ? 1 : 3,
       avoidMotorways,
+      via: via.map((v) => ({ lat: v.lat, lon: v.lon })),
     })
       .then((outcome) => {
         if (cancelled) return;
@@ -649,6 +707,13 @@ export function App() {
           setRouteError(`Der Startpunkt liegt außerhalb der gespeicherten Regionen.${regionHint(startPoint)}`);
         } else if (outcome.status === 'end-off-grid') {
           setRouteError(`Das Ziel liegt außerhalb der gespeicherten Regionen.${regionHint(target)}`);
+        } else if (outcome.status === 'via-off-grid') {
+          const at = outcome.offGridVia ?? 0;
+          const point = via[at];
+          setRouteError(
+            `Das ${at + 1}. Zwischenziel liegt außerhalb der gespeicherten Regionen.` +
+              (point ? regionHint({ lat: point.lat, lon: point.lon }) : ''),
+          );
         } else if (outcome.status === 'no-path') {
           setRouteError(
             'Keine Verbindung gefunden. Führt die Strecke durch eine Region, die noch nicht gespeichert ist?',
@@ -669,7 +734,7 @@ export function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destKey, startKey, profile, routeCodesKey, avoidMotorways]);
+  }, [destKey, startKey, viaKey, profile, routeCodesKey, avoidMotorways]);
 
   // ÖPNV läuft nicht über den Offline-Graphen — Fahrpläne kommen aus dem Netz.
   const [planLoading, setPlanLoading] = useState(false);
@@ -715,6 +780,10 @@ export function App() {
     setPin({ ...place, category });
     setSearchOpen(false);
     setNavigating(false);
+    // Ein neues Ziel beginnt eine neue Fahrt — die alten Zwischenziele lagen
+    // auf einem anderen Weg.
+    setVia([]);
+    setPickingVia(false);
   };
 
   const stopRoute = () => {
@@ -722,6 +791,8 @@ export function App() {
     setDestination(null);
     setRoutes([]);
     setRouteOrigin(null);
+    setVia([]);
+    setPickingVia(false);
     setPin(null);
   };
 
@@ -748,7 +819,11 @@ export function App() {
    * Punkt aus dem Kartenmenü (oder aus dem Setzen-Modus). `label` ist gesetzt,
    * wenn eine Haltestelle oder eigene Markierung angetippt wurde.
    */
-  const pickPoint = (point: Coords, kind: 'destination' | 'origin' | 'place' | 'radio', label?: string) => {
+  const pickPoint = (
+    point: Coords,
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio',
+    label?: string,
+  ) => {
     if (kind === 'radio') {
       setHfTarget(point);
       return;
@@ -757,7 +832,11 @@ export function App() {
     const name = label ?? coordName;
     if (kind === 'destination') startRouteTo({ name, ...point });
     else if (kind === 'origin') setRouteOrigin({ name, ...point });
-    else selectPlace({ name: label ?? `Karte ${coordName}`, ...point });
+    else if (kind === 'via') {
+      // Neue Zwischenziele hängen sich hinten an; umsortiert wird in der Liste.
+      setVia((prev) => [...prev, { name, ...point }]);
+      setPickingVia(false);
+    } else selectPlace({ name: label ?? `Karte ${coordName}`, ...point });
   };
 
   const transitStops = transit.data?.data ?? [];
@@ -1017,9 +1096,13 @@ export function App() {
             navBearing={nav.heading ?? nav.progress?.bearing ?? null}
             onPickPoint={pickPoint}
             pickingLocation={pickingLocation}
+            pickingVia={pickingVia}
+            routeActive={!!destination}
             onViewport={setViewport}
             track={trackLine}
             trackLive={recorder.recording}
+            addDraw={addDraw}
+            fitBbox={fitBbox}
             onLayersChange={setLayers}
             hiddenLayers={settings.hiddenLayers}
             onActiveLayers={setActiveLayers}
@@ -1038,6 +1121,20 @@ export function App() {
             <RoutePanel
               origin={routeOrigin}
               destination={destination}
+              via={via}
+              onRemoveVia={(i) => setVia((prev) => prev.filter((_, k) => k !== i))}
+              onMoveVia={(i, delta) =>
+                setVia((prev) => {
+                  const next = [...prev];
+                  const to = i + delta;
+                  if (to < 0 || to >= next.length) return prev;
+                  [next[i], next[to]] = [next[to]!, next[i]!];
+                  return next;
+                })
+              }
+              pickingVia={pickingVia}
+              onPickVia={() => setPickingVia(true)}
+              onCancelPickVia={() => setPickingVia(false)}
               profile={profile}
               itineraries={itineraries}
               itineraryIndex={itineraryIndex}
@@ -1067,6 +1164,9 @@ export function App() {
                 const from: Place = routeOrigin ?? { name: place, lat: coords.lat, lon: coords.lon };
                 setRouteOrigin({ name: destination.name, lat: destination.lat, lon: destination.lon });
                 setDestination({ ...from });
+                // Rückwärts gefahren kommen die Zwischenziele in umgekehrter
+                // Reihenfolge — sonst führe die Route im Zickzack.
+                setVia((prev) => [...prev].reverse());
               }}
               onResetOrigin={() => setRouteOrigin(null)}
               onStartNav={startNavigation}
@@ -1423,6 +1523,9 @@ export function App() {
             setTrackOpen(false);
           }}
           shownId={shownTrack?.id ?? null}
+          onImport={takeImport}
+          droppedFile={droppedFile}
+          onFileHandled={() => setDroppedFile(null)}
           onClose={() => setTrackOpen(false)}
         />
       )}

@@ -10,6 +10,7 @@ import type {
   Coords,
   ManeuverModifier,
   ManeuverType,
+  RouteLeg,
   RouteOutcome,
   RouteProfile,
   RouteResult,
@@ -125,16 +126,29 @@ function project(
   return { t, lat: alat + (blat - alat) * t, lon: alon + (blon - alon) * t };
 }
 
+/** Wie weit hinter dem besten Treffer noch Ausweichkanten gesammelt werden. */
+const SNAP_SPREAD_M = 250;
+
 /**
- * Sucht die nächstgelegene für das Profil nutzbare Kante.
+ * Sucht die für das Profil nutzbaren Kanten in der Nähe, die nächste zuerst.
  * Es werden die Kanten aller Knoten in der Nähe geprüft — dadurch wird auch
  * ein Punkt mitten auf einer langen Autobahnkante richtig gefangen.
+ *
+ * Warum mehrere? Weil die nächstgelegene Kante ein Stichweg sein kann, von dem
+ * aus es für das Profil nicht weitergeht (eine Parkplatzgasse, ein für Autos
+ * gesperrter Parkweg). Dann muss die Suche eine Kante weiter außen versuchen
+ * dürfen, statt „keine Verbindung" zu melden.
  */
-export function snap(graph: RouteGraph, point: Coords, profile: Profile): Snap | null {
+export function snapCandidates(
+  graph: RouteGraph,
+  point: Coords,
+  profile: Profile,
+  limit = 3,
+): Snap[] {
   const candidates = graph.nodesNear(point.lat, point.lon, 24, 8000);
-  if (!candidates.length) return null;
+  if (!candidates.length) return [];
   const seen = new Set<number>();
-  let best: Snap | null = null;
+  const found: Snap[] = [];
 
   for (const n of candidates) {
     for (let i = graph.arcOff[n]!; i < graph.arcOff[n + 1]!; i++) {
@@ -164,22 +178,30 @@ export function snap(graph: RouteGraph, point: Coords, profile: Profile): Snap |
         along += segLen;
       }
       if (!bestOnEdge) continue;
-      if (!best || bestOnEdge.d < best.offRoadM) {
-        best = {
-          edge,
-          lat: bestOnEdge.lat,
-          lon: bestOnEdge.lon,
-          offRoadM: bestOnEdge.d,
-          alongM: bestOnEdge.along,
-          totalM: along,
-          nodeA: graph.edgeA[edge]!,
-          nodeB: graph.edgeB[edge]!,
-          name: graph.name(edge),
-        };
-      }
+      found.push({
+        edge,
+        lat: bestOnEdge.lat,
+        lon: bestOnEdge.lon,
+        offRoadM: bestOnEdge.d,
+        alongM: bestOnEdge.along,
+        totalM: along,
+        nodeA: graph.edgeA[edge]!,
+        nodeB: graph.edgeB[edge]!,
+        name: graph.name(edge),
+      });
     }
   }
-  return best;
+  if (!found.length) return [];
+  found.sort((x, y) => x.offRoadM - y.offRoadM);
+  // Nur Kanten in Rufweite des besten Treffers — sonst begänne die Route im
+  // nächsten Ortsteil.
+  const cutoff = found[0]!.offRoadM + SNAP_SPREAD_M;
+  return found.filter((f) => f.offRoadM <= cutoff).slice(0, limit);
+}
+
+/** Nur der nächstgelegene Treffer (Prüfskripte, Abstandsmessung). */
+export function snap(graph: RouteGraph, point: Coords, profile: Profile): Snap | null {
+  return snapCandidates(graph, point, profile, 1)[0] ?? null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -614,21 +636,28 @@ export function routeDetailed(
   options: RouteOptions = {},
 ): RouteOutcome {
   const profile = PROFILES[profileId];
-  const a = snap(graph, from, profile);
-  const b = snap(graph, to, profile);
-  const startOffRoadM = a ? a.offRoadM : null;
-  const endOffRoadM = b ? b.offRoadM : null;
+  const aCands = snapCandidates(graph, from, profile);
+  const bCands = snapCandidates(graph, to, profile);
+  const startOffRoadM = aCands[0]?.offRoadM ?? null;
+  const endOffRoadM = bCands[0]?.offRoadM ?? null;
   const empty = { routes: [] as RouteResult[], route: null, startOffRoadM, endOffRoadM };
-  if (!a || a.offRoadM > OFF_GRID_M) return { status: 'start-off-grid', ...empty };
-  if (!b || b.offRoadM > OFF_GRID_M) return { status: 'end-off-grid', ...empty };
+  if (!aCands.length || aCands[0]!.offRoadM > OFF_GRID_M) return { status: 'start-off-grid', ...empty };
+  if (!bCands.length || bCands[0]!.offRoadM > OFF_GRID_M) return { status: 'end-off-grid', ...empty };
 
   const wanted = Math.max(1, Math.min(3, options.alternatives ?? 1));
   const penalty = wanted > 1 ? penaltyFor(graph) : undefined;
   const routes: RouteResult[] = [];
   const edgeSets: { edges: Set<number>; lengthM: number }[] = [];
 
+  // Welche Anfangs- und Endkante trägt? Einmal ermitteln — die Varianten
+  // müssen an derselben Stelle beginnen und enden.
+  const first = findLegNear(graph, aCands, bCands, profile, profileId, options, undefined);
+  if (!first) return { status: 'no-path', ...empty };
+  const { a, b } = first;
+
   for (let attempt = 0; attempt < wanted; attempt++) {
-    const leg = findLeg(graph, a, b, profile, profileId, options, attempt > 0 ? penalty : undefined);
+    const leg =
+      attempt === 0 ? first.leg : findLeg(graph, a, b, profile, profileId, options, penalty);
     if (!leg) break;
     const built = assemble(graph, a, b, leg, profile, profileId);
     if (!built) break;
@@ -656,6 +685,205 @@ export function routeDetailed(
   routes.sort((x, y) => x.durationS - y.durationS);
   return { status: 'ok', route: routes[0]!, routes, startOffRoadM, endOffRoadM };
 }
+
+/**
+ * Route über Zwischenziele: die Abschnitte werden einzeln gesucht und
+ * aneinandergehängt.
+ *
+ * Warum nicht in einem Rutsch? Weil A* immer den kürzesten Weg zwischen zwei
+ * Punkten sucht — die Reihenfolge der Zwischenziele ist eine Vorgabe des
+ * Nutzers, keine Optimierungsaufgabe. Wer eine andere Reihenfolge will, sortiert
+ * die Liste um.
+ *
+ * **Varianten gibt es dabei nicht:** Sie entstehen aus Aufschlägen auf schon
+ * benutzte Kanten, und über mehrere Abschnitte hinweg käme dabei nur Willkür
+ * heraus. Wer Zwischenziele setzt, hat den Weg ohnehin selbst festgelegt.
+ */
+export function routeVia(
+  graph: RouteGraph,
+  points: Coords[],
+  profileId: RouteProfile,
+  options: RouteOptions = {},
+): RouteOutcome {
+  if (points.length < 2) {
+    return { status: 'no-path', route: null, routes: [], startOffRoadM: null, endOffRoadM: null };
+  }
+  if (points.length === 2) {
+    return routeDetailed(graph, points[0]!, points[1]!, profileId, options);
+  }
+
+  const profile = PROFILES[profileId];
+  const snaps = points.map((p) => snapCandidates(graph, p, profile));
+  const startOffRoadM = snaps[0]?.[0]?.offRoadM ?? null;
+  const endOffRoadM = snaps[snaps.length - 1]?.[0]?.offRoadM ?? null;
+  const empty = { routes: [] as RouteResult[], route: null, startOffRoadM, endOffRoadM };
+
+  for (let i = 0; i < snaps.length; i++) {
+    const best = snaps[i]![0];
+    if (best && best.offRoadM <= OFF_GRID_M) continue;
+    if (i === 0) return { status: 'start-off-grid', ...empty };
+    if (i === snaps.length - 1) return { status: 'end-off-grid', ...empty };
+    return { status: 'via-off-grid', offGridVia: i - 1, ...empty };
+  }
+
+  const parts: RouteResult[] = [];
+  /** Tatsächlich benutzte Endkante je Abschnitt. */
+  let previousEnd: Snap | null = null;
+  for (let i = 1; i < snaps.length; i++) {
+    // Der Übergang muss zusammenpassen: der nächste Abschnitt beginnt genau
+    // dort, wo der vorige endet — sonst klaffte an der Naht eine Lücke.
+    const from = previousEnd ? [previousEnd] : snaps[0]!;
+    const found = findLegNear(graph, from, snaps[i]!, profile, profileId, options, undefined);
+    const built = found && assemble(graph, found.a, found.b, found.leg, profile, profileId);
+    if (!built) return { status: 'no-path', ...empty };
+    previousEnd = found.b;
+    parts.push(built.result);
+  }
+
+  const joined = joinLegs(parts, profileId);
+  return { status: 'ok', route: joined, routes: [joined], startOffRoadM, endOffRoadM };
+}
+
+/** Zwei Punkte gelten als derselbe, wenn sie unter einem Zentimeter auseinanderliegen. */
+const samePoint = (a: [number, number], b: [number, number]): boolean =>
+  Math.abs(a[0] - b[0]) < 1e-7 && Math.abs(a[1] - b[1]) < 1e-7;
+
+/** Abschnitte zu einer durchgehenden Route zusammensetzen. */
+function joinLegs(parts: RouteResult[], profileId: RouteProfile): RouteResult {
+  const coordinates: [number, number][] = [];
+  const steps: RouteStep[] = [];
+  const legs: RouteLeg[] = [];
+  const waypoints: Coords[] = [];
+  let distanceM = 0;
+  let durationS = 0;
+
+  parts.forEach((part, i) => {
+    const last = coordinates[coordinates.length - 1];
+    // Der Übergangspunkt gehört beiden Abschnitten — er darf nur einmal in die
+    // Linie, sonst zählt die Anzeige einen Punkt doppelt.
+    const overlap = !!last && !!part.coordinates[0] && samePoint(last, part.coordinates[0]!);
+    const offset = overlap ? coordinates.length - 1 : coordinates.length;
+    legs.push({
+      distanceM: part.distanceM,
+      durationS: part.durationS,
+      stepIndex: steps.length,
+      coordIndex: Math.max(0, offset),
+    });
+    coordinates.push(...(overlap ? part.coordinates.slice(1) : part.coordinates));
+
+    part.steps.forEach((step, k) => {
+      // Der Aufbruch mitten in der Fahrt ist keine Anweisung.
+      if (i > 0 && step.type === 'depart') return;
+      const shifted: RouteStep = { ...step, index: step.index + offset };
+      if (step.type === 'arrive' && i < parts.length - 1) {
+        shifted.type = 'waypoint';
+        // Kurz halten: der Satz wird auch angesagt („In 400 Metern …").
+        shifted.text = `Zwischenziel ${i + 1}`;
+      }
+      steps.push(shifted);
+      void k;
+    });
+
+    if (i < parts.length - 1) waypoints.push(part.snappedEnd);
+    distanceM += part.distanceM;
+    durationS += part.durationS;
+  });
+
+  return {
+    profile: profileId,
+    distanceM,
+    durationS,
+    coordinates,
+    steps,
+    snappedStart: parts[0]!.snappedStart,
+    snappedEnd: parts[parts.length - 1]!.snappedEnd,
+    waypoints,
+    legs,
+  };
+}
+
+/**
+ * Wie `findLeg`, probiert aber der Reihe nach die Ausweichkanten aus dem
+ * Fangen durch: erst die beiden nächsten, dann jeweils eine weiter außen.
+ * Gemessen an echten Kartenklicks ist das nötig — ein Punkt im Bürgerpark
+ * fängt sich sonst auf einem Fußweg, von dem kein Auto herunterkommt.
+ */
+function findLegNear(
+  graph: RouteGraph,
+  aCands: Snap[],
+  bCands: Snap[],
+  profile: Profile,
+  profileId: RouteProfile,
+  options: RouteOptions,
+  penalty: Uint8Array | undefined,
+): { leg: Leg; a: Snap; b: Snap } | null {
+  const a1 = usable(graph, aCands, profile);
+  const b1 = usable(graph, bCands, profile);
+  const started = Date.now();
+  for (const [i, j] of SNAP_TRIES) {
+    const a = a1[i];
+    const b = b1[j];
+    if (!a || !b) continue;
+    const leg = findLeg(graph, a, b, profile, profileId, options, penalty);
+    if (leg) return { leg, a, b };
+    // Hat die Suche lange gebraucht, hat sie ein großes Netz abgegrast: dann
+    // gibt es schlicht keine Verbindung, und eine andere Anfangskante kostet
+    // nur Zeit. Die Sackgassen sind zu diesem Zeitpunkt schon aussortiert.
+    if (Date.now() - started > SNAP_RETRY_BUDGET_MS) break;
+  }
+  return null;
+}
+
+/** Zeitbudget für Versuche mit Ausweichkanten. */
+const SNAP_RETRY_BUDGET_MS = 400;
+/** So viele erreichbare Knoten gelten als „hier geht es weiter". */
+const ESCAPE_NODES = 64;
+
+/**
+ * Kanten aussortieren, die in einer Sackgasse liegen.
+ *
+ * Ein Kartenklick fängt sich gern auf einer Parkplatzgasse oder einem für Autos
+ * gesperrten Parkweg. Die A*-Suche merkt das erst, nachdem sie das **ganze**
+ * übrige Netz abgesucht hat (gemessen: 1,7 s statt 40 ms). Ein paar Dutzend
+ * Schritte im Voraus verraten dasselbe in Mikrosekunden.
+ */
+function usable(graph: RouteGraph, cands: Snap[], profile: Profile): Snap[] {
+  if (cands.length < 2) return cands;
+  const open = cands.filter((c) => escapes(graph, c, profile));
+  // Führt keine heraus, bleibt es beim ursprünglichen Vorschlag — lieber ein
+  // Versuch zu viel als gar keiner.
+  return open.length ? open : cands;
+}
+
+/** Erreicht man von dieser Kante aus genug Knoten, um irgendwo hinzukommen? */
+function escapes(graph: RouteGraph, cand: Snap, profile: Profile): boolean {
+  const seen = new Set<number>([cand.nodeA, cand.nodeB]);
+  const queue = [cand.nodeA, cand.nodeB];
+  for (let head = 0; head < queue.length && seen.size < ESCAPE_NODES; head++) {
+    const node = queue[head]!;
+    for (let i = graph.arcOff[node]!; i < graph.arcOff[node + 1]!; i++) {
+      const edge = graph.arcEdge[i]!;
+      const flags = graph.edgeFlags[edge]!;
+      // Richtung bleibt außen vor: eine Einbahnstraße ist keine Sackgasse.
+      if (!profile.allowed(flags, true) && !profile.allowed(flags, false)) continue;
+      const other = graph.edgeA[edge]! === node ? graph.edgeB[edge]! : graph.edgeA[edge]!;
+      if (seen.has(other)) continue;
+      seen.add(other);
+      queue.push(other);
+    }
+  }
+  return seen.size >= ESCAPE_NODES;
+}
+
+/** Reihenfolge der Versuche (Index der Anfangs-/Endkante). */
+const SNAP_TRIES: [number, number][] = [
+  [0, 0],
+  [1, 0],
+  [0, 1],
+  [1, 1],
+  [2, 0],
+  [0, 2],
+];
 
 /** Sucht einen Weg samt der üblichen Rückfallstufen. */
 function findLeg(

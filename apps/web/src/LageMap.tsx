@@ -794,6 +794,10 @@ interface Props {
   track: [number, number][];
   /** true, solange aufgezeichnet wird (dann kein Endpunkt). */
   trackLive: boolean;
+  /** Eingelesene Markierungen, die zu den eigenen dazukommen. */
+  addDraw: { features: DrawFeature[]; key: number } | null;
+  /** Ausschnitt, den die Karte zeigen soll ([west, süd, ost, nord]). */
+  fitBbox: { bbox: [number, number, number, number]; key: number } | null;
   /** Polarlicht-Gitter und Waldbrandgefahr als Flächen. */
   aurora: AuroraGrid | null;
   fire: FireDangerGrid | null;
@@ -819,11 +823,19 @@ interface Props {
   navPosition: Coords | null;
   navBearing: number | null;
   /** Punkt aus dem Kartenmenü als Ziel bzw. Start übernehmen. */
-  onPickPoint: (point: Coords, kind: 'destination' | 'origin' | 'place' | 'radio', label?: string) => void;
+  onPickPoint: (
+    point: Coords,
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio',
+    label?: string,
+  ) => void;
   /** Großkreis der bewerteten Funkstrecke ([lon, lat]). */
   hfPath: [number, number][] | null;
   /** Der nächste Klick setzt den Standort (Modus aus dem Standort-Menü). */
   pickingLocation: boolean;
+  /** Nächster Kartenklick setzt ein Zwischenziel. */
+  pickingVia: boolean;
+  /** Wird gerade eine Route geplant? Dann bietet das Punktmenü Zwischenziele an. */
+  routeActive: boolean;
   onViewport: (b: Bbox) => void;
   /** Meldet die aktiven Live-Ebenen — diese Daten werden erst dann geladen. */
   onLayersChange: (active: ActiveLayers) => void;
@@ -952,6 +964,8 @@ export function LageMap({
   rescue,
   track,
   trackLive,
+  addDraw,
+  fitBbox,
   aurora,
   fire,
   flyTo,
@@ -968,6 +982,8 @@ export function LageMap({
   navBearing,
   onPickPoint,
   pickingLocation,
+  pickingVia,
+  routeActive,
   onViewport,
   onLayersChange,
   hiddenLayers,
@@ -1000,6 +1016,8 @@ export function LageMap({
   stopsRef.current = stops;
   const pickingRef = useRef(pickingLocation);
   pickingRef.current = pickingLocation;
+  const pickingViaRef = useRef(pickingVia);
+  pickingViaRef.current = pickingVia;
   const routeMarkers = useRef<Marker[]>([]);
   const navMarker = useRef<Marker | null>(null);
   const [pointMenu, setPointMenu] = useState<{
@@ -1180,6 +1198,10 @@ export function LageMap({
       // Standort setzen hat Vorrang vor allem anderen.
       if (pickingRef.current) {
         onPickPointRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng }, 'place');
+        return;
+      }
+      if (pickingViaRef.current) {
+        onPickPointRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng }, 'via');
         return;
       }
       const mode = drawModeRef.current;
@@ -2883,6 +2905,30 @@ export function LageMap({
     map.flyTo({ center: [flyTo.lon, flyTo.lat], zoom: flyTo.zoom ?? 9, speed: 1.4 });
   }, [flyTo, ready]);
 
+  // Eingelesene Markierungen dazunehmen (der Import läuft außerhalb der Karte).
+  useEffect(() => {
+    if (!addDraw?.features.length) return;
+    setDrawFeatures((prev) => [...prev, ...addDraw.features]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addDraw?.key]);
+
+  // Auf einen ganzen Ausschnitt zoomen (eingelesene Datei).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !fitBbox) return;
+    const [west, south, east, north] = fitBbox.bbox;
+    map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      // Ein einzelner Punkt hat keine Ausdehnung — maxZoom hält den Anflug
+      // dann in einer Höhe, in der die Umgebung noch erkennbar ist.
+      { padding: { top: 60, bottom: 120, left: 50, right: 50 }, duration: 900, maxZoom: 15 },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitBbox?.key, ready]);
+
   // Großkreis der bewerteten Funkstrecke.
   useEffect(() => {
     const map = mapRef.current;
@@ -3099,6 +3145,17 @@ export function LageMap({
     };
     if (route) {
       add(route.snappedStart, 'mk-start', 'Start');
+      // Zwischenziele durchnummeriert, damit Karte und Liste dieselbe
+      // Reihenfolge zeigen.
+      (route.waypoints ?? []).forEach((w, i) => {
+        const el = document.createElement('div');
+        el.className = 'mk-route mk-via';
+        el.textContent = String(i + 1);
+        el.title = `Zwischenziel ${i + 1}`;
+        routeMarkers.current.push(
+          new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([w.lon, w.lat]).addTo(map),
+        );
+      });
       add(route.snappedEnd, 'mk-end', 'Ziel');
     } else if (pin) {
       add({ lat: pin.lat, lon: pin.lon }, 'mk-pin', pin.name);
@@ -3407,6 +3464,17 @@ export function LageMap({
             >
               Route hierher
             </button>
+            {routeActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  onPickPoint(pointMenu.lngLat, 'via', pointMenu.label ?? undefined);
+                  setPointMenu(null);
+                }}
+              >
+                Als Zwischenziel
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

@@ -89,5 +89,5 @@ export const routeOffline = (
   from: Coords,
   to: Coords,
   profile: RouteProfile,
-  options: { alternatives?: number; avoidMotorways?: boolean } = {},
+  options: { alternatives?: number; avoidMotorways?: boolean; via?: Coords[] } = {},
 ) => call<RouteOutcome>({ type: 'route', codes, from, to, profile, ...options });

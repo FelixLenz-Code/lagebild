@@ -18,6 +18,15 @@ import type { Place } from './places.js';
 interface Props {
   origin: Place | null;
   destination: Place;
+  /** Zwischenziele in Fahrreihenfolge. */
+  via: Place[];
+  onRemoveVia: (index: number) => void;
+  /** Ein Zwischenziel um `delta` Plätze verschieben. */
+  onMoveVia: (index: number, delta: number) => void;
+  /** Der nächste Kartenklick soll ein Zwischenziel setzen. */
+  pickingVia: boolean;
+  onPickVia: () => void;
+  onCancelPickVia: () => void;
   profile: PlanMode;
   /** ÖPNV: gefundene Verbindungen und Auswahl. */
   itineraries: TransitItinerary[];
@@ -69,6 +78,13 @@ export const formatDuration = (s: number): string => {
   return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min`;
 };
 
+/** Name des Zwischenziels, zu dem die Anweisung an Stelle `index` gehört. */
+function viaName(via: Place[], steps: RouteStep[], index: number): string | null {
+  let seen = 0;
+  for (let i = 0; i <= index; i++) if (steps[i]!.type === 'waypoint') seen++;
+  return via[seen - 1]?.name ?? null;
+}
+
 const arrival = (s: number): string =>
   new Date(Date.now() + s * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
@@ -85,6 +101,8 @@ export function ManeuverIcon({ type, modifier, size = 22 }: { type: ManeuverType
     uturn: <path d="M8 21V10a4 4 0 0 1 8 0v6M12 12l4 4 4-4" />,
     arrive: <path d="M12 21s-6-5.7-6-10a6 6 0 1 1 12 0c0 4.3-6 10-6 10Z M12 11h.01" />,
     depart: <circle cx="12" cy="12" r="6" />,
+    // Zwischenziel: Fähnchen — erreicht, aber es geht weiter.
+    waypoint: <path d="M7 21V4M7 4h10l-2.5 3.5L17 11H7" />,
     roundabout: (
       <>
         <circle cx="12" cy="11" r="4.5" />
@@ -94,7 +112,7 @@ export function ManeuverIcon({ type, modifier, size = 22 }: { type: ManeuverType
     merge: <path d="M12 21V9M12 9 7 4M12 9l5-5" />,
   };
   const key =
-    type === 'arrive' || type === 'depart' || type === 'roundabout' || type === 'merge'
+    type === 'arrive' || type === 'depart' || type === 'roundabout' || type === 'merge' || type === 'waypoint'
       ? type
       : (modifier ?? 'straight');
   return (
@@ -221,10 +239,73 @@ export function RoutePanel(props: Props) {
             </svg>
           </button>
         </div>
+        {props.via.map((v, i) => (
+          <div className="rp-point rp-via" key={`${v.lat},${v.lon},${i}`}>
+            <i className="dot via">{i + 1}</i>
+            <span>{v.name}</span>
+            <span className="rp-viaops">
+              <button
+                type="button"
+                className="rp-chip icon"
+                onClick={() => props.onMoveVia(i, -1)}
+                disabled={i === 0}
+                title="Nach oben"
+                aria-label={`Zwischenziel ${i + 1} nach oben`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 19V5M6 11l6-6 6 6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="rp-chip icon"
+                onClick={() => props.onMoveVia(i, 1)}
+                disabled={i === props.via.length - 1}
+                title="Nach unten"
+                aria-label={`Zwischenziel ${i + 1} nach unten`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M6 13l6 6 6-6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="rp-chip icon"
+                onClick={() => props.onRemoveVia(i)}
+                title="Zwischenziel entfernen"
+                aria-label={`Zwischenziel ${i + 1} entfernen`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </span>
+          </div>
+        ))}
         <div className="rp-point">
           <i className="dot end" />
           <span>{props.destination.name}</span>
         </div>
+        {props.profile !== 'transit' && (
+          <div className="rp-point rp-addvia">
+            <button
+              type="button"
+              className={`rp-chip${props.pickingVia ? ' is-on' : ''}`}
+              onClick={props.onPickVia}
+              aria-pressed={props.pickingVia}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              {props.pickingVia ? 'Auf die Karte tippen …' : 'Zwischenziel'}
+            </button>
+            {props.pickingVia && (
+              <button type="button" className="btn-quiet" onClick={props.onCancelPickVia}>
+                Abbrechen
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {props.profile === 'transit' ? (
@@ -284,6 +365,21 @@ export function RoutePanel(props: Props) {
               Autobahn meiden
             </label>
           </div>
+          {route.legs && route.legs.length > 1 && (
+            <ol className="rp-legs">
+              {route.legs.map((leg, i) => (
+                <li key={i}>
+                  <span className="rp-leg-to">
+                    {i === route.legs!.length - 1 ? 'zum Ziel' : `zum Zwischenziel ${i + 1}`}
+                  </span>
+                  <span className="tr-meta mono">
+                    {formatDistance(leg.distanceM)} · {formatDuration(leg.durationS)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+
           <div className="rp-actions">
             <button type="button" className="btn-primary" onClick={props.onStartNav}>
               Navigation starten
@@ -299,7 +395,13 @@ export function RoutePanel(props: Props) {
                   <span className="st-ico">
                     <ManeuverIcon type={s.type} modifier={s.modifier} size={18} />
                   </span>
-                  <span className="st-text">{s.text}</span>
+                  {/* Der Router kennt nur die Nummer des Zwischenziels — den
+                      Namen kann erst die Liste dazusetzen. */}
+                  <span className="st-text">
+                    {s.type === 'waypoint'
+                      ? `${s.text}${viaName(props.via, route.steps, i) ? `: ${viaName(props.via, route.steps, i)}` : ''}`
+                      : s.text}
+                  </span>
                   <span className="st-dist">{s.distanceM >= 1 ? formatDistance(s.distanceM) : ''}</span>
                 </li>
               ))}

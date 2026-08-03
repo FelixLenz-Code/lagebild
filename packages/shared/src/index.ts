@@ -806,6 +806,8 @@ export type ManeuverType =
   | 'roundabout'
   | 'merge'
   | 'fork'
+  /** Zwischenziel erreicht — die Fahrt geht danach weiter. */
+  | 'waypoint'
   | 'arrive';
 
 /** Richtung einer Fahranweisung. */
@@ -845,7 +847,13 @@ export interface RouteStep {
  * bedeuten: Der Punkt liegt nicht im gespeicherten Straßennetz — dann fehlt
  * die Region, nicht die Verbindung.
  */
-export type RouteStatus = 'ok' | 'start-off-grid' | 'end-off-grid' | 'no-path';
+export type RouteStatus =
+  | 'ok'
+  | 'start-off-grid'
+  | 'end-off-grid'
+  /** Ein Zwischenziel liegt nicht im gespeicherten Netz. */
+  | 'via-off-grid'
+  | 'no-path';
 
 /** Antwort der Routenberechnung inklusive Begründung. */
 export interface RouteOutcome {
@@ -857,6 +865,18 @@ export interface RouteOutcome {
   /** Abstand der Eingabepunkte zum nächsten Weg (Meter). */
   startOffRoadM: number | null;
   endOffRoadM: number | null;
+  /** Bei `via-off-grid`: das wievielte Zwischenziel (0-basiert) klemmt. */
+  offGridVia?: number;
+}
+
+/** Ein Abschnitt zwischen zwei aufeinanderfolgenden Zielen. */
+export interface RouteLeg {
+  distanceM: number;
+  durationS: number;
+  /** Erste Anweisung des Abschnitts. */
+  stepIndex: number;
+  /** Erster Geometriepunkt des Abschnitts. */
+  coordIndex: number;
 }
 
 /** Ergebnis einer Routenberechnung. */
@@ -870,6 +890,10 @@ export interface RouteResult {
   /** Tatsächlich benutzte Start-/Zielpunkte auf dem Straßennetz. */
   snappedStart: Coords;
   snappedEnd: Coords;
+  /** Angefahrene Zwischenziele auf dem Straßennetz (leer ohne Zwischenziele). */
+  waypoints?: Coords[];
+  /** Abschnitte zwischen den Zielen — nur gesetzt, wenn es Zwischenziele gibt. */
+  legs?: RouteLeg[];
 }
 
 /** Amtlicher Gemeindeschlüssel → die ersten zwei Ziffern kennzeichnen das Bundesland. */

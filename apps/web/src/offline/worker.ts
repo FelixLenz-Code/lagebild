@@ -11,7 +11,7 @@ import type { Coords, RouteProfile } from '@lagebild/shared';
 import { getOfflineFile } from '../offlineMaps.js';
 import { Container, HEADER_PROBE_BYTES, parseHeader } from './container.js';
 import { RouteGraph, mergeGraphs } from './graph.js';
-import { routeDetailed } from './router.js';
+import { routeVia } from './router.js';
 import { SearchIndex } from './search.js';
 
 export type WorkerRequest =
@@ -40,6 +40,8 @@ export type WorkerRequest =
       codes: string[];
       from: Coords;
       to: Coords;
+      /** Zwischenziele in der gewünschten Reihenfolge. */
+      via?: Coords[];
       profile: RouteProfile;
       alternatives?: number;
       avoidMotorways?: boolean;
@@ -138,7 +140,7 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
     }
     case 'route': {
       const g = await loadRoute(msg.codes);
-      return routeDetailed(g, msg.from, msg.to, msg.profile, {
+      return routeVia(g, [msg.from, ...(msg.via ?? []), msg.to], msg.profile, {
         alternatives: msg.alternatives,
         avoidMotorways: msg.avoidMotorways,
       });

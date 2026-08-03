@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Coords } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
+import { ImportBox } from './ImportBox.js';
+import type { ImportResult } from './importFiles.js';
 import {
   downloadGpx,
   loadTracks,
@@ -69,6 +71,7 @@ export function useTrackRecorder() {
       distanceM: Math.round(trackLength(captured)),
       startedAt: captured[0]!.t,
       endedAt: captured[captured.length - 1]!.t,
+      source: 'record',
     };
     setTracks((prev) => [...prev, track]);
     return track;
@@ -107,17 +110,22 @@ interface Props {
   /** Zum Startpunkt einer Spur zurückführen. */
   onBackToStart: (point: Coords, name: string) => void;
   shownId: string | null;
+  /** Eingelesene Datei übernehmen. */
+  onImport: (result: ImportResult) => void;
+  /** Datei, die auf das Fenster gezogen wurde. */
+  droppedFile?: File | null;
+  onFileHandled?: () => void;
   onClose: () => void;
 }
 
-/** Übersicht der Spuren mit Aufzeichnung, Anzeige und Ausgabe als GPX. */
+/** Übersicht der Spuren mit Aufzeichnung, Import, Anzeige und Ausgabe als GPX. */
 export function TrackPanel(props: Props) {
   const live = props.live;
   const liveDistance = live.length > 1 ? trackLength(live) : 0;
 
   return (
     <Sheet
-      title="Spur aufzeichnen"
+      title="Spuren"
       meta={props.recording ? 'Aufzeichnung läuft' : `${props.tracks.length} gespeichert`}
       onClose={props.onClose}
     >
@@ -150,6 +158,15 @@ export function TrackPanel(props: Props) {
         )}
       </div>
 
+      <div className="sect-label" style={{ marginTop: 18 }}>
+        Datei einlesen
+      </div>
+      <ImportBox
+        onCommit={props.onImport}
+        file={props.droppedFile ?? null}
+        onFileHandled={props.onFileHandled}
+      />
+
       {props.tracks.length > 0 && (
         <>
           <div className="sect-label" style={{ marginTop: 18 }}>
@@ -161,8 +178,12 @@ export function TrackPanel(props: Props) {
                 <div className="tr-head">
                   <b>{t.name}</b>
                   <span className="tr-meta mono">
-                    {km(t.distanceM)} · {duration(t.startedAt, t.endedAt)} ·{' '}
-                    {new Date(t.startedAt).toLocaleDateString('de-DE')}
+                    {km(t.distanceM)}
+                    {/* Eingelesene Spuren haben oft keine Zeitstempel — dann
+                        stünde hier sonst der 1.1.1970. */}
+                    {t.startedAt > 0 && ` · ${duration(t.startedAt, t.endedAt)}`}
+                    {t.startedAt > 0 && ` · ${new Date(t.startedAt).toLocaleDateString('de-DE')}`}
+                    {t.source === 'import' && ` · aus ${t.origin ?? 'Datei'}`}
                   </span>
                 </div>
                 <div className="tr-actions">
