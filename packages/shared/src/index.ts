@@ -952,3 +952,38 @@ export const FEDERAL_STATES: readonly FederalState[] = [
   { code: '15', name: 'Sachsen-Anhalt' },
   { code: '16', name: 'Thüringen' },
 ] as const;
+
+/* ------------------------------------------------------------------ */
+/* Lawinenlage (EAWS)                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Europäische Lawinengefahrenskala 1–5. */
+export type AvalancheDanger = 1 | 2 | 3 | 4 | 5;
+
+/** Lage einer Region, wie sie die Karte braucht. */
+export interface AvalancheRegion {
+  /** EAWS-Kennung, z. B. `DE-BY-12`. */
+  id: string;
+  /** Höchste Stufe der Region (für Farbe und Sortierung). */
+  danger: AvalancheDanger;
+  /** Stufe unterhalb bzw. oberhalb der Höhengrenze, falls geteilt. */
+  dangerBelow?: AvalancheDanger;
+  dangerAbove?: AvalancheDanger;
+  /** Höhengrenze im Klartext („Waldgrenze", „1800 m"). */
+  boundary?: string;
+  /** Lawinenprobleme im Klartext. */
+  problems: string[];
+  /** Kurzfassung des Berichts. */
+  text?: string;
+  /** Wer den Bericht herausgibt. */
+  source: string;
+  validUntil: string | null;
+}
+
+export interface AvalancheReport {
+  /** Tag, für den die Berichte gelten (ISO-Datum). */
+  day: string;
+  regions: AvalancheRegion[];
+  /** true, wenn außerhalb der Saison nichts veröffentlicht wird. */
+  offSeason: boolean;
+}

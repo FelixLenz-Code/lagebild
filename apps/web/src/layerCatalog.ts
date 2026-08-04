@@ -37,7 +37,8 @@ export type LayerId =
   | 'draw'
   | 'terrain'
   | 'trails'
-  | 'contours';
+  | 'contours'
+  | 'avalanche';
 
 /** Zusätzlich zu den Ebenen: eingerückte Anzeigeoptionen. */
 export type LayerRowId = LayerId | 'wind-labels';
@@ -91,6 +92,7 @@ export const LAYER_CATALOG: LayerInfo[] = [
   // Lage
   { id: 'emergency', label: 'Notfallpunkte', color: '#a92318', group: 'Lage', hint: 'Klinik, Apotheke, Polizei, Feuerwehr — offline', source: 'osm' },
   { id: 'rescue', label: 'Rettungspunkte', color: '#1f8a4c', group: 'Lage', hint: 'nummerierte Schilder für den Notruf · ab Zoom 11', source: 'osm-overpass' },
+  { id: 'avalanche', label: 'Lawinenlage', color: 'linear-gradient(90deg,#ccff66,#ffff00,#ff9900,#ff0000)', group: 'Gefahren', hint: 'Alpen und Bayern · nur in der Saison', source: 'eaws' },
   { id: 'quakes', label: 'Erdbeben', color: '#8a4b1d', group: 'Lage', hint: 'letzte Woche, ab Stärke 2,5', source: 'usgs' },
   { id: 'news', label: 'Nachrichten', color: '#6a7580', group: 'Lage', hint: 'regionale Meldungen mit Ortsbezug', source: 'tagesschau' },
   // Startet als einzige Ebene AN: sie zeigt, was der Nutzer selbst angelegt

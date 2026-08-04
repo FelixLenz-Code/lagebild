@@ -32,6 +32,7 @@ import { pollenRoute } from './routes/pollen.js';
 import { restRoute } from './routes/rest.js';
 import { webcamsRoute } from './routes/webcams.js';
 import { rescueRoute } from './routes/rescue.js';
+import { avalancheRoute } from './routes/avalanche.js';
 import { authRoute, requireAuth } from './routes/auth.js';
 import { authRequired } from './lib/auth.js';
 
@@ -94,6 +95,7 @@ app.route('/api/pollen', pollenRoute);
 app.route('/api/rest', restRoute);
 app.route('/api/webcams', webcamsRoute);
 app.route('/api/rescue', rescueRoute);
+app.route('/api/avalanche', avalancheRoute);
 // Offline-PMTiles pro Bundesland ausliefern (Download in den OPFS des Browsers).
 app.use(
   '/api/maps/*',

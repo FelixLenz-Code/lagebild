@@ -211,6 +211,27 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 }
 
+/** Popup einer Lawinenregion. */
+const DANGER_DE = ['', 'gering', 'mäßig', 'erheblich', 'groß', 'sehr groß'];
+function avalanchePopupHtml(p: Record<string, string>): string {
+  const level = Number(p.danger) || 0;
+  const color = ['#ccc', '#ccff66', '#ffff00', '#ff9900', '#ff0000', '#8b0000'][level] ?? '#ccc';
+  const split =
+    p.dangerBelow && p.dangerAbove && p.dangerBelow !== p.dangerAbove
+      ? `<div class="wp-meta">unterhalb ${DANGER_DE[Number(p.dangerBelow)]} · oberhalb ${DANGER_DE[Number(p.dangerAbove)]}${p.boundary ? ` (${esc(p.boundary)})` : ''}</div>`
+      : '';
+  return (
+    `<div class="warn-popup">` +
+    `<span class="wp-sev" style="background:${color};color:#1f2933">Stufe ${level} — ${DANGER_DE[level] ?? ''}</span>` +
+    `<b>${esc(p.id ?? '')}</b>` +
+    split +
+    (p.problems ? `<div class="wp-meta">Problem: ${esc(p.problems)}</div>` : '') +
+    (p.text ? `<p class="wp-desc">${esc(p.text)}</p>` : '') +
+    `<div class="wp-meta">${esc(p.source ?? '')}${p.validUntil ? ` · gültig bis ${esc(formatDateTime(p.validUntil))}` : ''}</div>` +
+    `</div>`
+  );
+}
+
 function trafficPopupHtml(t: TrafficIncident): string {
   const color = t.kind === 'closure' ? '#a92318' : t.kind === 'jam' ? '#c96f0f' : '#b58a10';
   return (
@@ -853,6 +874,8 @@ interface Props {
   trackLive: boolean;
   /** Beobachtete Orte — liegen in der Ebene „Meine Markierungen". */
   watchedPoints: WatchedPoint[];
+  /** Lawinenlage als fertige Flächen (Geometrie + Stufe schon zusammengeführt). */
+  avalanche: GeoJSON.FeatureCollection | null;
   /** Höhenlinien im Ausschnitt. */
   contours: ContourLine[];
   /** Wander- und Radwege im Ausschnitt. */
@@ -959,6 +982,8 @@ export interface ActiveLayers {
   trails: boolean;
   /** Höhenlinien aus dem Geländepaket. */
   contours: boolean;
+  /** Lawinenlage (EAWS). */
+  avalanche: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
   muf: boolean;
   /** Verortete Nachrichten. */
@@ -1019,6 +1044,7 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   terrain: false,
   trails: false,
   contours: false,
+  avalanche: false,
 };
 
 /**
@@ -1068,6 +1094,7 @@ export function LageMap({
   fitBbox,
   terrainImage,
   watchedPoints,
+  avalanche,
   contours,
   trails,
   trailsHint,
@@ -1174,6 +1201,7 @@ export function LageMap({
     terrain: showTerrain,
     trails: showTrails,
     contours: showContours,
+    avalanche: showAvalanche,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -1230,12 +1258,13 @@ export function LageMap({
         terrain: showTerrain,
         trails: showTrails,
         contours: showContours,
+        avalanche: showAvalanche,
         aprsTargets,
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
-      showAurora, showFire, showTerrain, showTrails, showContours, showRest, showWebcams, showRescue, aprsTargets,
+      showAurora, showFire, showTerrain, showTrails, showContours, showAvalanche, showRest, showWebcams, showRescue, aprsTargets,
       onLayersChange,
     ],
   );
@@ -1513,6 +1542,61 @@ export function LageMap({
       below,
     );
   }, [showTerrain, terrainImage?.key, ready, styleEpoch]);
+
+  /* ---------- Lawinenlage ---------- */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('avalanche')) return;
+    map.addSource('avalanche', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    // Farben der Europäischen Lawinengefahrenskala — sie sind genormt, und
+    // wer sie einmal auf einer Lawinenkarte gesehen hat, liest sie sofort.
+    map.addLayer(
+      {
+        id: 'avalanche-fill',
+        type: 'fill',
+        source: 'avalanche',
+        paint: {
+          'fill-color': [
+            'match',
+            ['get', 'danger'],
+            1, '#ccff66',
+            2, '#ffff00',
+            3, '#ff9900',
+            4, '#ff0000',
+            5, '#8b0000',
+            '#cccccc',
+          ],
+          'fill-opacity': 0.42,
+        },
+      },
+      map.getLayer('warnings-fill') ? 'warnings-fill' : undefined,
+    );
+    map.addLayer({
+      id: 'avalanche-line',
+      type: 'line',
+      source: 'avalanche',
+      paint: { 'line-color': '#5a4a2a', 'line-width': 0.8, 'line-opacity': 0.7 },
+    });
+
+    map.on('click', 'avalanche-fill', (e) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const f = e.features?.[0];
+      if (!f) return;
+      const p = f.properties as Record<string, string>;
+      new maplibregl.Popup({ maxWidth: '320px' })
+        .setLngLat(e.lngLat)
+        .setHTML(avalanchePopupHtml(p))
+        .addTo(map);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource('avalanche') as GeoJSONSource | undefined;
+    src?.setData(showAvalanche && avalanche ? avalanche : { type: 'FeatureCollection', features: [] });
+  }, [avalanche, showAvalanche, ready, styleEpoch]);
 
   /* ---------- Höhenlinien ---------- */
   useEffect(() => {

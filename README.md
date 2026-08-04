@@ -137,6 +137,7 @@ Ebenen und „Alle aus"; das Einzeichnen-Menü liegt als eigener Knopf daneben:
 | Notfallpunkte | Offline-Suchindex (OSM) | Klinik, Apotheke, Polizei, Feuerwehr — ohne Netz |
 | Rettungspunkte | OpenStreetMap (Overpass) | nummerierte Schilder für den Notruf, ab Zoom 11 |
 | Blitze | Blitzortung.org | Entladungen der letzten 30 Minuten |
+| Lawinenlage | EAWS-Warndienste | Alpen und Bayern, nur in der Saison |
 | Erdbeben | USGS | letzte Woche, ab Stärke 2,5 |
 | Waldbrandgefahr | DWD | Stufe 1–5, Deutschland |
 | Polarlicht | NOAA SWPC (OVATION) | Wahrscheinlichkeit weltweit |
@@ -1124,6 +1125,39 @@ eine je Browser), baut sie mit wachsendem Abstand wieder auf, hält die Treffer
 nur 30 Minuten im Arbeitsspeicher (keine Archivierung) und nennt die Quelle in
 Popup, Ebenen-Menü und Quellenliste. Ohne eingehende Blitze erscheint die Ebene
 gar nicht erst im Menü (`features.lightning` in `/api/health`).
+
+## Lawinenlage (EAWS)
+
+Die Ebene **„Lawinenlage"** zeigt die Gefahrenstufen der Warndienste in
+Deutschland, Österreich, der Schweiz, Italien, Frankreich und Slowenien — in
+den Farben der Europäischen Lawinengefahrenskala. Ein Tipp auf eine Region
+nennt die Stufe **getrennt nach Höhe** („unterhalb gering, oberhalb mäßig ab
+der Waldgrenze"), das Lawinenproblem, die Kurzfassung des Berichts und den
+Warndienst, der ihn verantwortet.
+
+Quelle sind die offenen CAAML-Berichte des Europäischen
+Lawinenwarndienst-Verbunds unter `static.avalanche.report`, ein Verzeichnis je
+Tag. Gemessen an einem Wintertag: **509 Regionen** aus sechs Ländern.
+
+**Zwei Abrufe mit sehr unterschiedlicher Haltbarkeit** — das ist der Kern:
+
+| Abruf | Wann neu | Warum |
+| --- | --- | --- |
+| `/api/avalanche` (Stufen) | Neuladen, „Aktualisieren", halbstündlich | die Warndienste veröffentlichen morgens und am späten Nachmittag |
+| `/api/avalanche/regions` (Flächen) | einmal, dann ein Jahr im Zwischenspeicher | Grenzen ändern sich höchstens zur neuen Saison |
+
+Ohne diese Trennung müsste die App für eine geänderte Gefahrenstufe jedes Mal
+1,3 MB Geometrie mitladen.
+
+Die Flächen entstehen mit `scripts/build-eaws-regions.mjs`: Aus 15,7 MB
+Europakarte (751 Mikroregionen) werden 640 Regionen des Alpenbogens
+herausgefiltert und auf rund 400 m ausgedünnt — **1,29 MB**. Für Regionen
+dieser Größe ist das reichlich genau.
+
+**Außerhalb der Saison** (etwa Mai bis November) veröffentlicht niemand etwas.
+Die Route antwortet dann mit `offSeason: true` und einer leeren Liste, nicht mit
+einem Fehler. Zum Prüfen im Sommer lässt sich mit `EAWS_DAY=2026-02-01` ein
+Wintertag erzwingen — das Archiv reicht bis 2021 zurück.
 
 ## Rettungspunkte
 

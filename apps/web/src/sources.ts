@@ -92,6 +92,14 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         terms: 'GeoNutzV, einmal täglich erneuert',
       },
       {
+        key: 'eaws',
+        name: 'EAWS — Europäischer Lawinenwarndienst-Verbund',
+        use: 'Lawinenlageberichte der Warndienste in Deutschland, Österreich, der Schweiz, Italien, Frankreich und Slowenien',
+        url: 'https://www.avalanches.org/',
+        terms:
+          'offene Berichte im CAAML-Format; die Verantwortung für den Inhalt liegt beim jeweiligen Warndienst — die App nennt ihn bei jeder Region',
+      },
+      {
         key: 'usgs',
         name: 'USGS Earthquake Hazards Program',
         use: 'Erdbeben der letzten Woche',

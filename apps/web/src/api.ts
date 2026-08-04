@@ -37,6 +37,8 @@ import type {
   AprsStation,
   WindField,
   Coords,
+  AvalancheReport,
+  GeoJsonGeometry,
 } from '@lagebild/shared';
 import { reportUnauthorized } from './auth.js';
 
@@ -188,6 +190,17 @@ export interface Health {
   features?: { flow?: boolean; ais?: boolean; aprs?: boolean; lightning?: boolean };
 }
 export const fetchHealth = (): Promise<Health> => getJson(`/api/health`);
+
+/** Lawinenlage (EAWS) — klein und oft neu, deshalb getrennt von den Flächen. */
+export const fetchAvalanche = (): Promise<ApiEnvelope<AvalancheReport>> => getJson(`/api/avalanche`);
+
+/**
+ * Die Regionsflächen. Eigener Abruf, weil sie 1,3 MB wiegen und sich
+ * höchstens einmal im Jahr ändern — der Browser hält sie ein Jahr lang.
+ */
+export const fetchAvalancheRegions = (): Promise<{
+  regions: { id: string; geometry: GeoJsonGeometry }[];
+}> => getJson(`/api/avalanche/regions`);
 
 /** Auf dem Server bereitliegende Offline-Pakete je Bundesland (Bytes). */
 export interface MapsList {

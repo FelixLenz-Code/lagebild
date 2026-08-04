@@ -13,8 +13,9 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, fetchAvalanche, fetchAvalancheRegions, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
+import { withCache } from './cache.js';
 import { LageMap, type ActiveLayers, type MapApi } from './LageMap.js';
 import { ShareSheet } from './ShareSheet.js';
 import { EmergencySheet } from './EmergencySheet.js';
@@ -222,6 +223,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     terrain: false,
     trails: false,
     contours: false,
+    avalanche: false,
     aprsTargets: [],
   });
   // Wird jetzt **immer** geladen, nicht mehr nur bei eingeschalteter
@@ -964,6 +966,64 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownTrack, offlineFiles]);
 
+  /* ---------- Lawinenlage ---------- */
+  /**
+   * Zwei Abrufe mit sehr unterschiedlicher Haltbarkeit:
+   *
+   * Die **Lage** hängt am `refreshTick` und erneuert sich damit beim Neuladen,
+   * beim Knopf „Aktualisieren" und im selbsttätigen Takt — halbstündlich, denn
+   * öfter veröffentlichen die Warndienste nicht. Die **Flächen** holt die App
+   * einmal; sie ändern sich höchstens zur neuen Saison und liegen im
+   * Zwischenspeicher, damit sie auch ohne Netz da sind.
+   */
+  const avalanche = useApi('avalanche', () => fetchAvalanche(), [refreshTick], {
+    enabled: layers.avalanche,
+    refreshMs: 1_800_000,
+  });
+  const [avalancheRegions, setAvalancheRegions] = useState<Map<string, GeoJSON.Geometry> | null>(null);
+  useEffect(() => {
+    if (!layers.avalanche || avalancheRegions) return;
+    let cancelled = false;
+    withCache('avalanche-regions', () => fetchAvalancheRegions())
+      .then((r) => {
+        if (cancelled) return;
+        setAvalancheRegions(
+          new Map(r.value.regions.map((x) => [x.id, x.geometry as unknown as GeoJSON.Geometry])),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [layers.avalanche, avalancheRegions]);
+
+  /** Lage und Flächen zusammenführen — nur Regionen, für die es beides gibt. */
+  const avalancheFeatures = useMemo(() => {
+    const report = avalanche.data?.data;
+    if (!report || !avalancheRegions) return null;
+    const features: GeoJSON.Feature[] = [];
+    for (const r of report.regions) {
+      const geometry = avalancheRegions.get(r.id);
+      if (!geometry) continue;
+      features.push({
+        type: 'Feature',
+        properties: {
+          id: r.id,
+          danger: r.danger,
+          dangerBelow: r.dangerBelow ?? null,
+          dangerAbove: r.dangerAbove ?? null,
+          boundary: r.boundary ?? null,
+          problems: r.problems.join(', '),
+          text: r.text ?? null,
+          source: r.source,
+          validUntil: r.validUntil,
+        },
+        geometry,
+      });
+    }
+    return { type: 'FeatureCollection' as const, features };
+  }, [avalanche.data, avalancheRegions]);
+
   /* ---------- Höhenlinien ---------- */
   const [contours, setContours] = useState<ContourLine[]>([]);
   useEffect(() => {
@@ -1494,6 +1554,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             terrainImage={terrainImage}
             trails={trails}
             contours={contours}
+            avalanche={avalancheFeatures}
             watchedPoints={watchedPoints}
             onMapApi={setMapApi}
             onShare={() => setShareOpen(true)}
