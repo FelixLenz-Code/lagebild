@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { TransitDeparture, TransitTrip } from '@lagebild/shared';
 import { fetchTrip } from './api.js';
-import { departureTime, kindOfProduct } from './format.js';
+import { departureTime, kindOfProduct, trackLabel } from './format.js';
 
 /**
  * Abfahrtstafel mit Fahrtverlauf: ein Tipp auf eine Abfahrt zeigt, wo der Bus
@@ -158,6 +158,11 @@ function TripView(props: {
               <li key={`${s.name}-${i}`} className={i === 0 ? 'is-here' : ''}>
                 <i />
                 <span className="ts-name">{s.name}</span>
+                {s.track && (
+                  <span className="tp-track">
+                    {trackLabel(departure.product)} {s.track}
+                  </span>
+                )}
                 <span className={`ts-time${s.cancelled ? ' cancelled' : s.delayMin ? ' late' : ''}`}>
                   {s.cancelled
                     ? 'entfällt'

@@ -1214,6 +1214,18 @@ svg { display: block; }
 .tp-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .tp-dir { font-size: .82rem; font-weight: 600; }
 .tp-detail { font-size: .76rem; color: var(--muted); }
+/* Ein- und Ausstieg: „ab"/„an", Haltestelle, Steig. Bewusst als Fließtext und
+   nicht als Flex-Zeile — lange Haltestellennamen brechen sonst die ganze
+   Zeile um, statt einfach weiterzulaufen. */
+.tp-stop { font-size: .79rem; line-height: 1.5; }
+.tp-stop i { color: var(--muted); font-style: normal; font-size: .74rem; margin-right: 5px; }
+.tp-stop b { font-weight: 600; }
+.tp-at { margin-left: 6px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Der Steig ist das, wonach man am Bahnhof sucht — deshalb abgesetzt. */
+.tp-track { display: inline-flex; align-items: baseline; gap: 5px; margin-left: 6px; padding: 1px 6px; border-radius: var(--r-sm); font-size: .74rem; font-weight: 650; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line-strong); white-space: nowrap; }
+.tp-track.is-changed { color: var(--sev2); border-color: var(--sev2); }
+.tp-track em { font-style: normal; font-weight: 500; text-decoration: line-through; opacity: .75; }
+
 .tp-legs li.is-walk .tp-when { color: var(--muted); font-weight: 600; }
 .tp-legs li.tp-end .tp-head b { font-size: .86rem; }
 

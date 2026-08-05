@@ -25,6 +25,8 @@ interface MotisPlace {
   departure?: string;
   scheduledArrival?: string;
   scheduledDeparture?: string;
+  track?: string;
+  scheduledTrack?: string;
   cancelled?: boolean;
 }
 
@@ -192,6 +194,7 @@ stopsRoute.get('/trip', async (c) => {
             ? Math.round((new Date(actual).getTime() - new Date(planned).getTime()) / 60000)
             : null,
         cancelled: Boolean(p.cancelled),
+        track: p.track ?? p.scheduledTrack ?? null,
       };
     };
 

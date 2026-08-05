@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { TransitItinerary, TransitLeg } from '@lagebild/shared';
-import { departureTime, kindOfProduct } from './format.js';
+import type { TransitItinerary, TransitLeg, TransitLegPlace } from '@lagebild/shared';
+import { departureTime, kindOfProduct, trackLabel } from './format.js';
 import { formatDistance, formatDuration } from './RoutePanel.js';
 
 interface Props {
@@ -24,6 +24,22 @@ function toLocalInput(iso: string | null): string {
   const d = iso ? new Date(iso) : new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Gleis bzw. Steig eines Abschnittsendes. Steht dort eine andere Nummer als im
+ * Fahrplan, wurde kurzfristig umgelegt — das gehört daneben, sonst steht man
+ * am falschen Bahnsteig.
+ */
+function Track({ place, mode }: { place: TransitLegPlace; mode: string }) {
+  if (!place.track) return null;
+  const changed = place.plannedTrack && place.plannedTrack !== place.track;
+  return (
+    <span className={`tp-track${changed ? ' is-changed' : ''}`}>
+      {trackLabel(mode)} {place.track}
+      {changed && <em>statt {place.plannedTrack}</em>}
+    </span>
+  );
 }
 
 /**
@@ -124,6 +140,10 @@ export function TransitPlan(props: Props) {
           {chosen.legs.map((leg, i) => {
             const walk = leg.mode === 'WALK';
             const kind = kindOfProduct(leg.product);
+            // Am Ende eines Fußwegs steht der Steig, an dem es weitergeht —
+            // benannt nach dem Verkehrsmittel, das dort abfährt, nicht nach dem
+            // Fußweg selbst.
+            const nextMode = chosen.legs[i + 1]?.mode ?? leg.mode;
             return (
               <li key={i} className={walk ? 'is-walk' : ''}>
                 <span className="tp-when">{hhmm(leg.departure)}</span>
@@ -140,13 +160,36 @@ export function TransitPlan(props: Props) {
                       </>
                     )}
                   </span>
-                  <span className="tp-detail">
-                    {walk
-                      ? `${formatDuration(leg.durationS)}${leg.distanceM ? ` · ${formatDistance(leg.distanceM)}` : ''} bis ${leg.to.name || 'zum Ziel'}`
-                      : `${leg.from.name} → ${leg.to.name}${
-                          leg.intermediateStops.length ? ` · ${leg.intermediateStops.length} Halte` : ''
-                        }`}
-                  </span>
+                  {walk ? (
+                    <span className="tp-detail">
+                      {formatDuration(leg.durationS)}
+                      {leg.distanceM ? ` · ${formatDistance(leg.distanceM)}` : ''} bis{' '}
+                      {leg.to.name || 'zum Ziel'}
+                      <Track place={leg.to} mode={nextMode} />
+                    </span>
+                  ) : (
+                    <>
+                      {/* Ein- und Ausstieg untereinander, jeweils mit Steig: Das
+                          ist die Angabe, nach der man am Bahnhof sucht. */}
+                      <span className="tp-stop">
+                        <i>ab</i>
+                        <b>{leg.from.name || 'Startpunkt'}</b>
+                        <Track place={leg.from} mode={leg.mode} />
+                      </span>
+                      <span className="tp-stop">
+                        <i>an</i>
+                        <b>{leg.to.name || 'Ziel'}</b>
+                        <Track place={leg.to} mode={leg.mode} />
+                        <span className="tp-at">{hhmm(leg.arrival)}</span>
+                      </span>
+                      {leg.intermediateStops.length > 0 && (
+                        <span className="tp-detail">
+                          {leg.intermediateStops.length}{' '}
+                          {leg.intermediateStops.length === 1 ? 'Halt' : 'Halte'} dazwischen
+                        </span>
+                      )}
+                    </>
+                  )}
                   {walk && leg.distanceM != null && leg.distanceM > 80 && (
                     <button type="button" className="rp-chip" onClick={() => props.onWalk(leg)}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

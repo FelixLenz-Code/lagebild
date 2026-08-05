@@ -120,6 +120,47 @@ export function kindOfProduct(product: string | null | undefined): string {
   }
 }
 
+/**
+ * Wie der Steig beim jeweiligen Verkehrsmittel heißt. Am Bahnhof hängt „Gleis"
+ * aus, am Busbahnhof „Steig", am Hafen „Anleger" — wer davorsteht, sucht genau
+ * dieses Wort, deshalb steht hier keine Einheitsbezeichnung.
+ *
+ * Angenommen wird beides: die MOTIS-Kennung (`HIGHSPEED_RAIL`) dort, wo sie
+ * vorliegt, und sonst die deutsche Bezeichnung aus `product`. Verwechseln kann
+ * man sie nicht — die eine ist durchgängig groß geschrieben.
+ */
+export function trackLabel(mode: string | null | undefined): string {
+  switch (mode) {
+    case 'Zug':
+    case 'Regionalzug':
+    case 'Fernzug':
+    case 'Nachtzug':
+    case 'S-Bahn':
+    case 'U-Bahn':
+      return 'Gleis';
+    case 'Fähre':
+      return 'Anleger';
+    case 'Flug':
+      return 'Gate';
+    case 'RAIL':
+    case 'REGIONAL_RAIL':
+    case 'REGIONAL_FAST_RAIL':
+    case 'LONG_DISTANCE':
+    case 'HIGHSPEED_RAIL':
+    case 'NIGHT_RAIL':
+    case 'SUBURBAN':
+    case 'SUBWAY':
+    case 'METRO':
+      return 'Gleis';
+    case 'FERRY':
+      return 'Anleger';
+    case 'AIRPLANE':
+      return 'Gate';
+    default:
+      return 'Steig';
+  }
+}
+
 export const APRS_KIND_DE: Record<string, string> = {
   station: 'APRS-Station',
   object: 'APRS-Objekt',

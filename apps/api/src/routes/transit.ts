@@ -4,6 +4,7 @@ import type {
   TransitDeparture,
   TransitItinerary,
   TransitLeg,
+  TransitLegPlace,
   TransitTripStop,
 } from '@lagebild/shared';
 import { readCoords } from '../lib/geo.js';
@@ -30,6 +31,9 @@ interface PlanPlace {
   departure?: string;
   scheduledArrival?: string;
   scheduledDeparture?: string;
+  /** Steig laut Echtzeitlage bzw. laut Fahrplan (MOTIS liefert beides). */
+  track?: string;
+  scheduledTrack?: string;
   cancelled?: boolean;
 }
 interface PlanLeg {
@@ -73,12 +77,24 @@ function toTripStop(p: PlanPlace): TransitTripStop {
     plannedWhen: planned,
     delayMin: minutesBetween(planned, actual),
     cancelled: Boolean(p.cancelled),
+    track: p.track ?? p.scheduledTrack ?? null,
   };
 }
 
 /** MOTIS nennt die Enden der Reise „START"/„END" — das ist kein Ortsname. */
 const placeName = (name: string | undefined): string =>
   !name || name === 'START' || name === 'END' ? '' : name;
+
+/** Ein Abschnittsende mit Steig. Ohne Halt (Straßenrand) bleibt er leer. */
+function toLegPlace(p: PlanPlace | undefined): TransitLegPlace {
+  return {
+    name: placeName(p?.name),
+    lat: p?.lat ?? 0,
+    lon: p?.lon ?? 0,
+    track: p?.track ?? p?.scheduledTrack ?? null,
+    plannedTrack: p?.scheduledTrack ?? null,
+  };
+}
 
 function toLeg(l: PlanLeg): TransitLeg {
   const walk = !l.mode || l.mode === 'WALK';
@@ -89,8 +105,8 @@ function toLeg(l: PlanLeg): TransitLeg {
     product: walk ? null : (MODE_DE[l.mode ?? ''] ?? null),
     line: walk ? null : l.displayName || l.routeShortName || l.tripShortName || null,
     headsign: l.headsign ?? l.routeLongName ?? null,
-    from: { name: placeName(l.from?.name), lat: l.from?.lat ?? 0, lon: l.from?.lon ?? 0 },
-    to: { name: placeName(l.to?.name), lat: l.to?.lat ?? 0, lon: l.to?.lon ?? 0 },
+    from: toLegPlace(l.from),
+    to: toLegPlace(l.to),
     departure: l.startTime ?? null,
     plannedDeparture: plannedDep,
     arrival: l.endTime ?? null,

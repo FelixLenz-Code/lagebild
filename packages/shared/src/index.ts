@@ -230,6 +230,8 @@ export interface TransitTripStop {
   plannedWhen: string | null;
   delayMin: number | null;
   cancelled: boolean;
+  /** Gleis bzw. Steig, soweit die Fahrplandaten es hergeben. */
+  track: string | null;
 }
 
 /** Der Laufweg einer Fahrt: alle Halte von Start bis Ziel. */
@@ -243,6 +245,20 @@ export interface TransitTrip {
   geometry: [number, number][];
 }
 
+/**
+ * Ein Ende eines Abschnitts. Neben dem Ort steht hier der **Steig**: die
+ * Angabe, nach der man am Bahnhof sucht. `track` ist der aktuelle Stand,
+ * `plannedTrack` der des Fahrplans — weichen sie ab, wurde kurzfristig
+ * umgelegt, und genau das muss man vor der Abfahrt wissen.
+ */
+export interface TransitLegPlace {
+  name: string;
+  lat: number;
+  lon: number;
+  track: string | null;
+  plannedTrack: string | null;
+}
+
 /** Ein Abschnitt einer ÖPNV-Verbindung: Fußweg oder Fahrt. */
 export interface TransitLeg {
   /** 'WALK' oder ein Verkehrsmittel (BUS, TRAM, …). */
@@ -251,8 +267,8 @@ export interface TransitLeg {
   product: string | null;
   line: string | null;
   headsign: string | null;
-  from: { name: string; lat: number; lon: number };
-  to: { name: string; lat: number; lon: number };
+  from: TransitLegPlace;
+  to: TransitLegPlace;
   departure: string | null;
   plannedDeparture: string | null;
   arrival: string | null;
