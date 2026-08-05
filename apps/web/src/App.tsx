@@ -23,6 +23,7 @@ import { PointSheet } from './PointSheet.js';
 import { clearShareUrl, readShareUrl } from './share.js';
 import { STOP_COLOR } from './mapIcons.js';
 import { SearchSheet } from './SearchSheet.js';
+import { EMERGENCY_CATEGORIES } from './rescueSearch.js';
 import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
 import { VehicleSheet } from './VehicleSheet.js';
@@ -587,16 +588,6 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     { enabled: layers.stops && !!stopsCode && (!online || !stopsLive.data?.length), cache: false },
   );
 
-  /** Punkte, die im Notfall zählen — alle stehen im Offline-Suchindex. */
-  const EMERGENCY_CATEGORIES = [
-    'hospital',
-    'pharmacy',
-    'doctor',
-    'police',
-    'fire_station',
-    'drinking_water',
-    'shelter',
-  ];
   const emergencyState = useApi(
     `emergency:${stopsCode}:${viewKey}`,
     () => (stopsCode ? poisOffline(stopsCode, EMERGENCY_CATEGORIES, viewport, 400) : Promise.resolve([])),

@@ -8,6 +8,13 @@ import { parseCoords, formatDegMin, formatUtm } from './coords.js';
 import { loadDraw, type DrawFeature } from './drawStore.js';
 import { midpoint } from './geo.js';
 import { distanceM } from './offline/graph.js';
+import {
+  findEmergencyPoints,
+  findRescuePoints,
+  isEmergencyQuery,
+  parseRescueQuery,
+  type RescueHit,
+} from './rescueSearch.js';
 import type { Place } from './places.js';
 
 interface Props {
@@ -111,6 +118,52 @@ export function SearchSheet(props: Props) {
       .sort((a, b) => a.distanceM - b.distanceM);
   }, [drawings, term, props.coords.lat, props.coords.lon]);
 
+  /**
+   * Rettungs- und Notfallpunkte laufen an der Ortssuche vorbei: Die einen
+   * tragen statt eines Namens eine Kennung, die anderen sind als Gruppe
+   * gemeint. Beide bekommen deshalb einen eigenen Durchgang — mit derselben
+   * Wartezeit wie die Ortssuche, damit beim Tippen nichts unnötig losläuft.
+   */
+  const rescueQuery = useMemo(() => parseRescueQuery(term), [term]);
+  const emergencyWanted = useMemo(() => isEmergencyQuery(term), [term]);
+  const [rescueHits, setRescueHits] = useState<RescueHit[]>([]);
+  const [rescueBusy, setRescueBusy] = useState(false);
+  const [emergencyHits, setEmergencyHits] = useState<(GeoResult & { distanceM: number })[]>([]);
+
+  useEffect(() => {
+    if (!rescueQuery) {
+      setRescueHits([]);
+      setRescueBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setRescueBusy(true);
+    const timer = setTimeout(() => {
+      findRescuePoints(rescueQuery, props.coords, props.offlineCode, props.online)
+        .then((hits) => !cancelled && setRescueHits(hits))
+        .catch(() => !cancelled && setRescueHits([]))
+        .finally(() => !cancelled && setRescueBusy(false));
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [rescueQuery, props.offlineCode, props.online, props.coords.lat, props.coords.lon]);
+
+  useEffect(() => {
+    if (!emergencyWanted || !props.offlineCode) {
+      setEmergencyHits([]);
+      return;
+    }
+    let cancelled = false;
+    findEmergencyPoints(props.coords, props.offlineCode)
+      .then((hits) => !cancelled && setEmergencyHits(hits))
+      .catch(() => !cancelled && setEmergencyHits([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [emergencyWanted, props.offlineCode, props.coords.lat, props.coords.lon]);
+
   useEffect(() => {
     if (term.length < 2) {
       setResults([]);
@@ -209,7 +262,7 @@ export function SearchSheet(props: Props) {
           type="search"
           value={q}
           autoFocus
-          placeholder={'Adresse, Ort, „Tankstelle" oder Koordinaten …'}
+          placeholder={'Adresse, Ort, „Tankstelle", Rettungspunkt oder Koordinaten …'}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Ziel suchen"
         />
@@ -267,6 +320,62 @@ export function SearchSheet(props: Props) {
                 own: true,
                 distanceM: m.distanceM,
               }),
+            )}
+          </div>
+        </>
+      )}
+
+      {rescueQuery && (
+        <>
+          <div className="sect-label">
+            Rettungspunkte{rescueQuery.label ? ` mit „${rescueQuery.label}"` : ' in der Nähe'}
+          </div>
+          <div className="pp-results">
+            {rescueBusy && !rescueHits.length && <p className="muted">Suche …</p>}
+            {!rescueBusy && !rescueHits.length && (
+              <p className="muted">
+                {props.offlineCode || (props.online && navigator.onLine)
+                  ? 'Kein Rettungspunkt gefunden. Kennungen wiederholen sich zwischen den Bundesländern — gesucht wird nur im Umkreis.'
+                  : 'Ohne Netz und ohne gespeicherte Region ist keine Suche möglich.'}
+              </p>
+            )}
+            {rescueHits.map((r, i) =>
+              row(
+                `rescue-${i}-${r.lat},${r.lon}`,
+                { name: r.name, lat: r.lat, lon: r.lon },
+                r.detail,
+                'rescue',
+                { offline: r.offline, distanceM: r.distanceM },
+              ),
+            )}
+          </div>
+          {rescueHits.length > 0 && (
+            <p className="sr-hint">
+              Die Kennung ist das, was die Leitstelle hören will — der Punkt selbst lässt sich von
+              hier aus anfahren.
+            </p>
+          )}
+        </>
+      )}
+
+      {emergencyWanted && (
+        <>
+          <div className="sect-label">Notfallpunkte in der Nähe</div>
+          <div className="pp-results">
+            {!props.offlineCode ? (
+              <p className="muted">
+                Notfallpunkte kommen aus dem gespeicherten Suchindex — Region unter „Offline"
+                laden. Einzeln findet die Suche sie auch so: „Apotheke", „Klinik", „Polizei".
+              </p>
+            ) : !emergencyHits.length ? (
+              <p className="muted">In der Nähe nichts gefunden.</p>
+            ) : (
+              emergencyHits.map((p) =>
+                row(`emg-${p.lat},${p.lon}`, { name: p.name, lat: p.lat, lon: p.lon }, p.detail ?? null, p.category, {
+                  offline: true,
+                  distanceM: p.distanceM,
+                }),
+              )
             )}
           </div>
         </>

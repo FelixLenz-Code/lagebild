@@ -40,6 +40,7 @@ import {
   classifyRoad,
   normalize,
   poiCategory,
+  poiName,
   terms,
 } from './lib/osmtags.mjs';
 
@@ -489,7 +490,8 @@ function passNodes(pbfPath, needIds, strings) {
         });
       }
       const cat = poiCategory(tags);
-      if (cat && tags.name) pois.push({ lat: la, lon: lo, name: tags.name, cat: catIndex(cat) });
+      const poiLabel = cat ? poiName(tags, cat) : null;
+      if (cat && poiLabel) pois.push({ lat: la, lon: lo, name: poiLabel, cat: catIndex(cat) });
     },
   });
   process.stdout.write('\n');

@@ -220,6 +220,7 @@ export const CATEGORIES = {
   doctor: { label: 'Arztpraxis', icon: 'health' },
   police: { label: 'Polizei', icon: 'shield' },
   fire_station: { label: 'Feuerwehr', icon: 'shield' },
+  rescue: { label: 'Rettungspunkt', icon: 'rescue' },
   supermarket: { label: 'Supermarkt', icon: 'cart' },
   bakery: { label: 'Bäckerei', icon: 'cart' },
   shop: { label: 'Geschäft', icon: 'cart' },
@@ -323,6 +324,7 @@ export function poiCategory(tags) {
   if (tags.railway === 'station' || tags.railway === 'halt') return 'station';
   if (tags.railway === 'tram_stop') return 'tram_stop';
   if (tags.highway === 'bus_stop') return 'bus_stop';
+  if (tags.highway === 'emergency_access_point') return 'rescue';
   if (tags.highway === 'rest_area' || tags.highway === 'services') return 'rest_area';
   if (tags.aeroway === 'aerodrome') return 'airport';
   if (tags.harbour === 'yes' || tags.landuse === 'harbour') return 'harbour';
@@ -332,6 +334,24 @@ export function poiCategory(tags) {
   if (tags.historic === 'castle' || tags.historic === 'monument' || tags.historic === 'memorial') return 'museum';
   if (tags.emergency === 'phone') return null;
   return null;
+}
+
+/**
+ * Anzeigename eines POI — fast immer schlicht `name`.
+ *
+ * Rettungspunkte tragen keinen: Auf dem Schild steht nur die Kennung, und die
+ * liegt in `ref`. Ohne diesen Sonderfall fielen sie beim Bau des Index durchs
+ * Raster (namenlose Punkte werden übersprungen) — ausgerechnet die Punkte, die
+ * man ohne Netz sucht.
+ */
+export function poiName(tags, cat) {
+  if (cat === 'rescue') {
+    // Immer mit dem Wort davor, auch wenn der Punkt einen Namen trägt: Danach
+    // wird gesucht, und was dahinter steht, ist die Kennung fürs Telefon.
+    const id = (tags.ref ?? '').trim() || (tags.name ?? '').trim();
+    return id ? `Rettungspunkt ${id}` : 'Rettungspunkt';
+  }
+  return tags.name ?? null;
 }
 
 /** Ortsränge (place=…) mit Gewicht für die Zuordnung „nächster Ort". */

@@ -12,6 +12,7 @@ type Glyph =
   | 'fuel'
   | 'parking'
   | 'health'
+  | 'rescue'
   | 'shield'
   | 'cart'
   | 'food'
@@ -40,6 +41,7 @@ const BY_CATEGORY: Record<string, Glyph> = {
   doctor: 'health',
   police: 'shield',
   fire_station: 'shield',
+  rescue: 'rescue',
   supermarket: 'cart',
   bakery: 'cart',
   shop: 'cart',
@@ -103,6 +105,13 @@ const PATHS: Record<Glyph, JSX.Element> = {
     </>
   ),
   health: <path d="M12 4v16M4 12h16" />,
+  // Rettungspunkt: das Schild am Weg — Kreuz auf einer Tafel mit Pfosten.
+  rescue: (
+    <>
+      <rect x="3" y="3" width="18" height="13" rx="2" />
+      <path d="M12 6.5v6M9 9.5h6M12 16v5" />
+    </>
+  ),
   shield: (
     <>
       <path d="M12 3l7 2.5V11c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V5.5z" />
