@@ -6,7 +6,7 @@
 und alles, worauf es ankommt, auch ohne Netz.**
 
 [![CI](https://github.com/FelixLenz-Code/lagebild/actions/workflows/ci.yml/badge.svg)](https://github.com/FelixLenz-Code/lagebild/actions/workflows/ci.yml)
-[![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
+[![Lizenz: PolyForm Noncommercial](https://img.shields.io/badge/Lizenz-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 ![Node 20+](https://img.shields.io/badge/Node-20%2B-5b9e4a)
 ![PWA](https://img.shields.io/badge/PWA-offline--first-1d4e73)
 ![ohne Konto, ohne Tracker](https://img.shields.io/badge/ohne%20Konto-ohne%20Tracker-5b5b60)
@@ -73,7 +73,45 @@ Warnungen im Klartext, alle Halte in der Nähe mit ihren Abfahrten. Unter „Meh
 liegt, was am Rechner in der Kopfzeile steht — Notfallblatt, Kompass, Spur,
 Teilen, Offline-Regionen, Einstellungen.
 
-## Loslegen
+## Auf einem Server installieren
+
+Ein Befehl richtet ein und aktualisiert — dasselbe Skript für beides:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FelixLenz-Code/lagebild/main/install.sh | bash
+```
+
+Wer nicht gern ein Skript aus dem Netz in eine Shell schüttet (guter Reflex),
+lädt es erst herunter und liest es:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FelixLenz-Code/lagebild/main/install.sh -o install.sh
+less install.sh
+bash install.sh
+```
+
+Der Installer legt an: `/opt/lagebild` mit Quellcode und gebautem Bundle, einen
+Systemnutzer `lagebild` ohne Login, und den Dienst `lagebild.service` (Start
+beim Hochfahren, Neustart nach Absturz). Er fragt dabei die drei optionalen
+Schlüssel und das Passwort ab — vorhandene Werte zeigt er maskiert, Enter
+behält sie, ein `-` löscht sie. Voraussetzungen: Linux mit systemd, Node.js 20
+oder neuer, `git`, `curl` und `sudo`.
+
+**Beim zweiten Aufruf ist es ein Updater**: neuen Stand holen, bauen, Dienst
+durchstarten. Schlüssel, Passwort und heruntergeladene Offline-Pakete bleiben
+unangetastet, die Abfrage dient dann zum Ändern.
+
+| | |
+| --- | --- |
+| Zustand | `systemctl status lagebild` |
+| Protokoll | `journalctl -u lagebild -f` |
+| Konfiguration | `/opt/lagebild/apps/api/.env` |
+| Anderes Ziel | `LAGEBILD_DIR=/srv/lagebild bash install.sh` |
+
+TLS gehört davor in einen Reverse-Proxy — sonst geht `APP_PASSWORD` im Klartext
+über die Leitung.
+
+## Loslegen (Entwicklung)
 
 ```bash
 pnpm install
@@ -191,21 +229,49 @@ Das Passwort sperrt **nur den Server**, nie das Gerät: Ein Netzfehler ändert
 nichts, entsperrt bleibt entsperrt — sonst stünde man ohne Empfang vor einem
 Passwortfeld, obwohl alle Daten längst im Gerät liegen.
 
-## Betrieb
+## Betrieb von Hand
 
-Derselbe Hono-Server liefert im Betrieb API **und** PWA-Bundle aus:
+Für alles außer Linux-mit-systemd (oder wenn der Installer nicht passt): Ein
+einziger Hono-Prozess liefert API **und** PWA-Bundle aus, zustandslos.
 
 ```bash
 pnpm build
-cp -r apps/web/dist apps/api/public     # oder WEB_ROOT auf das Bundle zeigen
-pnpm start                              # Node, ein Prozess, zustandslos
+pnpm start                              # WEB_ROOT muss auf apps/web/dist zeigen
 ```
 
 TLS gehört davor in einen Reverse-Proxy — `APP_PASSWORD` geht sonst im Klartext
 über die Leitung.
 
+## Hinweis zur KI-Unterstützung
+
+Diese Software wurde vollständig mithilfe von Claude (einem KI-Assistenten von
+Anthropic) entwickelt. Der Autor hat die Anforderungen definiert, Entscheidungen
+getroffen und das Ergebnis geprüft — der Code selbst wurde durch den Dialog mit
+der KI generiert.
+
+## Haftungsausschluss
+
+Die Software wird so bereitgestellt, wie sie ist (as-is), ohne jegliche Garantie
+auf Korrektheit, Vollständigkeit oder Eignung für einen bestimmten Zweck. Der
+Autor übernimmt keinerlei Haftung für Schäden, Datenverluste oder sonstige
+Probleme, die durch die Verwendung dieser Software entstehen. Die Nutzung
+erfolgt auf eigene Verantwortung.
+
+Das gilt ausdrücklich auch für die angezeigten Daten: Warnungen, Wetter, Pegel,
+Verkehr und Fahrpläne stammen von Dritten, können verspätet, unvollständig oder
+falsch sein. **Diese App ist kein Ersatz für die amtlichen Warnkanäle** und
+keine Grundlage für Entscheidungen über Leib und Leben. Im Notfall gilt die 112.
+
 ## Lizenz
 
-Code unter [MIT](LICENSE). Die Daten gehören ihren Quellen und stehen unter
-deren Bedingungen — Karten, Routing und Suche stammen aus OpenStreetMap
-(© OpenStreetMap-Mitwirkende, ODbL).
+© 2026 Felix Lenz.
+
+Dieses Projekt steht unter der
+[PolyForm Noncommercial License 1.0.0](LICENSE). Du darfst es nutzen, ändern
+und weitergeben, solange es **nicht kommerziell** geschieht und der Urheber
+genannt bleibt. Den vollständigen Text findest du in [LICENSE](LICENSE) sowie
+unter <https://polyformproject.org/licenses/noncommercial/1.0.0/>.
+
+Die **Daten** gehören ihren Quellen und stehen unter deren eigenen Bedingungen —
+Karte, Routing und Suche stammen aus OpenStreetMap (© OpenStreetMap-Mitwirkende,
+[ODbL](https://opendatacommons.org/licenses/odbl/)).

@@ -2,6 +2,7 @@
   "name": "lagebild",
   "version": "0.1.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Lagebild — Wetter, amtliche Warnungen, Verkehr und News für sicheres Bewegen. Offline-first PWA.",
   "packageManager": "pnpm@10.0.0",
   "engines": {
