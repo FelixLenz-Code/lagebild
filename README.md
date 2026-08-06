@@ -222,6 +222,8 @@ Alles über `apps/api/.env` (Vorlage: `.env.example`):
 | `CACHE_TTL_SECONDS` | Wie lange Proxy-Antworten frisch bleiben (Standard 300). |
 | `WEB_ROOT` | Gebautes PWA-Bundle, das der Server mit ausliefert. |
 | `MAPS_DIR` | Ablage der Offline-Pakete für `/api/maps`. |
+| `TRUST_PROXY` | `1` nur, wenn ein Reverse-Proxy davorsteht, der `X-Forwarded-For` selbst setzt. Sonst könnte jeder die Bremse gegen Durchprobieren aushebeln. |
+| `CORS_ORIGINS` | Fremde Herkünfte für den Browser-Zugriff, Komma-Liste. Leer = keine (richtig, solange die Oberfläche vom selben Server kommt). |
 | `TOMTOM_KEY`, `AISSTREAM_KEY`, `APRSFI_KEY` | Schalten die jeweilige Ebene frei. |
 | `VITE_MAP_PMTILES_URL` | Online-Basiskarte (Bauzeit). Für den Betrieb auf eine eigene PMTiles zeigen. |
 

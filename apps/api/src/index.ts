@@ -39,7 +39,30 @@ import { authRequired } from './lib/auth.js';
 const app = new Hono();
 
 app.use('*', logger());
-app.use('/api/*', cors({ origin: (o) => o, credentials: true }));
+
+/**
+ * CORS ist **standardmäßig aus**.
+ *
+ * Oberfläche und Schnittstelle kommen vom selben Server, im Entwicklungsbetrieb
+ * reicht der Proxy des Vite-Servers — beides braucht kein CORS. Vorher wurde
+ * jede fremde Herkunft zurückgespiegelt, und das zusammen mit
+ * `credentials: true`: Damit hätte jede beliebige Seite im Browser eines
+ * angemeldeten Nutzers auf diesen Server zugreifen und die Antworten lesen
+ * können. Dass das SameSite-Cookie es praktisch verhindert hat, war Glück und
+ * keine Absicht.
+ *
+ * Wer die Schnittstelle wirklich von einer anderen Herkunft aus braucht, trägt
+ * sie in `CORS_ORIGINS` ein — als Liste, nie als `*`.
+ */
+if (config.corsOrigins.length > 0) {
+  app.use(
+    '/api/*',
+    cors({
+      origin: (o) => (config.corsOrigins.includes(o) ? o : null),
+      credentials: true,
+    }),
+  );
+}
 
 // Anmeldung selbst und die Erreichbarkeitsprüfung bleiben offen — sonst käme
 // niemand mehr an das Passwortfeld heran.

@@ -102,7 +102,26 @@ export function waitFor(who: string): number {
   return Math.max(0, found.until - Date.now());
 }
 
+/**
+ * Obergrenze, damit die Liste nicht ins Kraut schießt. Ein Angreifer mit
+ * wechselnden Adressen könnte den Server sonst über den Speicher erledigen.
+ * Abgelaufene Einträge fliegen zuerst, danach die ältesten.
+ */
+const MAX_EINTRAEGE = 10_000;
+
+function aufraeumen(): void {
+  if (attempts.size < MAX_EINTRAEGE) return;
+  const jetzt = Date.now();
+  for (const [k, v] of attempts) if (v.until <= jetzt) attempts.delete(k);
+  // Reicht das nicht, kommen die ältesten dran (Map behält die Einfügefolge).
+  for (const k of attempts.keys()) {
+    if (attempts.size < MAX_EINTRAEGE) break;
+    attempts.delete(k);
+  }
+}
+
 export function noteFailure(who: string): void {
+  aufraeumen();
   const found = attempts.get(who) ?? { count: 0, until: 0 };
   found.count++;
   if (found.count > MAX_FREE_TRIES) {

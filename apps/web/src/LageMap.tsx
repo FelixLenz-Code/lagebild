@@ -211,6 +211,24 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 }
 
+/**
+ * Adresse aus fremder Quelle für ein `href`.
+ *
+ * `esc` sorgt nur dafür, dass niemand aus dem Attribut ausbricht — ein
+ * `javascript:`-Schema bliebe unangetastet und liefe beim Antippen im
+ * Ursprung dieser App. Die Links kommen aus rund zwanzig fremden Feeds; hier
+ * gelten deshalb nur http und https, alles andere fällt weg.
+ */
+function safeUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw, window.location.origin);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Popup einer Lawinenregion. */
 const DANGER_DE = ['', 'gering', 'mäßig', 'erheblich', 'groß', 'sehr groß'];
 function avalanchePopupHtml(p: Record<string, string>): string {
@@ -345,7 +363,7 @@ function newsPopupHtml(item: NewsItem): string {
     (item.publishedAt ? ` · ${esc(relativeTime(item.publishedAt))}` : '') +
     (place ? ` · ${esc(place.name)}${place.approximate ? ' (ungenau)' : ''}` : '') +
     `</div>` +
-    `<a class="wp-link" href="${esc(item.url)}" target="_blank" rel="noreferrer">Zur Meldung</a>` +
+    `<a class="wp-link" href="${esc(safeUrl(item.url) ?? "#")}" target="_blank" rel="noreferrer">Zur Meldung</a>` +
     `</div>`
   );
 }
@@ -385,7 +403,7 @@ function civilWarningPopupHtml(w: CivilWarning): string {
     (w.description ? `<p class="wp-desc">${esc(w.description)}</p>` : '') +
     (w.instruction ? `<p class="wp-desc wp-instr">${esc(w.instruction)}</p>` : '') +
     (w.web
-      ? `<a class="wp-link" href="${esc(w.web)}" target="_blank" rel="noreferrer">Mehr dazu</a>`
+      ? `<a class="wp-link" href="${esc(safeUrl(w.web) ?? "#")}" target="_blank" rel="noreferrer">Mehr dazu</a>`
       : '') +
     `</div>`
   );
@@ -484,7 +502,7 @@ function webcamPopupHtml(w: WebcamSpot): string {
           .join('')}</div>`
       : '') +
     (w.offline ? `<div class="wp-meta">zurzeit offline</div>` : '') +
-    `<a class="wp-link" href="${esc(w.url)}" target="_blank" rel="noreferrer">Zum Kamerabild</a>` +
+    `<a class="wp-link" href="${esc(safeUrl(w.url) ?? "#")}" target="_blank" rel="noreferrer">Zum Kamerabild</a>` +
     `<div class="wp-meta">Bild und Rechte liegen bei Foto-Webcam.eu</div>` +
     `</div>`
   );
@@ -572,7 +590,7 @@ function quakePopupHtml(q: EarthquakeItem): string {
     (q.time ? ` · ${esc(relativeTime(q.time))}` : '') +
     (q.tsunami ? ' · Tsunami-Hinweis' : '') +
     `</div>` +
-    `<a class="wp-link" href="${esc(q.url)}" target="_blank" rel="noreferrer">Bericht (USGS)</a>` +
+    `<a class="wp-link" href="${esc(safeUrl(q.url) ?? "#")}" target="_blank" rel="noreferrer">Bericht (USGS)</a>` +
     `</div>`
   );
 }

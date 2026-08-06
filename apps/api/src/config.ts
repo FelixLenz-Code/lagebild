@@ -48,6 +48,25 @@ export const config = {
    * läuft alles wie bisher, was die Entwicklung einfach hält.
    */
   password: process.env.APP_PASSWORD ?? '',
+  /**
+   * Steht ein Reverse-Proxy davor, dem man glauben darf?
+   *
+   * **Nur dann** werden `X-Forwarded-For` und `X-Forwarded-Proto` ausgewertet.
+   * Ohne diesen Schalter setzt sie jeder Anfragende selbst — und könnte damit
+   * die Bremse gegen Durchprobieren aushebeln, indem er zu jedem Versuch eine
+   * andere Absenderkennung erfindet. Vorgabe: nicht glauben.
+   */
+  trustProxy: (process.env.TRUST_PROXY ?? '') === '1',
+  /**
+   * Fremde Herkünfte, die den Server im Browser ansprechen dürfen (Komma-Liste).
+   * **Leer heißt: keine** — Oberfläche und Schnittstelle kommen vom selben
+   * Server, dann braucht es kein CORS. Ein `*` hier wäre mit Anmeldung
+   * gefährlich und wird deshalb nicht unterstützt.
+   */
+  corsOrigins: (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   /** TomTom-API-Key für die Verkehrsfluss-Kacheln (bleibt serverseitig). */
   tomtomKey: process.env.TOMTOM_KEY ?? '',
   /** Verzeichnis mit den Offline-PMTiles pro Bundesland (z.B. 04.pmtiles). */
