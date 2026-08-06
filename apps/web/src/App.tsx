@@ -97,7 +97,45 @@ const EMPTY_WIND = { points: [], cols: 0, rows: 0, time: null };
 const bboxKey = (b: Bbox) =>
   `${b.west.toFixed(2)},${b.south.toFixed(2)},${b.east.toFixed(2)},${b.north.toFixed(2)}`;
 
+/**
+ * Die Reiter der schmalen Ansicht. Jede Kachel trägt einen davon (`tab`), die
+ * Leiste unten schaltet um. „Suche" ist bewusst **kein** Reiter: Sie öffnet ein
+ * Blatt über dem, was gerade zu sehen ist, und wechselt die Ansicht nicht.
+ */
+type MobileTab = 'karte' | 'lage' | 'oepnv' | 'mehr';
+
+/** Die Einträge der unteren Leiste, in dieser Reihenfolge. */
+const TABS: { key: MobileTab | 'suche'; label: string; path: string }[] = [
+  { key: 'karte', label: 'Karte', path: 'M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15' },
+  { key: 'suche', label: 'Suche', path: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5' },
+  { key: 'lage', label: 'Lage', path: 'M12 3l9.5 17H2.5zM12 10v4M12 17h.01' },
+  { key: 'oepnv', label: 'ÖPNV', path: 'M6 3h12v13a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3zM6 11h12M9 22l-2 2M15 22l2 2M9.5 15h5' },
+  { key: 'mehr', label: 'Mehr', path: 'M4 7h16M4 12h16M4 17h16' },
+];
+
+/**
+ * Werkzeuge auf dem „Mehr"-Reiter. Am Rechner stehen sie in der Kopfzeile oder
+ * im Standort-Menü; auf dem Handy ist die Kopfzeile dafür zu schmal, und ohne
+ * diese Liste wären Einstellungen und Offline-Regionen gar nicht erreichbar.
+ */
+const MORE_TOOLS: { key: string; label: string; hint: string; path: string }[] = [
+  { key: 'notfall', label: 'Notfallblatt', hint: 'Nummern, fünf W-Fragen, eigener Standort', path: 'M9.5 3h5v5.5H20v5h-5.5V19h-5v-5.5H4v-5h5.5z' },
+  { key: 'kompass', label: 'Kompass und Peilung', hint: 'Richtung halten, Kreuzpeilung', path: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M15 9l-2 5-5 2 2-5z' },
+  { key: 'spur', label: 'Spur aufzeichnen', hint: 'Weg mitschreiben, als GPX sichern', path: 'M5 19c4 0 3-7 7-7s3-7 7-7' },
+  { key: 'teilen', label: 'Karte teilen', hint: 'Ausschnitt und Ebenen als Link', path: 'M6 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M18 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M18 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M8 10.5l8-4M8 13.5l8 4' },
+  { key: 'offline', label: 'Offline-Regionen', hint: 'Karte, Routing und Suche ins Gerät laden', path: 'M12 3v11M12 14l-4-4M12 14l4-4M5 20h14' },
+  { key: 'einstellungen', label: 'Einstellungen und Quellen', hint: 'Ebenen abwählen, Diashow, Herkunft der Daten', path: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.8-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.3 14H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.2-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.8 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.2 2.8H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z' },
+];
+
 export function App({ onLock }: { onLock: () => Promise<void> }) {
+  /**
+   * Auf schmalen Geräten ist die App keine gestauchte Schreibtisch-Ansicht,
+   * sondern hat eine eigene Gestalt: **volle Karte** und unten eine Leiste,
+   * die auf die anderen Ansichten umschaltet. Welcher Reiter gerade gilt, sagt
+   * dieser Zustand; am Rechner spielt er keine Rolle — dort steht ohnehin alles
+   * nebeneinander, und die Leiste ist ausgeblendet.
+   */
+  const [tab, setTab] = useState<MobileTab>('karte');
   const [coords, setCoords] = useState<Coords>(DEFAULT_COORDS);
   const [place, setPlace] = useState('Berlin-Mitte');
   // Sichtbarer Kartenausschnitt — steuert alle ortsbezogenen Kartendaten.
@@ -1365,6 +1403,16 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     ? Math.round(fc.hourly.slice(0, 24).reduce((sum, h) => sum + (h.precipitationMm ?? 0), 0) * 10) / 10
     : null;
 
+  /** Was die Werkzeugliste auf dem „Mehr"-Reiter öffnet. */
+  const MORE_ACTIONS: Record<string, () => void> = {
+    notfall: () => setEmergencyOpen(true),
+    kompass: () => setCompassOpen(true),
+    spur: () => setTrackOpen(true),
+    teilen: () => setShareOpen(true),
+    offline: () => setRegionsOpen(true),
+    einstellungen: () => setSettingsOpen(true),
+  };
+
   return (
     <div className={`app${running && slideshow.mapOnly ? ' is-show' : ''}`}>
       <header className="topbar">
@@ -1392,9 +1440,13 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           </svg>
         </button>
 
+        {/* Die Werkzeuge stehen zusammen, damit sie auf schmalen Geräten
+            geschlossen in die zweite Zeile rutschen können. Am Rechner löst
+            `display: contents` die Gruppe wieder auf — dort ändert sich nichts. */}
+        <div className="topbar-tools">
         <button
           type="button"
-          className="iconbtn"
+          className="iconbtn ib-search"
           onClick={() => setSearchOpen(true)}
           title="Ziel suchen"
           aria-label="Ziel suchen"
@@ -1407,7 +1459,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 
         <button
           type="button"
-          className={`iconbtn${anyLoading ? ' is-busy' : ''}`}
+          className={`iconbtn ib-refresh${anyLoading ? ' is-busy' : ''}`}
           onClick={refreshAll}
           disabled={!online}
           title={online ? 'Alle Daten aktualisieren' : 'Ohne Verbindung nicht möglich'}
@@ -1422,7 +1474,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 
         <button
           type="button"
-          className={`iconbtn${recorder.recording ? ' is-rec' : ''}`}
+          className={`iconbtn ib-track${recorder.recording ? ' is-rec' : ''}`}
           onClick={() => setTrackOpen(true)}
           title={recorder.recording ? 'Aufzeichnung läuft' : 'Spur aufzeichnen'}
           aria-label="Spur aufzeichnen"
@@ -1436,7 +1488,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 
         <button
           type="button"
-          className="iconbtn"
+          className="iconbtn ib-settings"
           onClick={() => setSettingsOpen(true)}
           title="Einstellungen und Quellen"
           aria-label="Einstellungen und Quellen"
@@ -1448,12 +1500,13 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         </button>
 
         {opfsSupported() && (
-          <button type="button" className="iconbtn" onClick={() => setRegionsOpen(true)} title="Offline-Regionen" aria-label="Offline-Regionen">
+          <button type="button" className="iconbtn ib-offline" onClick={() => setRegionsOpen(true)} title="Offline-Regionen" aria-label="Offline-Regionen">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3v11M12 14l-4-4M12 14l4-4M5 20h14" />
             </svg>
           </button>
         )}
+        </div>
       </header>
 
       <div className="statusline" data-state={online && !anyCached ? 'live' : 'offline'}>
@@ -1466,7 +1519,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 
       {alerts.length > 0 && <AlertBanner alerts={alerts} onOpen={(d) => setDetail(d)} />}
 
-      <div className="layout">
+      <div className="layout" data-tab={tab}>
         <div className="map-col">
           <LageMap
             coords={coords}
@@ -1646,7 +1699,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         </div>
 
         <section className="tiles-col">
-        <Tile title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder" onOpen={w ? () => setDetail('weather') : undefined}>
+        <Tile tab="mehr" title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder" onOpen={w ? () => setDetail('weather') : undefined}>
           {!w && weather.loading && <p className="muted">Lade …</p>}
           {!w && weather.error && <p className="err">{weather.error}</p>}
           {w && (
@@ -1736,6 +1789,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 
         {watched.length > 0 && (
           <Tile
+            tab="lage"
             title="Meine Orte"
             badge={watchedAlerts > 0 ? `${watchedAlerts} Warnung${watchedAlerts === 1 ? '' : 'en'}` : undefined}
             badgeKind={watchedWorst === 'extreme' || watchedWorst === 'severe' ? 'alert' : 'warn'}
@@ -1762,7 +1816,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           </Tile>
         )}
 
-        <Tile title="Im Ausschnitt" source="im Kartenausschnitt gezählt">
+        <Tile tab="lage" title="Im Ausschnitt" source="im Kartenausschnitt gezählt">
           <div className="counts">
             <CountCell
               label="Warnungen"
@@ -1827,6 +1881,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         </Tile>
 
         <Tile
+          tab="oepnv"
           title="Bahn / ÖPNV"
           source={transit.data?.source}
           cached={transit.fromCache}
@@ -1881,6 +1936,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         </Tile>
 
         <Tile
+          tab="mehr"
           title="Funkwetter"
           source={hf.data?.source}
           cached={hf.fromCache}
@@ -1903,6 +1959,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         </Tile>
 
         <Tile
+          tab="mehr"
           title="News"
           badge={news.data?.data.length ? `${news.data.data.length}` : undefined}
           badgeKind="ok"
@@ -1920,8 +1977,101 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           </Loader>
         </Tile>
 
+        {/* Dasselbe für den ÖPNV-Reiter: Die Kachel oben nennt nur den nächsten
+            Halt. Auf einer eigenen Seite gehören alle Halte in der Nähe hin. */}
+        {transitStops.length > 0 && (
+          <section className="mobile-only tile" data-tab="oepnv">
+            <div className="head">
+              <h3>Halte in der Nähe</h3>
+            </div>
+            <TransitDetail
+              onShowRoute={showTripOnMap}
+              stops={transitStops}
+              onRoute={(name, lat, lon) => startRouteTo({ name, lat, lon })}
+            />
+          </section>
+        )}
+
+        {/* Auf dem Handy ist „Lage" eine eigene Seite — dort wären acht Zahlen
+            allein zu wenig. Die Warnungen stehen deshalb gleich im Klartext
+            darunter, statt erst hinter einem weiteren Tipp. Am Rechner
+            überflüssig: Dort liegen sie eine Kachel weiter. */}
+        <section className="mobile-only tile" data-tab="lage">
+          <div className="head">
+            <h3>Warnungen im Ausschnitt</h3>
+          </div>
+          {uniqueWarnings.length > 0 ? (
+            <WarningsDetail list={uniqueWarnings} />
+          ) : (
+            <p className="muted">Keine Unwetterwarnung im Kartenausschnitt.</p>
+          )}
+        </section>
+        {(nina.data?.data.length ?? 0) > 0 && (
+          <section className="mobile-only tile" data-tab="lage">
+            <div className="head">
+              <h3>Behördenwarnungen</h3>
+            </div>
+            <CivilWarningsDetail list={nina.data?.data ?? []} />
+          </section>
+        )}
+
+        {/* Alles, was auf dem Handy keinen eigenen Reiter hat. Am Rechner
+            steht es weiterhin in der Kopfzeile bzw. im Standort-Menü — dort
+            bleibt diese Liste ausgeblendet. */}
+        <section className="more-tools mobile-only" data-tab="mehr">
+          <div className="sect-label">Werkzeuge</div>
+          <div className="mt-grid">
+            {MORE_TOOLS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className="mt-item"
+                onClick={() => {
+                  MORE_ACTIONS[t.key]?.();
+                }}
+              >
+                <span className="mt-ico" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                    <path d={t.path} />
+                  </svg>
+                </span>
+                <span className="mt-text">
+                  <b>{t.label}</b>
+                  <span>{t.hint}</span>
+                </span>
+                <span className="chevron" aria-hidden="true">›</span>
+              </button>
+            ))}
+          </div>
+        </section>
         </section>
       </div>
+
+      {/* Untere Leiste — nur auf schmalen Geräten sichtbar. „Suche" schaltet
+          nicht um, sondern öffnet ein Blatt; deshalb ist sie nie „aktiv". */}
+      <nav className="tabbar" aria-label="Ansicht">
+        {TABS.map((t) => {
+          const active = t.key !== 'suche' && tab === t.key;
+          const count = t.key === 'lage' ? uniqueWarnings.length : 0;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              className={`tab${active ? ' is-on' : ''}`}
+              aria-current={active ? 'page' : undefined}
+              onClick={() => (t.key === 'suche' ? setSearchOpen(true) : setTab(t.key as MobileTab))}
+            >
+              <span className="tab-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                  <path d={t.path} />
+                </svg>
+                {count > 0 && <i className="tab-dot">{count > 9 ? '9+' : count}</i>}
+              </span>
+              {t.label}
+            </button>
+          );
+        })}
+      </nav>
 
       {regionsOpen && (
         <OfflineRegions
@@ -2289,6 +2439,8 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 
 function Tile(props: {
   title: string;
+  /** Auf welchem Reiter der schmalen Ansicht die Kachel liegt (siehe MobileTab). */
+  tab?: MobileTab;
   source?: string;
   badge?: string;
   badgeKind?: 'warn' | 'ok' | 'alert';
@@ -2318,7 +2470,7 @@ function Tile(props: {
       }
     : {};
   return (
-    <article className={cls.join(' ')} {...interactive}>
+    <article className={cls.join(' ')} data-tab={props.tab} {...interactive}>
       <div className="head">
         <h3>{props.title}</h3>
         {props.cached && <span className="offline-tag" title="Offline — letzter Stand">offline</span>}

@@ -59,6 +59,20 @@ Kein Konto, keine Anmeldung, keine Tracker.
 | <img src="docs/screenshots/notfallblatt.png" alt="Notfallblatt mit Notrufnummern" width="330"> | <img src="docs/screenshots/ebenen.png" alt="Ebenen und ihre Quellen in den Einstellungen" width="330"> |
 | **Notfallblatt.** Nummern, die fünf W-Fragen und der eigene Standort so, wie die Leitstelle ihn hören will. Funktioniert ohne Netz. | **Jede Ebene nennt ihre Quelle.** Was man nicht braucht, verschwindet aus dem Menü — die Karte bleibt lesbar. |
 
+## Zwei Gestalten, nicht eine gestauchte
+
+Am Rechner stehen Karte und Kacheln nebeneinander. Auf schmalen Geräten
+(unter 900 px) ist die App **keine zusammengeschobene Schreibtisch-Ansicht**,
+sondern hat einen eigenen Aufbau: schlanke Kopfzeile mit Ort, die Karte über
+die ganze Fläche, und unten eine Leiste — **Karte · Suche · Lage · ÖPNV ·
+Mehr**. Die Karte bleibt dabei immer eingehängt; die anderen Reiter legen sich
+darüber, damit Ausschnitt und Ebenen beim Wechseln erhalten bleiben.
+
+„Lage" und „ÖPNV" sind dort eigene Seiten und zeigen mehr als die Kachel: die
+Warnungen im Klartext, alle Halte in der Nähe mit ihren Abfahrten. Unter „Mehr"
+liegt, was am Rechner in der Kopfzeile steht — Notfallblatt, Kompass, Spur,
+Teilen, Offline-Regionen, Einstellungen.
+
 ## Loslegen
 
 ```bash
