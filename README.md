@@ -33,9 +33,10 @@ Kein Konto, keine Anmeldung, keine Tracker.
 
 ## Was drin ist
 
-- 🗺️ **27 Kartenebenen** — Unwetter- und Behördenwarnungen, Regenradar mit
+- 🗺️ **29 Kartenebenen** — Unwetter- und Behördenwarnungen, Regenradar mit
   Vorhersage bis +2 h, Wind, Pegel, Verkehr, Blitze, Lawinenlage, Flugzeuge,
-  Schiffe, Waldbrandgefahr, Polarlicht, Rettungspunkte …
+  Schiffe, Waldbrandgefahr, Polarlicht, Rettungspunkte, Blaulicht-Meldungen,
+  BOS-Luftfahrzeuge …
 - 🧭 **Navigation komplett offline** — Auto, Rad, zu Fuß, mit Abbiegeverboten,
   deutschen Ansagen, bis zu drei Varianten, Zwischenzielen und Höhenprofil
 - 🔎 **Suche ohne Netz** — Adressen mit Hausnummer, Orte, Punkte („Apotheke"),
@@ -171,8 +172,9 @@ gitignored.
 | Erdbeben | USGS | gemeinfrei |
 | Funkwetter, Polarlicht | NOAA SWPC | gemeinfrei |
 | Satellitenfeuer | NASA FIRMS | frei |
-| Flugzeuge | adsb.fi, adsbdb.com | frei |
+| Flugzeuge, BOS-Luftfahrzeuge | adsb.fi, adsbdb.com | frei |
 | Nachrichten | Tagesschau | frei |
+| Blaulicht-Meldungen | Presseportal (news aktuell) | frei, nur Anriss + Link |
 | Verkehrsfluss | TomTom | `TOMTOM_KEY` |
 | Schiffe (AIS) | aisstream.io | `AISSTREAM_KEY` |
 | Amateurfunk (APRS) | aprs.fi | `APRSFI_KEY` |

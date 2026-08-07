@@ -135,7 +135,7 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
       {
         key: 'adsbdb',
         name: 'adsbdb.com',
-        use: 'Halter, Muster und Flugroute beim Antippen eines Flugzeugs',
+        use: 'Halter, Muster und Flugroute beim Antippen eines Flugzeugs; Halter auch zur Erkennung der BOS-Luftfahrzeuge',
         url: 'https://www.adsbdb.com/',
       },
       {
@@ -185,6 +185,14 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         use: 'bundesweite und regionale Nachrichten',
         url: 'https://tagesschau.api.bund.dev/',
         terms: 'offene Schnittstelle (bund.dev)',
+      },
+      {
+        key: 'presseportal',
+        name: 'Presseportal Blaulicht (news aktuell)',
+        use: 'Meldungen von Polizei, Feuerwehr, THW und Zoll — bundesweit und je Bundesland',
+        url: 'https://www.presseportal.de/blaulicht',
+        terms:
+          'die Texte gehören der herausgebenden Dienststelle bzw. news aktuell — die App zeigt nur Kopfzeile und Anriss mit Rücklink, nie den Volltext. Pressemeldungen, keine Einsatzdaten.',
       },
       {
         key: 'hamqsl',

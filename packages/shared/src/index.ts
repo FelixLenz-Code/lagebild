@@ -377,6 +377,23 @@ export interface Aircraft {
   squawk: string | null;
   /** Notfall-Transpondercode: 7500 Entführung, 7600 Funkausfall, 7700 Notfall. */
   emergency: 'hijack' | 'radio-failure' | 'general' | null;
+  /** Gesetzt, wenn das Luftfahrzeug als BOS-Mittel erkannt wurde. */
+  bos?: BosInfo | null;
+}
+
+/**
+ * Aufgabe eines Behörden-Luftfahrzeugs (BOS = Behörden und Organisationen mit
+ * Sicherheitsaufgaben). Bestimmt Symbol und Farbe auf der Karte.
+ */
+export type BosRole = 'hems' | 'police' | 'sar' | 'fire' | 'customs';
+
+/** Erkennung eines Luftfahrzeugs als BOS-Mittel. */
+export interface BosInfo {
+  role: BosRole;
+  /** Sprechender Name, sofern ableitbar — z.B. „Christoph 43". */
+  name: string | null;
+  /** Halter aus der Luftfahrzeugrolle, z.B. „DRF Luftrettung". */
+  operator: string | null;
 }
 
 /** Ein Flughafen einer Flugroute. */
@@ -519,6 +536,36 @@ export type NewsCategory =
   | 'sport'
   | 'culture'
   | 'other';
+
+/**
+ * Herausgeber einer Blaulicht-Meldung. Ergibt sich aus dem Kürzel vor dem
+ * Doppelpunkt in der Überschrift („POL-BI:", „FW-EN:").
+ */
+export type BlaulichtKind = 'police' | 'fire' | 'thw' | 'customs' | 'other';
+
+/**
+ * Pressemeldung einer Behörde oder Organisation mit Sicherheitsaufgaben
+ * (Presseportal/news aktuell). Bewusst nur Kopf und Anriss — der Volltext
+ * gehört dem Herausgeber und steht unter `url`.
+ */
+export interface BlaulichtItem {
+  id: string;
+  title: string;
+  summary?: string;
+  url: string;
+  publishedAt: string | null;
+  /** Herausgebende Dienststelle, z.B. „Feuerwehr Herdecke". */
+  agency: string;
+  kind: BlaulichtKind;
+  /**
+   * Meldung zu einem tatsächlichen Vorfall — im Unterschied zu Zeugenaufrufen,
+   * Pressegesprächen, Verkehrsaktionen und Nachwuchswerbung.
+   */
+  incident: boolean;
+  place?: NewsPlace;
+  /** true, wenn die Meldung aus dem Landesfeed am Standort stammt. */
+  regional?: boolean;
+}
 
 /** Verorteter Bezug einer Meldung. */
 export interface NewsPlace {

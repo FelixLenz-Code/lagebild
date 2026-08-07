@@ -13,7 +13,7 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, fetchAvalanche, fetchAvalancheRegions, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchBlaulicht, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchBosAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, fetchAvalanche, fetchAvalancheRegions, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { withCache } from './cache.js';
 import { LageMap, type ActiveLayers, type MapApi } from './LageMap.js';
@@ -28,7 +28,7 @@ import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
 import { VehicleSheet } from './VehicleSheet.js';
 import { HfBands, HfDetail } from './HfPanel.js';
-import { NewsIcon } from './NewsIcon.js';
+import { BlaulichtIcon, NewsIcon } from './NewsIcon.js';
 import { HfPathSheet } from './HfPathSheet.js';
 import { forecastPath } from './hfPath.js';
 import { RoutePanel, formatDistance, type PlanMode } from './RoutePanel.js';
@@ -78,6 +78,8 @@ import {
   TrafficDetail,
   PegelDetail,
   NewsDetail,
+  BlaulichtDetail,
+  BosAirDetail,
   TransitDetail,
 } from './details.js';
 import { kindOfProduct, relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
@@ -85,7 +87,7 @@ import { WeatherIcon } from './WeatherIcon.js';
 import { nowcastAt, nowcastText, type Nowcast } from './radarNowcast.js';
 import { sunAltitude } from './sun.js';
 
-type DetailKey = 'weather' | 'warnings' | 'nina' | 'traffic' | 'pegel' | 'news' | 'transit' | 'hf';
+type DetailKey = 'weather' | 'warnings' | 'nina' | 'traffic' | 'pegel' | 'news' | 'blaulicht' | 'bosair' | 'transit' | 'hf';
 
 /** Anfangs-Ausschnitt um einen Punkt, bis die Karte ihren echten Ausschnitt meldet. */
 function boxAround(c: { lat: number; lon: number }): Bbox {
@@ -247,6 +249,8 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     stops: false,
     muf: false,
     news: false,
+    blaulicht: false,
+    bosair: false,
     vehicles: false,
     emergency: false,
     quakes: false,
@@ -300,6 +304,14 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const aircraft = useApi(`aircraft:${viewKey}`, () => fetchAircraft(viewport), [viewKey, refreshTick], {
     enabled: layers.aircraft && !wideViewport,
     refreshMs: 15000,
+    cache: false,
+  });
+  // BOS-Mittel sind selten und wichtig: Anders als beim allgemeinen Flugbild
+  // lohnt die Abfrage auch über einem weiten Ausschnitt — der Umkreis um die
+  // Kartenmitte deckt ein gutes Stück Deutschland ab.
+  const bosair = useApi(`bosair:${viewKey}`, () => fetchBosAircraft(viewport), [viewKey, refreshTick], {
+    enabled: layers.bosair,
+    refreshMs: 20000,
     cache: false,
   });
   const vessels = useApi(`vessels:${viewKey}`, () => fetchVessels(viewport), [viewKey, refreshTick], {
@@ -427,6 +439,16 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   );
 
   const news = useApi(`news:${geoKey}`, () => fetchNews(coords), [coords, refreshTick]);
+  // Blaulicht-Meldungen sind Pressetexte, keine Live-Lage — der Feed selbst
+  // erneuert sich alle paar Minuten, häufigeres Nachfragen brächte nichts.
+  const blaulicht = useApi(`blaulicht:${geoKey}`, () => fetchBlaulicht(coords), [coords, refreshTick], {
+    refreshMs: 300_000,
+  });
+  /** Nur die Meldungen zu tatsächlichen Vorfällen — der Rest ist Pressearbeit. */
+  const blaulichtIncidents = useMemo(
+    () => (blaulicht.data?.data ?? []).filter((b) => b.incident),
+    [blaulicht.data],
+  );
   // Pollenflug erneuert der DWD einmal täglich — stündlich nachfragen genügt.
   const pollen = useApi(`pollen:${geoKey}`, () => fetchPollen(coords), [coords, refreshTick], {
     refreshMs: 3600_000,
@@ -1376,6 +1398,8 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     pegel: { title: 'Pegelstände', source: pegel.data?.source, savedAt: pegel.savedAt },
     transit: { title: 'Bahn / ÖPNV in der Nähe', source: transit.data?.source, savedAt: transit.savedAt },
     news: { title: 'Nachrichten', source: news.data?.source, savedAt: news.savedAt },
+    blaulicht: { title: 'Blaulicht-Meldungen', source: blaulicht.data?.source, savedAt: blaulicht.savedAt },
+    bosair: { title: 'BOS-Luftfahrzeuge', source: bosair.data?.source, savedAt: bosair.savedAt },
     hf: { title: 'Funkwetter', source: hf.data?.source, savedAt: hf.savedAt },
   };
   const detailMeta = (k: DetailKey) => {
@@ -1541,6 +1565,8 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             itinerary={profile === 'transit' ? (itineraries[itineraryIndex] ?? null) : null}
             muf={mufGrid}
             news={news.data?.data ?? []}
+            blaulicht={blaulicht.data?.data ?? []}
+            bosair={bosair.data?.data ?? []}
             flyTo={flyTo}
             hfPath={hfForecast?.line ?? null}
             stops={stopPoints}
@@ -1877,6 +1903,14 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
               color={lightning.data?.data.length ? 'var(--sev2)' : undefined}
               hint={layers.lightning ? 'letzte 30 Minuten' : 'Ebene ausgeschaltet'}
             />
+            <CountCell
+              label="BOS-Luft"
+              value={layers.bosair ? (bosair.data?.data.length ?? null) : null}
+              loading={layers.bosair && bosair.loading}
+              color={bosair.data?.data.length ? 'var(--sev3)' : undefined}
+              hint={layers.bosair ? 'Rettungs- und Polizeiflug' : 'Ebene ausgeschaltet'}
+              onOpen={bosair.data?.data.length ? () => setDetail('bosair') : undefined}
+            />
           </div>
         </Tile>
 
@@ -1973,6 +2007,37 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
                   <span className="tm">{n.topic ? `${n.topic} · ` : ''}{relativeTime(n.publishedAt)}</span>
                 </li>
               ))}
+            </ul>
+          </Loader>
+        </Tile>
+
+        {/* Blaulicht: In der Kachel stehen nur die Meldungen zu tatsächlichen
+            Vorfällen — Zeugenaufrufe und Aktionstage würden die kurze Liste
+            sonst zumüllen. Vollständig ist erst die Detailansicht. */}
+        <Tile
+          tab="lage"
+          title="Blaulicht"
+          badge={blaulichtIncidents.length ? `${blaulichtIncidents.length}` : undefined}
+          badgeKind="warn"
+          source={blaulicht.data?.source}
+          cached={blaulicht.fromCache}
+          wide
+          onOpen={blaulicht.data ? () => setDetail('blaulicht') : undefined}
+        >
+          <Loader state={blaulicht} empty="Keine Meldungen.">
+            <ul className="news">
+              {(blaulichtIncidents.length ? blaulichtIncidents : (blaulicht.data?.data ?? []))
+                .slice(0, 5)
+                .map((b) => (
+                  <li className="news-item has-ico" key={b.id}>
+                    <BlaulichtIcon kind={b.kind} size={16} />
+                    <a href={b.url} target="_blank" rel="noreferrer">{b.title}</a>
+                    <span className="tm">
+                      {b.place ? `${b.place.name} · ` : ''}
+                      {relativeTime(b.publishedAt)}
+                    </span>
+                  </li>
+                ))}
             </ul>
           </Loader>
         </Tile>
@@ -2429,6 +2494,12 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           )}
           {detail === 'news' && news.data && (
             <NewsDetail list={news.data.data} onShowOnMap={showOnMap} />
+          )}
+          {detail === 'blaulicht' && blaulicht.data && (
+            <BlaulichtDetail list={blaulicht.data.data} onShowOnMap={showOnMap} />
+          )}
+          {detail === 'bosair' && bosair.data && (
+            <BosAirDetail list={bosair.data.data} onShowOnMap={showOnMap} />
           )}
           {detail === 'hf' && hfNow && <HfDetail data={hfNow} />}
         </Sheet>

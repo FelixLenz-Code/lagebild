@@ -26,6 +26,7 @@ import type {
   WindField,
   WaterLevelHistory,
   NewsItem,
+  BlaulichtItem,
   GeoResult,
   TransitVehicle,
   EarthquakeItem,
@@ -78,6 +79,9 @@ import {
   ensureMapIcons,
   EMERGENCY_ICON,
   NEWS_STYLE,
+  BLAULICHT_STYLE,
+  BOS_COLORS,
+  BOS_LABEL,
   STOP_COLOR,
   STOP_ICON,
   WIND_CLASSES,
@@ -364,6 +368,52 @@ function newsPopupHtml(item: NewsItem): string {
     (place ? ` · ${esc(place.name)}${place.approximate ? ' (ungenau)' : ''}` : '') +
     `</div>` +
     `<a class="wp-link" href="${esc(safeUrl(item.url) ?? "#")}" target="_blank" rel="noreferrer">Zur Meldung</a>` +
+    `</div>`
+  );
+}
+
+/**
+ * Popup einer Blaulicht-Meldung. Bewusst nur Kopf, Anriss und Rücklink — die
+ * Texte gehören der herausgebenden Dienststelle bzw. news aktuell.
+ */
+function blaulichtPopupHtml(item: BlaulichtItem): string {
+  const style = BLAULICHT_STYLE[item.kind] ?? BLAULICHT_STYLE.other!;
+  return (
+    `<div class="warn-popup news-popup">` +
+    (item.incident ? `<span class="wp-sev" style="background:${style.color}">Einsatz</span>` : '') +
+    `<h4>${esc(item.title)}</h4>` +
+    (item.summary ? `<p class="wp-desc">${esc(item.summary)}</p>` : '') +
+    `<div class="wp-meta">${esc(item.agency)}` +
+    (item.publishedAt ? ` · ${esc(relativeTime(item.publishedAt))}` : '') +
+    (item.place ? ` · ${esc(item.place.name)}` : '') +
+    `</div>` +
+    `<a class="wp-link" href="${esc(safeUrl(item.url) ?? '#')}" target="_blank" rel="noreferrer">Zur Meldung</a>` +
+    `<div class="wp-meta">Presseportal · news aktuell</div>` +
+    `</div>`
+  );
+}
+
+/**
+ * Popup eines BOS-Luftfahrzeugs. Die Flugdaten stehen schon im gewohnten
+ * Flugzeug-Popup — hier zählt zuerst, wer da fliegt und ob er in der Luft ist.
+ */
+function bosPopupHtml(a: Aircraft): string {
+  const bos = a.bos!;
+  const facts = [
+    a.onGround
+      ? 'am Boden'
+      : a.altitudeFt != null
+        ? `${a.altitudeFt.toLocaleString('de-DE')} ft über NN`
+        : null,
+    a.groundSpeedKt != null ? `${Math.round(a.groundSpeedKt)} kn` : null,
+  ].filter(Boolean);
+  return (
+    `<div class="warn-popup">` +
+    `<span class="wp-sev" style="background:${BOS_COLORS[bos.role] ?? '#5b5b60'}">${esc(BOS_LABEL[bos.role] ?? 'BOS')}</span>` +
+    `<b>${esc(bos.name ?? a.callsign ?? a.registration ?? a.icao.toUpperCase())}</b>` +
+    `<div class="wp-region">${esc([bos.operator, a.description ?? a.type, a.registration].filter(Boolean).join(' · ') || 'Luftfahrzeug')}</div>` +
+    (facts.length ? `<p class="wp-desc">${esc(facts.join(' · '))}</p>` : '') +
+    `<div class="wp-meta">Empfangen ${a.seenSec != null ? `vor ${Math.round(a.seenSec)} s` : 'gerade eben'} · ADS-B</div>` +
     `</div>`
   );
 }
@@ -727,6 +777,27 @@ function aircraftToGeoJson(list: Aircraft[]): GeoJSON.FeatureCollection {
   };
 }
 
+function bosToGeoJson(list: Aircraft[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: list
+      .filter((a) => a.bos)
+      .map((a) => ({
+        type: 'Feature',
+        properties: {
+          id: a.icao,
+          // Der sprechende Name geht vor: „Christoph 43" sagt mehr als „CHX43".
+          label: a.bos!.name ?? a.callsign ?? a.registration ?? '',
+          // Das Symbol ist ein Kreis — eine Drehung wäre nicht zu sehen. Der
+          // Kurs steht im Popup.
+          rotate: 0,
+          icon: `bos-${a.bos!.role}-${a.onGround ? 'ground' : 'air'}`,
+        },
+        geometry: { type: 'Point', coordinates: [a.coordinates.lon, a.coordinates.lat] },
+      })),
+  };
+}
+
 function vesselsToGeoJson(list: Vessel[]): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -849,6 +920,10 @@ interface Props {
   muf: HfMufGrid | null;
   /** Verortete Meldungen für die Nachrichten-Ebene. */
   news: NewsItem[];
+  /** Verortete Blaulicht-Meldungen (Polizei, Feuerwehr, THW). */
+  blaulicht: BlaulichtItem[];
+  /** Luftfahrzeuge von Polizei, Luftrettung und Zoll. */
+  bosair: Aircraft[];
   /** Fahrzeuge des öffentlichen Verkehrs (Position geschätzt). */
   vehicles: TransitVehicle[];
   /** Antippen eines Fahrzeugs öffnet dessen Fahrplan. */
@@ -1006,6 +1081,10 @@ export interface ActiveLayers {
   muf: boolean;
   /** Verortete Nachrichten. */
   news: boolean;
+  /** Blaulicht-Meldungen von Polizei, Feuerwehr und THW. */
+  blaulicht: boolean;
+  /** Luftfahrzeuge von Polizei, Luftrettung und Zoll. */
+  bosair: boolean;
   aircraft: boolean;
   vessels: boolean;
   aprs: boolean;
@@ -1024,12 +1103,15 @@ export type { LayerId, LayerRowId } from './layerCatalog.js';
  * Beobachtungsliste und darf deshalb immer mit Beschriftung erscheinen.
  */
 const SYMBOL_STYLE: Record<
-  'aircraft' | 'vessels' | 'aprs',
+  'aircraft' | 'vessels' | 'aprs' | 'bosair',
   { size: number; minzoom: number; labelZoom: number }
 > = {
   aircraft: { size: 0.62, minzoom: 6, labelZoom: 9 },
   vessels: { size: 0.5, minzoom: 5, labelZoom: 9 },
   aprs: { size: 0.55, minzoom: 0, labelZoom: 0 },
+  // BOS-Mittel sind wenige und wichtig: größer, früher sichtbar und von
+  // Anfang an beschriftet — anders als die hunderte Verkehrsflugzeuge.
+  bosair: { size: 0.72, minzoom: 4, labelZoom: 6 },
 };
 
 const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
@@ -1053,6 +1135,8 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   stops: false,
   muf: false,
   news: false,
+  blaulicht: false,
+  bosair: false,
   vehicles: false,
   emergency: false,
   quakes: false,
@@ -1092,6 +1176,8 @@ export function LageMap({
   itinerary,
   muf,
   news,
+  blaulicht,
+  bosair,
   vehicles,
   onVehicleClick,
   vehicleTrip,
@@ -1203,6 +1289,8 @@ export function LageMap({
     stops: showStops,
     muf: showMuf,
     news: showNews,
+    blaulicht: showBlaulicht,
+    bosair: showBosAir,
     vehicles: showVehicles,
     emergency: showEmergency,
     quakes: showQuakes,
@@ -1261,6 +1349,8 @@ export function LageMap({
         stops: showStops,
         muf: showMuf,
         news: showNews,
+        blaulicht: showBlaulicht,
+        bosair: showBosAir,
         vehicles: showVehicles,
         emergency: showEmergency,
         quakes: showQuakes,
@@ -1281,6 +1371,7 @@ export function LageMap({
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
+      showBlaulicht, showBosAir,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
       showAurora, showFire, showTerrain, showTrails, showContours, showAvalanche, showRest, showWebcams, showRescue, aprsTargets,
       onLayersChange,
@@ -1313,6 +1404,7 @@ export function LageMap({
 
   // Nachschlagetabellen für die Klick-Popups
   const aircraftById = useRef<Map<string, Aircraft>>(new Map());
+  const bosById = useRef<Map<string, Aircraft>>(new Map());
   const vesselByMmsi = useRef<Map<number, Vessel>>(new Map());
   const aprsByName = useRef<Map<string, AprsStation>>(new Map());
   /** Nachgeladene Flugdetails (Halter, Route) — je ICAO nur einmal holen. */
@@ -1322,6 +1414,9 @@ export function LageMap({
   useEffect(() => {
     aircraftById.current = new Map(aircraft.map((a) => [a.icao, a]));
   }, [aircraft]);
+  useEffect(() => {
+    bosById.current = new Map(bosair.map((a) => [a.icao, a]));
+  }, [bosair]);
   useEffect(() => {
     vesselByMmsi.current = new Map(vessels.map((v) => [v.mmsi, v]));
   }, [vessels]);
@@ -1410,6 +1505,12 @@ export function LageMap({
           }
         });
     });
+    map.on('click', 'bosair', (e) => {
+      if (drawModeRef.current !== 'off') return;
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const ac = id ? bosById.current.get(id) : undefined;
+      if (ac) warnPopup.current!.setLngLat(e.lngLat).setHTML(bosPopupHtml(ac)).addTo(map);
+    });
     map.on('click', 'vessels', (e) => {
       if (drawModeRef.current !== 'off') return;
       const id = e.features?.[0]?.properties?.id as number | undefined;
@@ -1424,7 +1525,7 @@ export function LageMap({
       if (station) warnPopup.current!.setLngLat(e.lngLat).setHTML(aprsPopupHtml(station)).addTo(map);
     });
 
-    for (const layer of ['warnings-fill', 'aircraft', 'vessels', 'aprs']) {
+    for (const layer of ['warnings-fill', 'aircraft', 'bosair', 'vessels', 'aprs']) {
       map.on('mouseenter', layer, () => {
         map.getCanvas().style.cursor = 'pointer';
       });
@@ -1982,6 +2083,7 @@ export function LageMap({
 
     for (const [id, visible, data] of [
       ['aircraft', showAircraft, aircraftToGeoJson(aircraft)],
+      ['bosair', showBosAir, bosToGeoJson(bosair)],
       ['vessels', showVessels, vesselsToGeoJson(vessels)],
       ['aprs', showAprs, aprsToGeoJson(aprs)],
     ] as const) {
@@ -2023,7 +2125,7 @@ export function LageMap({
         },
       });
     }
-  }, [showAircraft, showVessels, showAprs, aircraft, vessels, aprs, ready, styleEpoch, iconEpoch]);
+  }, [showAircraft, showBosAir, showVessels, showAprs, aircraft, bosair, vessels, aprs, ready, styleEpoch, iconEpoch]);
 
   // --- Windfeld: Strömungsbild + Beschriftung -----------------------------
 
@@ -2377,6 +2479,87 @@ export function LageMap({
       map.off('mouseleave', 'news', leave);
     };
   }, [news, ready, styleEpoch]);
+
+  // Blaulicht-Meldungen. Eigene Ebene statt einer Kategorie der Nachrichten,
+  // weil hier die Behörde selbst spricht — und weil Meldungen ohne Vorfall
+  // (Zeugenaufrufe, Aktionstage) blasser stehen sollen als echte Einsätze.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('blaulicht')) return;
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    map.addSource('blaulicht', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'blaulicht',
+      type: 'symbol',
+      source: 'blaulicht',
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 4, 0.6, 10, 0.9],
+        'icon-allow-overlap': false,
+        // Einsätze zuerst platzieren — sie sollen beim Gedränge stehen bleiben.
+        'symbol-sort-key': ['case', ['==', ['get', 'incident'], true], 0, 1],
+        'text-field': ['step', ['zoom'], '', 8, ['get', 'place']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'text-offset': [0, 1.4],
+        'text-anchor': 'top',
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.5,
+        'icon-opacity': ['case', ['==', ['get', 'incident'], true], 1, 0.6],
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('blaulicht') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showBlaulicht ? blaulicht : [])
+        .filter((b) => b.place)
+        .map((b, i) => ({
+          type: 'Feature',
+          properties: {
+            index: i,
+            icon: `bl-${b.kind}`,
+            incident: b.incident,
+            place: b.place!.name,
+          },
+          geometry: { type: 'Point', coordinates: [b.place!.lon, b.place!.lat] },
+        })),
+    });
+  }, [blaulicht, showBlaulicht, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const located = () => blaulicht.filter((b) => b.place);
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const item = index != null ? located()[index] : undefined;
+      if (item) warnPopup.current!.setLngLat(e.lngLat).setHTML(blaulichtPopupHtml(item)).addTo(map);
+    };
+    const enter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const leave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+    map.on('click', 'blaulicht', onClick);
+    map.on('mouseenter', 'blaulicht', enter);
+    map.on('mouseleave', 'blaulicht', leave);
+    return () => {
+      map.off('click', 'blaulicht', onClick);
+      map.off('mouseenter', 'blaulicht', enter);
+      map.off('mouseleave', 'blaulicht', leave);
+    };
+  }, [blaulicht, ready, styleEpoch]);
 
   // In den Einstellungen abgewählte Ebenen bleiben nicht heimlich an.
   const hiddenKey = hiddenLayers.join(',');
@@ -3852,7 +4035,11 @@ export function LageMap({
             onAllOff={() => setOn({ ...ALL_LAYERS_OFF })}
             footer={
               <span className="lm-credit">
-                Flüge: adsb.lol · Schiffe: aisstream.io · Haltestellen:{' '}
+                Flüge: adsb.lol · Schiffe: aisstream.io · Blaulicht:{' '}
+                <a href="https://www.presseportal.de/blaulicht" target="_blank" rel="noreferrer">
+                  presseportal.de
+                </a>{' '}
+                · Haltestellen:{' '}
                 <a href="https://transitous.org/" target="_blank" rel="noreferrer">
                   transitous.org
                 </a>{' '}

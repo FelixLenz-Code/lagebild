@@ -116,6 +116,38 @@ const PLANE_STATES: Record<string, string> = {
   alert: '#a92318',
 };
 
+/**
+ * Hubschrauber von der Seite — als Piktogramm für den farbigen Kreis.
+ *
+ * **Nicht die Silhouette der Flugzeug-Ebene:** Die ist von oben gezeichnet und
+ * lebt von der Drehung nach Kurs; bei den wenigen, aber wichtigen BOS-Mitteln
+ * zählt das Wiedererkennen, und dafür trägt ein Kreis mit weißem Piktogramm
+ * deutlich besser (dieselbe Lehre wie bei den Haltestellen).
+ */
+const GLYPH_HELI =
+  'M8 10.4h16v1.9H8Zm7.2 2.2h1.6v1.7h-1.6ZM11 14.2h7.4a2.7 2.7 0 0 1 2.7 2.7v1.3a1.5 1.5 0 0 1-1.5 1.5H11a2.6 2.6 0 0 1-2.6-2.6v-.3A2.6 2.6 0 0 1 11 14.2Zm8.6 1.4h4.1v1.5h-4.1Zm3 -2.4h1.5v6.1h-1.5ZM9 21.1h12v1.5H9Zm3.1-1.5h1.3v1.6h-1.3Zm5.4 0h1.3v1.6h-1.3Z';
+
+/**
+ * Aufgabe eines BOS-Luftfahrzeugs → Farbe. Rot für die Luftrettung, das
+ * Polizeiblau der übrigen Symbole, Grün für die Suche und Rettung.
+ */
+export const BOS_COLORS: Record<string, string> = {
+  hems: '#c0392b',
+  police: '#1d4e73',
+  sar: '#1f8a4c',
+  fire: '#c96f0f',
+  customs: '#6b3fa0',
+};
+
+/** Aufgabe im Klartext — Karte, Popup und Liste benutzen dieselbe Bezeichnung. */
+export const BOS_LABEL: Record<string, string> = {
+  hems: 'Luftrettung',
+  police: 'Polizei',
+  sar: 'Such- und Rettungsdienst',
+  fire: 'Feuerwehr',
+  customs: 'Zoll',
+};
+
 /** Icon-Name → Füll-/Randfarbe. Die Namen tauchen so in den Layer-Ausdrücken auf. */
 const VARIANTS: Record<string, [string, string, string]> = {
   ...Object.fromEntries(
@@ -172,6 +204,26 @@ export const NEWS_STYLE: Record<string, { path: string; color: string; label: st
   sport: { path: GLYPH_BALL, color: '#6f9e2e', label: 'Sport' },
   culture: { path: GLYPH_NOTE, color: '#b4478f', label: 'Kultur' },
   other: { path: GLYPH_PAPER, color: '#5b5b60', label: 'Nachricht' },
+};
+
+/** Flamme für die Feuerwehr (wie beim Notfallpunkt „Feuerwache"). */
+const GLYPH_FLAME =
+  'M17.5 4c.6 3.4-1.2 4.8-2.7 6.4-1.6 1.7-3.3 3.5-3.3 7.1a6.5 6.5 0 0 0 13 0c0-2.6-1-4.2-2.3-5.6-.3 1.3-1.2 2.2-2.2 2.2-1.4 0-2-1.1-2-2.6C18 8.9 18.4 6.1 17.5 4Z';
+/** Zahnrad-Andeutung für das THW — technische Hilfe. */
+const GLYPH_GEAR =
+  'M14.2 5.5h3.6l.5 3a8 8 0 0 1 2 1.2l2.8-1.2 1.8 3.1-2.3 2a8 8 0 0 1 0 2.4l2.3 2-1.8 3.1-2.8-1.2a8 8 0 0 1-2 1.2l-.5 3h-3.6l-.5-3a8 8 0 0 1-2-1.2l-2.8 1.2-1.8-3.1 2.3-2a8 8 0 0 1 0-2.4l-2.3-2 1.8-3.1 2.8 1.2a8 8 0 0 1 2-1.2Zm1.8 6.9a4.1 4.1 0 1 0 0 8.2 4.1 4.1 0 0 0 0-8.2Z';
+
+/**
+ * Blaulicht-Meldungen: Herausgeber → Piktogramm, Farbe und Bezeichnung.
+ * Dieselbe Aufteilung wie bei den Nachrichten, damit Karte und Liste
+ * zusammenpassen.
+ */
+export const BLAULICHT_STYLE: Record<string, { path: string; color: string; label: string }> = {
+  police: { path: GLYPH_SHIELD, color: '#1d4e73', label: 'Polizei' },
+  fire: { path: GLYPH_FLAME, color: '#c0392b', label: 'Feuerwehr' },
+  thw: { path: GLYPH_GEAR, color: '#0b5ba8', label: 'THW' },
+  customs: { path: GLYPH_BUILDING, color: '#2c7448', label: 'Zoll' },
+  other: { path: GLYPH_PAPER, color: '#5b5b60', label: 'Behörde' },
 };
 
 /** Rastanlage: „P" als Aussparung im Kreis. */
@@ -264,6 +316,15 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     ...Object.entries(NEWS_STYLE).map(([cat, { path, color }]) =>
       drawSvg(map, `news-${cat}`, badge(path, color)),
     ),
+    ...Object.entries(BLAULICHT_STYLE).map(([kind, { path, color }]) =>
+      drawSvg(map, `bl-${kind}`, badge(path, color)),
+    ),
+    // BOS-Luftfahrzeuge in der Farbe ihrer Aufgabe; am Boden grau, damit ein
+    // Hubschrauber auf seiner Station nicht wie ein laufender Einsatz wirkt.
+    ...Object.entries(BOS_COLORS).flatMap(([role, color]) => [
+      drawSvg(map, `bos-${role}-air`, badge(GLYPH_HELI, color)),
+      drawSvg(map, `bos-${role}-ground`, badge(GLYPH_HELI, '#8a8a8f')),
+    ]),
     ...Object.entries(EMERGENCY_BADGES).map(([kind, [glyph, color]]) =>
       drawSvg(map, `emg-${kind}`, badge(glyph, color)),
     ),

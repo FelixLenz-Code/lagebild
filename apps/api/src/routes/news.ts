@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { NewsCategory, NewsItem, NewsPlace, StateCode } from '@lagebild/shared';
-import { FEDERAL_STATE_BOUNDS } from '@lagebild/shared';
 import { readCoords } from '../lib/geo.js';
 import { cached } from '../lib/cache.js';
 import { fetchJson } from '../lib/http.js';
 import { envelope } from '../lib/envelope.js';
+import { ALL_STATE_NAMES, STATE_NAME, statesOf } from '../lib/states.js';
+import { boxFor, isStateName, lookupPlace, stateCenter, type LookupBudget } from '../lib/photon.js';
 
 /**
  * Aktuelle Meldungen der Tagesschau-API (bund.dev). Wichtig: Endpunkt ohne
@@ -50,62 +51,12 @@ const REGION_TO_STATE: Record<number, StateCode> = {
   16: '16', // Thüringen
 };
 
-const STATE_NAME: Record<StateCode, string> = {
-  '01': 'Schleswig-Holstein',
-  '02': 'Hamburg',
-  '03': 'Niedersachsen',
-  '04': 'Bremen',
-  '05': 'Nordrhein-Westfalen',
-  '06': 'Hessen',
-  '07': 'Rheinland-Pfalz',
-  '08': 'Baden-Württemberg',
-  '09': 'Bayern',
-  '10': 'Saarland',
-  '11': 'Berlin',
-  '12': 'Brandenburg',
-  '13': 'Mecklenburg-Vorpommern',
-  '14': 'Sachsen',
-  '15': 'Sachsen-Anhalt',
-  '16': 'Thüringen',
-};
-
-const ALL_STATE_NAMES = new Set(Object.values(STATE_NAME));
 /** Umgekehrte Zuordnung: unser Ländercode → Regionskennung der Tagesschau. */
 const STATE_TO_REGION: Record<string, number> = Object.fromEntries(
   Object.entries(REGION_TO_STATE).map(([region, code]) => [code, Number(region)]),
 );
 /** Kürzel der Rundfunkanstalten — Schlagworte, aber keine Orte. */
 const BROADCASTERS = new Set(['HR', 'NDR', 'WDR', 'BR', 'MDR', 'SWR', 'RBB', 'SR', 'RB', 'ARD', 'ZDF']);
-
-/**
- * Welche Landesprogramme passen zum Standort? Die Rechtecke überlappen sich
- * (Bremen liegt in Niedersachsen, Wiesbaden im rheinland-pfälzischen Rechteck)
- * — bei Nachrichten ist das kein Problem, sondern erwünscht: wer in Bremen
- * sitzt, interessiert sich auch für das Umland. Deshalb bis zu zwei Programme,
- * das am besten passende zuerst.
- */
-function statesOf(point: { lat: number; lon: number }): StateCode[] {
-  const hits: { code: StateCode; margin: number }[] = [];
-  for (const [code, b] of Object.entries(FEDERAL_STATE_BOUNDS) as [StateCode, number[]][]) {
-    if (point.lon < b[0]! || point.lon > b[2]! || point.lat < b[1]! || point.lat > b[3]!) continue;
-    hits.push({
-      code,
-      margin: Math.min(point.lon - b[0]!, b[2]! - point.lon, point.lat - b[1]!, b[3]! - point.lat),
-    });
-  }
-  // Kleine Länder zuerst: ein Stadtstaat ist der nähere Bezug als das Flächenland.
-  hits.sort((a, b) => {
-    const areaA = area(a.code);
-    const areaB = area(b.code);
-    return areaA - areaB;
-  });
-  return hits.slice(0, 2).map((h) => h.code);
-}
-
-function area(code: StateCode): number {
-  const b = FEDERAL_STATE_BOUNDS[code];
-  return (b[2] - b[0]) * (b[3] - b[1]);
-}
 
 /**
  * Ortsname aus der Schlagzeile raten: „CSD **in Schlüchtern**", „Landesstraße
@@ -117,7 +68,7 @@ function placeFromTitle(title: string): string | null {
     /\b(?:in|bei|aus|nahe|um|vor)\s+([A-ZÄÖÜ][\wäöüß.-]{2,}(?:\s[A-ZÄÖÜ][\wäöüß.-]{2,})?)/,
   );
   const found = m?.[1]?.trim();
-  if (!found || ALL_STATE_NAMES.has(found)) return null;
+  if (!found || isStateName(found)) return null;
   return found;
 }
 
@@ -130,13 +81,6 @@ function placeFromTitle(title: string): string | null {
  * Meldung** geprüft: liegt er außerhalb, war es kein Ortsname. Meldungen ohne
  * Region (bundesweit, Ausland) bekommen gar keinen Ort.
  */
-interface PhotonHit {
-  geometry?: { coordinates?: [number, number] };
-  properties?: Record<string, unknown>;
-}
-
-/** Ergebnisse werden lange gehalten — Ortsnamen ändern sich nicht. */
-const GEO_TTL = 7 * 24 * 3600;
 /** Höchstens so viele neue Abfragen je Aktualisierung (Photon schonen). */
 const MAX_LOOKUPS = 20;
 /** So viele Meldungen je Landesprogramm bzw. bundesweit übernehmen. */
@@ -145,37 +89,8 @@ const NATIONAL_MAX = 60;
 /** Je Meldung werden nur die aussichtsreichsten Schlagworte geprüft. */
 const TAGS_PER_ITEM = 3;
 
-async function locate(tag: string, state: StateCode, budget: { left: number }): Promise<NewsPlace | null> {
-  const key = `newsgeo:${tag.toLowerCase()}`;
-  const cache = cached<NewsPlace | null>(key, GEO_TTL);
-  if (cache.hit !== undefined) return cache.hit;
-  if (budget.left <= 0) return null;
-  budget.left--;
-
-  const box = FEDERAL_STATE_BOUNDS[state];
-  try {
-    const res = await fetchJson<{ features?: PhotonHit[] }>(
-      `https://photon.komoot.io/api?q=${encodeURIComponent(tag)}&lang=de&limit=5&bbox=${box.join(',')}`,
-      { timeoutMs: 8000 },
-    );
-    for (const f of res.features ?? []) {
-      const c = f.geometry?.coordinates;
-      const p = f.properties ?? {};
-      const type = typeof p.type === 'string' ? p.type : '';
-      // Nur Orte und Verwaltungseinheiten zählen, keine Straßen oder Geschäfte.
-      if (!c || !['city', 'town', 'village', 'district', 'county', 'state', 'locality'].includes(type)) continue;
-      const [lon, lat] = c;
-      if (lon < box[0] || lon > box[2] || lat < box[1] || lat > box[3]) continue;
-      // Ein ganzes Bundesland ist kein Ort — dann bleibt es beim Mittelpunkt.
-      const place: NewsPlace = { name: tag, lat, lon, state, approximate: type === 'state' };
-      cache.set(place);
-      return place;
-    }
-  } catch {
-    /* Ortssuche nicht erreichbar → Meldung bleibt beim Bundesland */
-  }
-  cache.set(null);
-  return null;
+function locate(tag: string, state: StateCode, budget: LookupBudget): Promise<NewsPlace | null> {
+  return lookupPlace(tag, boxFor(state), budget, state);
 }
 
 /* ------------------------------------------------------------------ */
@@ -344,14 +259,7 @@ newsRoute.get('/', async (c) => {
       }
       if (!place) {
         // Wenigstens das Bundesland — als solches gekennzeichnet.
-        const b = FEDERAL_STATE_BOUNDS[itemState];
-        place = {
-          name: STATE_NAME[itemState],
-          lat: (b[1] + b[3]) / 2,
-          lon: (b[0] + b[2]) / 2,
-          state: itemState,
-          approximate: true,
-        };
+        place = stateCenter(itemState, STATE_NAME[itemState]);
       }
     }
     items.push({

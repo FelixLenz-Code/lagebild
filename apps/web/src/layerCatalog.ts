@@ -22,6 +22,8 @@ export type LayerId =
   | 'stops'
   | 'muf'
   | 'news'
+  | 'blaulicht'
+  | 'bosair'
   | 'vehicles'
   | 'emergency'
   | 'quakes'
@@ -94,6 +96,8 @@ export const LAYER_CATALOG: LayerInfo[] = [
   { id: 'rescue', label: 'Rettungspunkte', color: '#1f8a4c', group: 'Lage', hint: 'nummerierte Schilder für den Notruf · ab Zoom 11', source: 'osm-overpass' },
   { id: 'avalanche', label: 'Lawinenlage', color: 'linear-gradient(90deg,#ccff66,#ffff00,#ff9900,#ff0000)', group: 'Gefahren', hint: 'Alpen und Bayern · nur in der Saison', source: 'eaws' },
   { id: 'quakes', label: 'Erdbeben', color: '#8a4b1d', group: 'Lage', hint: 'letzte Woche, ab Stärke 2,5', source: 'usgs' },
+  { id: 'blaulicht', label: 'Blaulicht-Meldungen', color: '#1d4e73', group: 'Lage', hint: 'Polizei, Feuerwehr, THW · Presse, nicht live', source: 'presseportal' },
+  { id: 'bosair', label: 'BOS-Luftfahrzeuge', color: '#c0392b', group: 'Lage', hint: 'Rettungs- und Polizeihubschrauber, live', source: 'adsb' },
   { id: 'news', label: 'Nachrichten', color: '#6a7580', group: 'Lage', hint: 'regionale Meldungen mit Ortsbezug', source: 'tagesschau' },
   // Startet als einzige Ebene AN: sie zeigt, was der Nutzer selbst angelegt
   // hat — das darf beim Öffnen der App nicht verschwunden sein.

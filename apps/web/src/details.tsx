@@ -1,6 +1,6 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { DepartureBoard } from './Departures.js';
-import { NewsIcon } from './NewsIcon.js';
+import { BlaulichtIcon, NewsIcon } from './NewsIcon.js';
 import type {
   Coords,
   WeatherNow,
@@ -10,6 +10,8 @@ import type {
   TrafficIncident,
   WaterLevel,
   NewsItem,
+  BlaulichtItem,
+  Aircraft,
   AirQuality,
   PollenForecast,
   TransitStop,
@@ -30,6 +32,7 @@ import {
   AIR_DE,
   AIR_COLOR,
 } from './format.js';
+import { BOS_COLORS, BOS_LABEL } from './mapIcons.js';
 import { WeatherIcon } from './WeatherIcon.js';
 import { sunAltitude } from './sun.js';
 
@@ -680,6 +683,146 @@ export function NewsDetail({
           </li>
         ))}
       </ul>
+    </>
+  );
+}
+
+/**
+ * Blaulicht-Meldungen. Der Filter steht auf „Einsätze", weil das der Grund
+ * ist, diese Liste zu öffnen: Zeugenaufrufe, Aktionstage und Nachwuchswerbung
+ * machen den größeren Teil des Feeds aus, sind aber für ein Lagebild ohne
+ * Belang. Volltexte gibt es bewusst nicht — nur den Rücklink.
+ */
+export function BlaulichtDetail({
+  list,
+  onShowOnMap,
+}: {
+  list: BlaulichtItem[];
+  onShowOnMap?: (lat: number, lon: number) => void;
+}) {
+  const [filter, setFilter] = useState<'incident' | 'all' | 'placed'>('incident');
+  const incidents = list.filter((b) => b.incident);
+  const placed = list.filter((b) => b.place);
+  const shown = filter === 'incident' ? incidents : filter === 'placed' ? placed : list;
+  if (list.length === 0) return <p className="muted">Keine Meldungen.</p>;
+  return (
+    <>
+      <div className="news-filter">
+        {(
+          [
+            ['incident', `Einsätze (${incidents.length})`],
+            ['all', `Alle (${list.length})`],
+            ['placed', `Mit Ort (${placed.length})`],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={`rp-chip${filter === key ? ' is-on' : ''}`}
+            aria-pressed={filter === key}
+            onClick={() => setFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 && <p className="muted">Nichts in dieser Auswahl.</p>}
+      <ul className="news">
+        {shown.map((b) => (
+          <li className="news-item has-ico" key={b.id}>
+            <BlaulichtIcon kind={b.kind} size={20} />
+            <a href={b.url} target="_blank" rel="noreferrer">{b.title}</a>
+            {b.summary && <p className="news-summary">{b.summary}</p>}
+            <span className="tm">
+              {b.agency} · {relativeTime(b.publishedAt)}
+              {b.place && (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    className="news-place"
+                    onClick={() => onShowOnMap?.(b.place!.lat, b.place!.lon)}
+                    title="Auf der Karte zeigen"
+                  >
+                    {b.place.name}
+                  </button>
+                </>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="sect-note">
+        Pressemeldungen der Dienststellen über{' '}
+        <a href="https://www.presseportal.de/blaulicht" target="_blank" rel="noreferrer">
+          presseportal.de
+        </a>{' '}
+        (news aktuell). Keine Einsatzdaten — die Meldungen erscheinen nach dem Ereignis.
+      </p>
+    </>
+  );
+}
+
+/**
+ * Luftfahrzeuge von Luftrettung, Polizei und Zoll. Sortiert nach Aufgabe und
+ * dann nach Höhe: Was in der Luft ist, steht oben — genau das ist der
+ * Lagehinweis.
+ */
+export function BosAirDetail({
+  list,
+  onShowOnMap,
+}: {
+  list: Aircraft[];
+  onShowOnMap?: (lat: number, lon: number) => void;
+}) {
+  if (list.length === 0) return <p className="muted">Keine BOS-Luftfahrzeuge im Ausschnitt.</p>;
+  const sorted = [...list].sort(
+    (a, b) => Number(a.onGround) - Number(b.onGround) || (b.altitudeFt ?? 0) - (a.altitudeFt ?? 0),
+  );
+  return (
+    <>
+      <ul className="news">
+        {sorted.map((a) => {
+          const bos = a.bos!;
+          return (
+            <li className="news-item has-ico" key={a.icao}>
+              <span
+                className="news-ico"
+                title={BOS_LABEL[bos.role]}
+                aria-label={BOS_LABEL[bos.role]}
+                style={{ background: BOS_COLORS[bos.role], width: 28, height: 28 }}
+              >
+                <svg viewBox="0 0 32 32" width={20} height={20} fill="#fff" aria-hidden="true">
+                  <path d="M15 8h2v13h-2Z M5.5 14.6h21v1.8h-21Z M9 7.7 24.3 23l-1.3 1.3L7.7 9Z M23 7.7 7.7 23 9 24.3 24.3 9Z M13.6 20.5h4.8v2.2h-4.8Z" />
+                </svg>
+              </span>
+              <button
+                type="button"
+                className="news-place"
+                onClick={() => onShowOnMap?.(a.coordinates.lat, a.coordinates.lon)}
+                title="Auf der Karte zeigen"
+              >
+                {bos.name ?? a.callsign ?? a.registration ?? a.icao.toUpperCase()}
+              </button>
+              <span className="tm">
+                {BOS_LABEL[bos.role]}
+                {bos.operator ? ` · ${bos.operator}` : ''}
+                {' · '}
+                {a.onGround
+                  ? 'am Boden'
+                  : a.altitudeFt != null
+                    ? `${a.altitudeFt.toLocaleString('de-DE')} ft`
+                    : 'in der Luft'}
+                {a.registration ? ` · ${a.registration}` : ''}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="sect-note">
+        Erkannt am Rufzeichen und am Halter aus der Luftfahrzeugrolle (ADS-B, adsbdb.com). Nicht
+        jede Maschine sendet — die Liste ist nie vollständig.
+      </p>
     </>
   );
 }

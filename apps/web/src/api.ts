@@ -6,6 +6,7 @@ import type {
   WarningFeature,
   TrafficIncident,
   NewsItem,
+  BlaulichtItem,
   WaterLevel,
   WaterLevelHistory,
   AirQuality,
@@ -79,6 +80,10 @@ export const fetchForecast = (c: Coords): Promise<ApiEnvelope<WeatherForecast>> 
 /** Nachrichten; mit Standort kommen die Meldungen des Regionalprogramms dazu. */
 export const fetchNews = (near?: Coords): Promise<ApiEnvelope<NewsItem[]>> =>
   getJson(`/api/news${near ? `?${q(near)}` : ''}`);
+
+/** Blaulicht-Meldungen; mit Standort kommen die Landesfeeds dazu. */
+export const fetchBlaulicht = (near?: Coords): Promise<ApiEnvelope<BlaulichtItem[]>> =>
+  getJson(`/api/blaulicht${near ? `?${q(near)}` : ''}`);
 
 export const fetchAir = (c: Coords): Promise<ApiEnvelope<AirQuality>> =>
   getJson(`/api/air?${q(c)}`);
@@ -224,6 +229,10 @@ export const fetchPegelHistory = (id: string, days = 3): Promise<ApiEnvelope<Wat
 
 export const fetchAircraft = (b: Bbox): Promise<ApiEnvelope<Aircraft[]>> =>
   getJson(`/api/aircraft?${bboxQ(b)}`);
+
+/** Nur Luftfahrzeuge von Polizei, Luftrettung und Zoll. */
+export const fetchBosAircraft = (b: Bbox): Promise<ApiEnvelope<Aircraft[]>> =>
+  getJson(`/api/aircraft/bos?${bboxQ(b)}`);
 
 /** Halter, Muster und Flugroute eines einzelnen Flugzeugs (adsbdb.com). */
 export const fetchAircraftDetails = (
