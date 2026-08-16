@@ -38,27 +38,32 @@ import type {
   RestFacility,
   WebcamSpot,
   RescuePoint,
+  FireWaterPoint,
+  DroneZone,
   GeoJsonGeometry,
   AuroraGrid,
   FireDangerGrid,
   HfMufGrid,
   RouteResult,
+  RouteProfile,
   TransitItinerary,
   TransitStopPoint,
 } from '@lagebild/shared';
 import {
   fetchAircraftDetails,
+  fetchDroneZones,
   fetchPegelHistory,
   fetchRadiationHistory,
   type Bbox,
 } from './api.js';
 import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
-import { getOfflineFile } from './offlineMaps.js';
+import { WORLD_CODE, getOfflineFile } from './offlineMaps.js';
 import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
 import { loadDraw, saveDraw, newId, type DrawFeature, type DrawGeometry } from './drawStore.js';
 import { DrawMenu, type DrawTool } from './DrawMenu.js';
 import { WATCH_COLORS } from './mapIcons.js';
+import { logEvent } from './missionLog.js';
 
 /** Ein beobachteter Ort, wie ihn die Karte braucht. */
 export interface WatchedPoint {
@@ -70,7 +75,10 @@ export interface WatchedPoint {
   state: string;
 }
 import type { TrailFeature } from './offline/trails.js';
+import type { ReachResult } from './offline/router.js';
+import { PLUME_HALF_ANGLE, type HazmatZone } from './HazmatSheet.js';
 import type { ContourLine } from './offline/terrain.js';
+import type { SatPosition } from './satStore.js';
 import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
 import { DRAW_COLOR, colorOf, drawIconId } from './drawStyle.js';
 import { inflateGrid, gridToDataUrl, radarSupported, RADAR_LEGEND } from './radarGrid.js';
@@ -154,6 +162,9 @@ function drawToGeoJson(
         // Bild-ID vorberechnen: MapLibre kann sie zwar zusammensetzen, aber so
         // steht die Zuordnung an einer Stelle und ist im Zweifel nachlesbar.
         icon: drawIconId(d.icon, d.color),
+        // Die Beschreibung reist mit, damit sie beim Antippen ohne Umweg über
+        // den Speicher zur Hand ist.
+        note: d.note ?? '',
       },
       geometry: d.geometry,
     }));
@@ -502,6 +513,57 @@ function rescuePopupHtml(p: RescuePoint): string {
     `</div>` +
     `<p class="wp-desc">Im Notfall die Kennung durchgeben — die Leitstelle kennt den Punkt. Notruf ${esc(p.phone || '112')}.</p>` +
     `</div>`
+  );
+}
+
+/** Löschwasser: was am Einsatzort zählt — Bauform, Nennweite, Menge. */
+function waterPopupHtml(p: FireWaterPoint): string {
+  const art =
+    p.kind === 'hydrant' ? (p.form ?? 'Hydrant') : p.kind === 'suction' ? 'Saugstelle' : 'Löschwasserbehälter';
+  return (
+    `<div class="warn-popup">` +
+    `<h4>${esc(art)}${p.ref ? ` ${esc(p.ref)}` : ''}</h4>` +
+    `<div class="wp-rows">` +
+    (p.diameter ? `<span class="ac-k">Nennweite</span><span class="ac-v">${esc(p.diameter)} mm</span>` : '') +
+    (p.couplings ? `<span class="ac-k">Kupplung</span><span class="ac-v">${esc(p.couplings)}</span>` : '') +
+    (p.flowRate ? `<span class="ac-k">Menge</span><span class="ac-v">${esc(p.flowRate)}</span>` : '') +
+    (p.operator ? `<span class="ac-k">Betreiber</span><span class="ac-v">${esc(p.operator)}</span>` : '') +
+    `<span class="ac-k">Koordinaten</span><span class="ac-v">${p.lat.toFixed(5).replace('.', ',')}, ${p.lon.toFixed(5).replace('.', ',')}</span>` +
+    `</div>` +
+    // Der Hinweis steht bewusst an jedem Punkt und nicht nur einmal im Menü:
+    // Eine Karte aus freiwillig erfassten Daten darf nicht wie ein amtliches
+    // Löschwasserverzeichnis wirken.
+    `<p class="wp-desc">Eintrag aus OpenStreetMap — keine amtliche Löschwasserkarte. Ergiebigkeit vor Ort prüfen.</p>` +
+    `</div>`
+  );
+}
+
+/** Popup für die Drohnen-Gebiete an einem Punkt. */
+function dronePopupHtml(zones: DroneZone[] | null): string {
+  if (zones == null) return `<div class="warn-popup"><h4>Drohnen-Zonen</h4><p class="wp-desc">wird geladen …</p></div>`;
+  if (!zones.length) {
+    return (
+      `<div class="warn-popup"><h4>Drohnen-Zonen</h4>` +
+      `<p class="wp-desc">Hier ist kein Gebiet nach § 21h LuftVO eingetragen. Abstände, Sichtweite und die Regeln der Betriebskategorie gelten trotzdem.</p></div>`
+    );
+  }
+  const rows = zones
+    .map((z) => {
+      const grenzen = [z.lower, z.upper].filter(Boolean).join(' bis ');
+      return (
+        `<li><strong>${esc(z.art)}</strong>` +
+        (z.name && z.name !== z.art ? ` — ${esc(z.name)}` : '') +
+        (z.note ? `<br/><span class="dz-note">${esc(z.note)}</span>` : '') +
+        (grenzen ? `<br/><span class="dz-alt">${esc(grenzen)}</span>` : '') +
+        (z.legalRef ? `<br/><span class="dz-alt">${esc(z.legalRef)}</span>` : '') +
+        `</li>`
+      );
+    })
+    .join('');
+  return (
+    `<div class="warn-popup"><h4>${zones.length} Gebiet${zones.length === 1 ? '' : 'e'} an diesem Punkt</h4>` +
+    `<ul class="dz-list">${rows}</ul>` +
+    `<p class="wp-desc">Hinweis aus den dipul-Daten, keine Rechtsauskunft — verbindlich ist dipul.de bzw. die Luftfahrtbehörde.</p></div>`
   );
 }
 
@@ -961,6 +1023,8 @@ interface Props {
   webcams: WebcamSpot[];
   /** Rettungspunkte (nummerierte Schilder). */
   rescue: RescuePoint[];
+  /** Löschwasserentnahmestellen im Ausschnitt. */
+  fireWater: FireWaterPoint[];
   /** Aufgezeichnete bzw. angezeigte Spur ([lon, lat]). */
   track: [number, number][];
   /** true, solange aufgezeichnet wird (dann kein Endpunkt). */
@@ -973,6 +1037,17 @@ interface Props {
   contours: ContourLine[];
   /** Wander- und Radwege im Ausschnitt. */
   trails: TrailFeature[];
+  /** Regionen mit Einwohner-Paket am Standort (für die Betroffenenabschätzung). */
+  popCodes: string[];
+  /** Angenommener Gefahrenbereich eines Stoffaustritts. */
+  hazmatZone: HazmatZone | null;
+  /** Erreichbares Straßennetz mit Fahrzeit je Abschnitt. */
+  reach: ReachResult | null;
+  /** Läuft die Erreichbarkeitsrechnung gerade? */
+  reachBusy: boolean;
+  /** Profil der Erreichbarkeit (Auto, Rad, zu Fuß). */
+  reachProfile: RouteProfile;
+  onReachProfile: (p: RouteProfile) => void;
   /** Warum die Ebene leer bleibt (z. B. altes Paket). */
   trailsHint: string | null;
   /** Zugriff auf Ansicht und Bild der Karte (einmal beim Laden gemeldet). */
@@ -981,6 +1056,30 @@ interface Props {
   onShare: () => void;
   /** Geländebild der Region (Höhenfarben mit Schummerung) samt Ausdehnung. */
   terrainImage: { url: string; bounds: [number, number, number, number]; key: number } | null;
+  /** Schattenwurf zur gewählten Zeit (Bild über der Region). */
+  shadowImage: { url: string; bounds: [number, number, number, number]; key: number; night: boolean } | null;
+  /** Uhrzeit des Schattens in Minuten seit Mitternacht; null = jetzt. */
+  shadowMinutes: number | null;
+  onShadowMinutes: (m: number | null) => void;
+  /** Sonnenhöhe zur gewählten Zeit, für die Beschriftung der Legende. */
+  shadowAltitude: number;
+  /**
+   * Liegt die grobe Weltkarte im Gerät? Dann wird sie unter der ausführlichen
+   * Karte mitgeführt, damit weit herausgezoomt auch ohne Netz etwas zu sehen
+   * ist.
+   */
+  worldOffline: boolean;
+  /**
+   * Dunkles Thema? Kommt vom Rahmen, damit Oberfläche und Karte dieselbe
+   * Antwort benutzen — vorher fragte jede Ebene für sich das Betriebssystem.
+   */
+  dark: boolean;
+  /** Aktuelle Satellitenpositionen (im Gerät gerechnet). */
+  satellites: SatPosition[];
+  /** Bodenspuren dazu, je Satellit ein oder mehrere Linienzüge. */
+  satTracks: { id: string; name: string; lines: [number, number][][] }[];
+  /** Das Satellitenblatt öffnen (Paket, Auswahl, Überflüge). */
+  onSatelliteSetup: () => void;
   /** Eingelesene Markierungen, die zu den eigenen dazukommen. */
   addDraw: { features: DrawFeature[]; key: number } | null;
   /** Ausschnitt, den die Karte zeigen soll ([west, süd, ost, nord]). */
@@ -1012,7 +1111,7 @@ interface Props {
   /** Punkt aus dem Kartenmenü als Ziel bzw. Start übernehmen. */
   onPickPoint: (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch' | 'info',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch' | 'info' | 'sight' | 'hazmat',
     label?: string,
   ) => void;
   /** Großkreis der bewerteten Funkstrecke ([lon, lat]). */
@@ -1049,6 +1148,31 @@ export interface MapApi {
    * liegen nicht in der Leinwand und werden nachträglich daraufgemalt.
    */
   snapshot: () => string | null;
+  /**
+   * Alles, was ein gedrucktes Kartenblatt braucht: das Bild, seine Maße und
+   * die Abbildung Ort → Bildpunkt. Die Projektion kommt von der Karte selbst,
+   * damit auch ein gedrehter oder geneigter Ausschnitt stimmt.
+   */
+  /**
+   * Ein Blatt für den Druck. Läuft asynchron, weil die Karte dafür
+   * vorübergehend auf den **hellen** Stil umgestellt wird: Papier ist weiß,
+   * und ein dunkler Abzug ist darauf weder sparsam noch lesbar.
+   */
+  sheet: () => Promise<{
+    url: string;
+    /** Maße des Bildes in seinen eigenen Bildpunkten. */
+    width: number;
+    height: number;
+    center: { lat: number; lon: number };
+    zoom: number;
+    bearing: number;
+    /** Ort → Bildpunkt im gelieferten Bild. */
+    project: (lat: number, lon: number) => { x: number; y: number };
+    /** Bildpunkt → Ort. */
+    unproject: (x: number, y: number) => { lat: number; lon: number };
+    /** Meter je Bildpunkt in der Mitte des Blatts. */
+    metersPerPixel: number;
+  } | null>;
 }
 
 export interface ActiveLayers {
@@ -1079,6 +1203,8 @@ export interface ActiveLayers {
   avalanche: boolean;
   /** Kurzwellen-Ausbreitung (MUF-Fläche). */
   muf: boolean;
+  /** Satellitenpositionen mit Bodenspur. */
+  satellites: boolean;
   /** Verortete Nachrichten. */
   news: boolean;
   /** Blaulicht-Meldungen von Polizei, Feuerwehr und THW. */
@@ -1091,6 +1217,11 @@ export interface ActiveLayers {
   wind: boolean;
   /** Haltestellen (Bus, Tram, Bahn) aus dem Offline-Index. */
   stops: boolean;
+  /** Löschwasserentnahmestellen aus OSM. */
+  water: boolean;
+  /** Erreichbarkeit und Schattenwurf — beide rechnen im Gerät. */
+  reach: boolean;
+  shadow: boolean;
   /** Beobachtete APRS-Rufzeichen (aprs.fi kennt keine Umkreissuche). */
   aprsTargets: string[];
 }
@@ -1113,6 +1244,62 @@ const SYMBOL_STYLE: Record<
   // Anfang an beschriftet — anders als die hunderte Verkehrsflugzeuge.
   bosair: { size: 0.72, minzoom: 4, labelZoom: 6 },
 };
+
+/**
+ * Stufen der Erreichbarkeit. Grün/Gelb/Rot wie beim Verkehrsfluss — dieselbe
+ * Bildsprache, hier aber „wie lange dauert es bis dorthin".
+ */
+const REACH_STEPS = [
+  { maxS: 900, color: '#2c7448', label: '15 min' },
+  { maxS: 1800, color: '#e0a90b', label: '30 min' },
+  { maxS: 3600, color: '#a92318', label: '60 min' },
+] as const;
+
+const REACH_PROFILES: { id: RouteProfile; label: string }[] = [
+  { id: 'car', label: 'Auto' },
+  { id: 'bike', label: 'Rad' },
+  { id: 'foot', label: 'zu Fuß' },
+];
+
+/**
+ * Kreis um einen Punkt als Polygon-Ring ([lon, lat]).
+ *
+ * Gerechnet wird über den Kurs, nicht über einen festen Umrechnungsfaktor —
+ * bei zehn Kilometern wäre ein Kreis, der die Breitenabhängigkeit ignoriert,
+ * sichtbar oval.
+ */
+function circleRing(center: Coords, radiusM: number, steps = 96): [number, number][] {
+  const ring: [number, number][] = [];
+  const lat = (center.lat * Math.PI) / 180;
+  const dLat = (radiusM / 6371000) * (180 / Math.PI);
+  const dLon = dLat / Math.max(0.01, Math.cos(lat));
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * 2 * Math.PI;
+    ring.push([center.lon + dLon * Math.sin(a), center.lat + dLat * Math.cos(a)]);
+  }
+  return ring;
+}
+
+/** Kreissektor um `towardDeg` (Grad ab Nord) mit halbem Öffnungswinkel. */
+function sectorRing(
+  center: Coords,
+  radiusM: number,
+  towardDeg: number,
+  halfAngleDeg: number,
+  steps = 48,
+): [number, number][] {
+  const lat = (center.lat * Math.PI) / 180;
+  const dLat = (radiusM / 6371000) * (180 / Math.PI);
+  const dLon = dLat / Math.max(0.01, Math.cos(lat));
+  const ring: [number, number][] = [[center.lon, center.lat]];
+  for (let i = 0; i <= steps; i++) {
+    const deg = towardDeg - halfAngleDeg + (2 * halfAngleDeg * i) / steps;
+    const a = (deg * Math.PI) / 180;
+    ring.push([center.lon + dLon * Math.sin(a), center.lat + dLat * Math.cos(a)]);
+  }
+  ring.push([center.lon, center.lat]);
+  return ring;
+}
 
 const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   warnings: false,
@@ -1147,6 +1334,11 @@ const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   trails: false,
   contours: false,
   avalanche: false,
+  satellites: false,
+  drones: false,
+  water: false,
+  reach: false,
+  shadow: false,
 };
 
 /**
@@ -1192,15 +1384,31 @@ export function LageMap({
   rest,
   webcams,
   rescue,
+  fireWater,
   track,
   trackLive,
   addDraw,
   fitBbox,
   terrainImage,
+  shadowImage,
+  shadowMinutes,
+  onShadowMinutes,
+  shadowAltitude,
+  worldOffline,
+  dark,
+  satellites,
+  satTracks,
+  onSatelliteSetup,
   watchedPoints,
   avalanche,
   contours,
   trails,
+  popCodes,
+  hazmatZone,
+  reach,
+  reachBusy,
+  reachProfile,
+  onReachProfile,
   trailsHint,
   onMapApi,
   onShare,
@@ -1265,10 +1473,17 @@ export function LageMap({
     lngLat: Coords;
     /** Name der angetippten eigenen Markierung (sonst null). */
     label?: string | null;
+    /** Ihre Beschreibung, falls eine hinterlegt ist. */
+    note?: string | null;
   } | null>(null);
   const warnPopup = useRef<MlPopup | null>(null);
   const warnById = useRef<Map<string, WarningFeature>>(new Map());
   const currentBase = useRef<string>('online');
+  /** Quelle des zuletzt gesetzten Stils — für den Wechsel hell/dunkel. */
+  const styleUrl = useRef<string>(ONLINE_PMTILES_URL);
+  /** Schlüssel der registrierten Weltkarte, sobald sie gelesen wurde. */
+  const worldUrl = useRef<string | null>(null);
+  const [worldReady, setWorldReady] = useState(false);
   const [ready, setReady] = useState(false);
   const [styleEpoch, setStyleEpoch] = useState(0);
   const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
@@ -1308,6 +1523,11 @@ export function LageMap({
     trails: showTrails,
     contours: showContours,
     avalanche: showAvalanche,
+    satellites: showSatellites,
+    drones: showDrones,
+    water: showWater,
+    reach: showReach,
+    shadow: showShadow,
   } = on;
   const [menuOpen, setMenuOpen] = useState(false);
   const [radarIdx, setRadarIdx] = useState(0);
@@ -1367,13 +1587,18 @@ export function LageMap({
         trails: showTrails,
         contours: showContours,
         avalanche: showAvalanche,
+        satellites: showSatellites,
+        water: showWater,
+        reach: showReach,
+        shadow: showShadow,
         aprsTargets,
       }),
     [
       showRadar, showAircraft, showVessels, showAprs, showWind, showStops, showMuf, showNews,
       showBlaulicht, showBosAir,
       showVehicles, showEmergency, showQuakes, showLightning, showNina, showFires, showRadiation,
-      showAurora, showFire, showTerrain, showTrails, showContours, showAvalanche, showRest, showWebcams, showRescue, aprsTargets,
+      showAurora, showFire, showTerrain, showTrails, showContours, showAvalanche, showSatellites, showRest, showWebcams, showRescue,
+      showWater, showReach, showShadow, aprsTargets,
       onLayersChange,
     ],
   );
@@ -1433,7 +1658,6 @@ export function LageMap({
   useEffect(() => {
     if (!containerRef.current) return;
     registerPmtiles();
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: buildStyle(ONLINE_PMTILES_URL, dark),
@@ -1550,6 +1774,17 @@ export function LageMap({
       setReady(true);
       emit();
     });
+    /*
+     * „load" meldet MapLibre erst, wenn **jede** Quelle geladen ist. Steht die
+     * Basiskarte im Netz und ist keins da, kommt das Ereignis nie — die App
+     * bekäme beim Start ohne Verbindung eine leere Karte, auf der auch keine
+     * eigene Ebene mehr erscheint. „style.load" genügt für unsere Zwecke: Ab da
+     * nimmt der Stil Quellen und Ebenen an.
+     */
+    map.on('style.load', () => {
+      setReady(true);
+      emit();
+    });
     map.on('moveend', onMoveEnd);
 
     mapRef.current = map;
@@ -1573,13 +1808,35 @@ export function LageMap({
     userMarker.current.setLngLat([coords.lon, coords.lat]).addTo(map);
   }, [coords, ready]);
 
+  // Weltkarte einmalig aus dem Gerät holen und beim Protokoll anmelden.
+  useEffect(() => {
+    if (!worldOffline) {
+      worldUrl.current = null;
+      setWorldReady(false);
+      return;
+    }
+    if (worldUrl.current) return;
+    let cancelled = false;
+    void getOfflineFile(WORLD_CODE)
+      .then((file) => {
+        if (cancelled) return;
+        worldUrl.current = addLocalPmtiles(file);
+        setWorldReady(true);
+      })
+      .catch(() => {
+        /* nicht vorhanden — dann eben ohne */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [worldOffline]);
+
   // Basiskarte online ↔ offline (OPFS-PMTiles) umschalten
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const desired = offlineCode ?? 'online';
     if (desired === currentBase.current) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     if (offlineCode) {
       let cancelled = false;
       getOfflineFile(offlineCode)
@@ -1587,9 +1844,10 @@ export function LageMap({
           if (cancelled || mapRef.current !== map) return;
           const key = addLocalPmtiles(file);
           currentBase.current = offlineCode;
+          styleUrl.current = key;
           // buildStyle setzt das pmtiles://-Präfix selbst — der Schlüssel ist
           // der Dateiname, unter dem das Protokoll die OPFS-Datei kennt.
-          map.setStyle(buildStyle(key, dark), { diff: false });
+          map.setStyle(buildStyle(key, dark, worldUrl.current), { diff: false });
         })
         .catch(() => {});
       return () => {
@@ -1597,8 +1855,9 @@ export function LageMap({
       };
     }
     currentBase.current = 'online';
-    map.setStyle(buildStyle(ONLINE_PMTILES_URL, dark), { diff: false });
-  }, [offlineCode, ready]);
+    styleUrl.current = ONLINE_PMTILES_URL;
+    map.setStyle(buildStyle(ONLINE_PMTILES_URL, dark, worldUrl.current), { diff: false });
+  }, [offlineCode, ready, dark, worldReady]);
 
   // Warn-Polygone: Quelle + Layer einmalig anlegen
   useEffect(() => {
@@ -1661,6 +1920,31 @@ export function LageMap({
       below,
     );
   }, [showTerrain, terrainImage?.key, ready, styleEpoch]);
+
+
+  // Schattenwurf: dasselbe Bildverfahren wie beim Gelände, nur liegt es
+  // **über** der Karte statt darunter — es ist eine Aussage über den Moment,
+  // kein Untergrund.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (map.getLayer('shadow')) map.removeLayer('shadow');
+    if (map.getSource('shadow')) map.removeSource('shadow');
+    if (!showShadow || !shadowImage) return;
+    const [west, south, east, north] = shadowImage.bounds;
+    map.addSource('shadow', {
+      type: 'image',
+      url: shadowImage.url,
+      coordinates: [
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+      ],
+    });
+    const below = ['warnings-fill', 'route-line'].find((id) => map.getLayer(id));
+    map.addLayer({ id: 'shadow', type: 'raster', source: 'shadow', paint: { 'raster-opacity': 1 } }, below);
+  }, [showShadow, shadowImage?.key, ready, styleEpoch]);
 
   /* ---------- Lawinenlage ---------- */
   useEffect(() => {
@@ -2297,7 +2581,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || map.getSource('stops')) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addSource('stops', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({
       id: 'stops',
@@ -2401,7 +2684,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || map.getSource('news')) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addSource('news', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({
       id: 'news',
@@ -2486,7 +2768,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || map.getSource('blaulicht')) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addSource('blaulicht', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({
       id: 'blaulicht',
@@ -2584,7 +2865,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || map.getSource('vehicles')) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addSource('vehicles', {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -2746,7 +3026,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || map.getSource('emergency')) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addSource('emergency', {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -2801,12 +3080,15 @@ export function LageMap({
     if (!map || !ready) return;
     const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
       if (drawModeRef.current !== 'off' || pickingRef.current) return;
-      const name = e.features?.[0]?.properties?.name as string | undefined;
+      const props = e.features?.[0]?.properties ?? {};
+      const name = props.name as string | undefined;
+      const note = (props.note as string | undefined)?.trim();
       setPointMenu({
         x: e.point.x,
         y: e.point.y,
         lngLat: { lat: e.lngLat.lat, lon: e.lngLat.lng },
         label: name ?? null,
+        note: note || null,
       });
     };
     map.on('click', 'emergency', onClick);
@@ -2837,7 +3119,6 @@ export function LageMap({
       // sie über einer DWD-Warnfläche liegt.
       paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-dasharray': [2, 1.2] },
     });
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addLayer({
       id: 'nina',
       type: 'symbol',
@@ -2997,7 +3278,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     for (const id of ['rest', 'webcams'] as const) {
       if (map.getSource(id)) continue;
       map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -3149,7 +3429,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || map.getSource('rescue')) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addSource('rescue', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({
       id: 'rescue',
@@ -3205,6 +3484,227 @@ export function LageMap({
       map.off('click', 'rescue', onClick);
     };
   }, [rescue, ready, styleEpoch]);
+
+  /* ---------- Gefahrenbereich (Gefahrgut) ---------- */
+
+  /**
+   * Zwei Flächen: der Absperrkreis rundum und die Fahne stromab. Beide werden
+   * hier als Geometrie gerechnet und nicht als Kreis-Symbol gezeichnet — ein
+   * Symbol behielte seine Pixelgröße beim Zoomen, und ein Absperrradius, der
+   * je nach Zoom etwas anderes bedeutet, wäre schlimmer als keiner.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('hazmat')) return;
+    map.addSource('hazmat', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'hazmat-plume',
+      type: 'fill',
+      source: 'hazmat',
+      filter: ['==', ['get', 'kind'], 'plume'],
+      paint: { 'fill-color': '#c0392b', 'fill-opacity': 0.18 },
+    });
+    map.addLayer({
+      id: 'hazmat-zone',
+      type: 'fill',
+      source: 'hazmat',
+      filter: ['==', ['get', 'kind'], 'zone'],
+      paint: { 'fill-color': '#a92318', 'fill-opacity': 0.3 },
+    });
+    map.addLayer({
+      id: 'hazmat-line',
+      type: 'line',
+      source: 'hazmat',
+      paint: { 'line-color': '#a92318', 'line-width': 2, 'line-dasharray': [2, 1.5] },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('hazmat') as GeoJSONSource | undefined;
+    if (!src) return;
+    const features: GeoJSON.Feature[] = [];
+    if (hazmatZone) {
+      const { center, isolationM, downwindM, towardDeg } = hazmatZone;
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'zone' },
+        geometry: { type: 'Polygon', coordinates: [circleRing(center, isolationM)] },
+      });
+      if (downwindM > 0 && towardDeg != null) {
+        features.push({
+          type: 'Feature',
+          properties: { kind: 'plume' },
+          geometry: { type: 'Polygon', coordinates: [sectorRing(center, downwindM, towardDeg, PLUME_HALF_ANGLE)] },
+        });
+      }
+    }
+    src.setData({ type: 'FeatureCollection', features });
+  }, [hazmatZone, ready, styleEpoch]);
+
+  /* ---------- Erreichbarkeit ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('reach')) return;
+    map.addSource('reach', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'reach',
+      type: 'line',
+      source: 'reach',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        // Die Fahrzeit steckt an jedem Abschnitt; die Stufen sind nur die
+        // Einfärbung derselben Rechnung.
+        'line-color': [
+          'step',
+          ['get', 's'],
+          REACH_STEPS[0]!.color,
+          REACH_STEPS[0]!.maxS,
+          REACH_STEPS[1]!.color,
+          REACH_STEPS[1]!.maxS,
+          REACH_STEPS[2]!.color,
+        ],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.4, 14, 3.6],
+        'line-opacity': 0.85,
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('reach') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showReach ? (reach?.edges ?? []) : []).map((e) => ({
+        type: 'Feature',
+        properties: { s: e.seconds },
+        geometry: { type: 'LineString', coordinates: e.coordinates },
+      })),
+    });
+  }, [reach, showReach, ready, styleEpoch]);
+
+  /* ---------- Löschwasser ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('firewater')) return;
+    map.addSource('firewater', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'firewater',
+      type: 'symbol',
+      source: 'firewater',
+      // Erst ab Zoom 14: In einer Stadt stehen Hydranten alle paar Meter, und
+      // der Server gibt größere Ausschnitte gar nicht erst heraus.
+      minzoom: 14,
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 0.3, 18, 0.52],
+        'icon-allow-overlap': true,
+        // Die Nennweite ist die Zahl, nach der man am Einsatzort sucht.
+        'text-field': ['step', ['zoom'], '', 16, ['get', 'label']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 10,
+        'text-offset': [0, 1],
+        'text-anchor': 'top',
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': dark ? '#e7e7e9' : '#1f2933',
+        'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+        'text-halo-width': 1.6,
+      },
+    });
+  }, [ready, styleEpoch, dark]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource('firewater') as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: (showWater ? fireWater : []).map((p, i) => ({
+        type: 'Feature',
+        properties: {
+          index: i,
+          icon: p.kind === 'hydrant' ? 'water-hydrant' : p.kind === 'suction' ? 'water-suction' : 'water-tank',
+          label: p.diameter ?? p.ref ?? '',
+        },
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+      })),
+    });
+  }, [fireWater, showWater, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const p = index != null ? fireWater[index] : undefined;
+      if (p) warnPopup.current!.setLngLat(e.lngLat).setHTML(waterPopupHtml(p)).addTo(map);
+    };
+    map.on('click', 'firewater', onClick);
+    return () => {
+      map.off('click', 'firewater', onClick);
+    };
+  }, [fireWater, ready, styleEpoch]);
+
+  /* ---------- Drohnen-Zonen ---------- */
+
+  /**
+   * Die Ebene ist ein Bild vom Dienst selbst (die Gebiete als Geometrie wären
+   * megabyteweise Korridore). Angetippt wird deshalb nicht ein Objekt, sondern
+   * ein Punkt: Die Sachdaten kommen erst danach und werden ins offene Popup
+   * nachgereicht.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (showDrones) {
+      if (!map.getSource('drones')) {
+        map.addSource('drones', { type: 'raster', tiles: ['/api/drones/{z}/{x}/{y}.png'], tileSize: 256 });
+        const beforeId = ['radar', 'radar-dwd', 'warnings-fill'].find((id) => map.getLayer(id));
+        map.addLayer({ id: 'drones', type: 'raster', source: 'drones', paint: { 'raster-opacity': 0.75 } }, beforeId);
+      }
+    } else {
+      if (map.getLayer('drones')) map.removeLayer('drones');
+      if (map.getSource('drones')) map.removeSource('drones');
+    }
+  }, [showDrones, ready, styleEpoch]);
+
+  const droneQuery = useRef(0);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !showDrones) return;
+    const onClick = (e: MapMouseEvent) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      // Liegt ein anderes Objekt unter dem Finger, gehört ihm der Klick.
+      const hits = map.queryRenderedFeatures(e.point, {
+        layers: ['stops', 'draw-point', 'draw-area-fill', 'firewater', 'rescue'].filter((l) =>
+          map.getLayer(l),
+        ),
+      });
+      if (hits.length) return;
+      const popup = warnPopup.current!;
+      popup.setLngLat(e.lngLat).setHTML(dronePopupHtml(null)).addTo(map);
+      const ticket = ++droneQuery.current;
+      void fetchDroneZones({ lat: e.lngLat.lat, lon: e.lngLat.lng })
+        .then((res) => {
+          // Zwischenzeitlich woanders hingetippt? Dann gehört die Antwort nicht
+          // mehr zu dem, was offen ist.
+          if (ticket === droneQuery.current) popup.setHTML(dronePopupHtml(res.data));
+        })
+        .catch(() => {
+          if (ticket === droneQuery.current) popup.setHTML(dronePopupHtml([]));
+        });
+    };
+    map.on('click', onClick);
+    return () => {
+      map.off('click', onClick);
+    };
+  }, [showDrones, ready, styleEpoch]);
 
   /* ---------- Feuer aus dem Satellitenblick ---------- */
 
@@ -3271,7 +3771,6 @@ export function LageMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || map.getSource('radiation')) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     map.addSource('radiation', {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -3415,6 +3914,121 @@ export function LageMap({
     };
   }, [quakes, ready, styleEpoch]);
 
+  /* ---------- Satelliten: Bodenspur und Position ---------- */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || map.getSource('sat-track')) return;
+    const empty: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+    map.addSource('sat-track', { type: 'geojson', data: empty });
+    map.addSource('sat', { type: 'geojson', data: empty });
+    // Die Spur zuerst, damit der Punkt darauf liegt. Gestrichelt, weil sie
+    // eine Rechnung ist und keine Messung.
+    map.addLayer({
+      id: 'sat-track',
+      type: 'line',
+      source: 'sat-track',
+      paint: {
+        'line-color': '#d0a71a',
+        'line-width': 1.6,
+        'line-opacity': 0.8,
+        'line-dasharray': [3, 2],
+      },
+    });
+    map.addLayer({
+      id: 'sat',
+      type: 'circle',
+      source: 'sat',
+      paint: {
+        'circle-radius': 6,
+        'circle-color': '#d0a71a',
+        'circle-stroke-width': 2,
+        // Über dem Horizont = jetzt zu empfangen. Das ist die Auskunft, auf
+        // die es ankommt, deshalb steckt sie im Ring.
+        'circle-stroke-color': ['case', ['get', 'visible'], '#2c7448', '#ffffff'],
+      },
+    });
+    map.addLayer({
+      id: 'sat-label',
+      type: 'symbol',
+      source: 'sat',
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-offset': [0, 1.3],
+        'text-anchor': 'top',
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': '#d0a71a',
+        'text-halo-color': 'rgba(0,0,0,.65)',
+        'text-halo-width': 1.4,
+      },
+    });
+  }, [ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const points = map?.getSource('sat') as GeoJSONSource | undefined;
+    const tracks = map?.getSource('sat-track') as GeoJSONSource | undefined;
+    if (!points || !tracks) return;
+    points.setData({
+      type: 'FeatureCollection',
+      features: (showSatellites ? satellites : []).map((s, i) => ({
+        type: 'Feature',
+        properties: {
+          index: i,
+          label: `${s.name} · ${s.altitudeKm} km`,
+          visible: s.elevationDeg > 0,
+        },
+        geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+      })),
+    });
+    tracks.setData({
+      type: 'FeatureCollection',
+      features: (showSatellites ? satTracks : []).flatMap((t) =>
+        t.lines.map((line) => ({
+          type: 'Feature' as const,
+          properties: { id: t.id, name: t.name },
+          geometry: { type: 'LineString' as const, coordinates: line },
+        })),
+      ),
+    });
+  }, [satellites, satTracks, showSatellites, ready, styleEpoch]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onClick = (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+      if (drawModeRef.current !== 'off' || pickingRef.current) return;
+      const index = e.features?.[0]?.properties?.index as number | undefined;
+      const s = index != null ? satellites[index] : undefined;
+      if (!s) return;
+      const line = (label: string, value: string) =>
+        `<div class="wp-row"><span>${label}</span><b>${value}</b></div>`;
+      warnPopup.current!
+        .setLngLat(e.lngLat)
+        .setHTML(
+          `<div class="warnpop"><h4>${s.name}</h4>` +
+            line('Höhe', `${s.altitudeKm} km`) +
+            line('Entfernung', `${s.rangeKm} km`) +
+            line(
+              'Von hier',
+              s.elevationDeg > 0
+                ? `${Math.round(s.elevationDeg)}° über dem Horizont, Azimut ${s.azimuthDeg}°`
+                : 'unter dem Horizont',
+            ) +
+            '</div>',
+        )
+        .addTo(map);
+    };
+    map.on('click', 'sat', onClick);
+    return () => {
+      map.off('click', 'sat', onClick);
+    };
+  }, [satellites, ready, styleEpoch]);
+
   /* ---------- Waldbrandgefahr und Polarlicht als Flächen ---------- */
 
   const fireUrl = useMemo(() => (fire && showFire ? fireToDataUrl(fire) : null), [fire, showFire]);
@@ -3463,10 +4077,36 @@ export function LageMap({
     );
   }, [auroraUrl, ready, styleEpoch]);
 
+  /**
+   * Stilwechsel — anderes Thema oder die Weltkarte ist dazugekommen. Die Ebenen
+   * darüber bauen sich danach von selbst neu auf; sie hängen alle an
+   * `styleEpoch`, das beim Laden des neuen Stils hochzählt.
+   *
+   * Dieser Effekt steht **absichtlich hinter allen Ebenen-Effekten**: React
+   * führt sie in der Reihenfolge ihrer Deklaration aus, und ein `setStyle`
+   * mitten in dieser Reihe zieht den nachfolgenden Ebenen den Stil unter den
+   * Füßen weg — sie bekämen „Style is not done loading" um die Ohren.
+   */
+  const lastDark = useRef(dark);
+  const lastWorld = useRef(worldReady);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (lastDark.current === dark && lastWorld.current === worldReady) return;
+    lastDark.current = dark;
+    lastWorld.current = worldReady;
+    // Ohne Umschweife umstellen: Auf „idle" zu warten wäre falsch — solange
+    // eine Quelle nicht lädt (kein Netz), wird die Karte nie ruhig, und der
+    // Wechsel bliebe für immer aus. `setStyle` bricht einen laufenden Ladevorgang
+    // von sich aus ab.
+    map.setStyle(buildStyle(styleUrl.current, dark, worldUrl.current), { diff: false });
+  }, [dark, worldReady, ready]);
+
   // Zugriff für „Ansicht teilen" — einmal melden, sobald die Karte steht.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !onMapApi) return;
+
     onMapApi({
       view: () => {
         const c = map.getCenter();
@@ -3503,6 +4143,50 @@ export function LageMap({
           dot({ lat: pin.lat, lon: pin.lon }, '#1d4e73');
         }
         return out.toDataURL('image/png');
+      },
+      sheet: async () => {
+        // Für das Papier auf den hellen Stil wechseln und danach zurück. Ein
+        // Filter über dem dunklen Bild wäre billiger, gibt aber nur graue Soße:
+        // Beschriftungen kippen ins Negative, Wald wird rosa.
+        const restoreDark = dark;
+        if (dark) {
+          await new Promise<void>((resolve) => {
+            const done = () => {
+              map.off('idle', done);
+              resolve();
+            };
+            map.on('idle', done);
+            map.setStyle(buildStyle(styleUrl.current, false), { diff: false });
+            // Nicht ewig warten: ohne Netz lädt der Stil vielleicht nie fertig.
+            window.setTimeout(done, 4000);
+          });
+        }
+        const canvas = map.getCanvas();
+        map.triggerRepaint();
+        const url = canvas.toDataURL('image/png');
+        if (restoreDark) map.setStyle(buildStyle(styleUrl.current, true), { diff: false });
+        // Das Bild hat Geräte-Bildpunkte, die Projektion der Karte rechnet in
+        // CSS-Punkten — der Faktor dazwischen ist genau dieses Verhältnis.
+        const ratio = canvas.width / Math.max(1, map.getContainer().clientWidth);
+        const c = map.getCenter();
+        return {
+          url,
+          width: canvas.width,
+          height: canvas.height,
+          center: { lat: c.lat, lon: c.lng },
+          zoom: map.getZoom(),
+          bearing: map.getBearing(),
+          project: (lat: number, lon: number) => {
+            const p = map.project([lon, lat]);
+            return { x: p.x * ratio, y: p.y * ratio };
+          },
+          unproject: (x: number, y: number) => {
+            const g = map.unproject([x / ratio, y / ratio]);
+            return { lat: g.lat, lon: g.lng };
+          },
+          metersPerPixel:
+            (156543.03392 * Math.cos((c.lat * Math.PI) / 180)) / 2 ** map.getZoom() / ratio,
+        };
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3940,7 +4624,11 @@ export function LageMap({
   };
 
   /** Benannte Markierung übernehmen (bzw. beim Verwerfen aufräumen). */
-  const resolvePending = (name: string | null, style?: { color: string; icon?: string }) => {
+  const resolvePending = (
+    name: string | null,
+    style?: { color: string; icon?: string },
+    note?: string,
+  ) => {
     if (name && pending) {
       setDrawFeatures((prev) => [
         ...prev,
@@ -3951,11 +4639,22 @@ export function LageMap({
           geometry: pending.geometry,
           ...(style?.color ? { color: style.color } : {}),
           ...(style?.icon ? { icon: style.icon } : {}),
+          ...(note?.trim() ? { note: note.trim() } : {}),
         },
       ]);
       // Die zuletzt gewählte Aufmachung bleibt vorgeschlagen — wer eine Reihe
       // gleichartiger Punkte setzt, soll nicht jedes Mal neu wählen.
       if (style) setLastStyle({ color: style.color, icon: style.icon ?? lastStyle.icon });
+      // Läuft ein Einsatz, gehört jede gesetzte Markierung ins Logbuch; sonst
+      // tut dieser Aufruf nichts.
+      const g = pending.geometry;
+      const first =
+        g.type === 'Point'
+          ? g.coordinates
+          : g.type === 'LineString'
+            ? g.coordinates[0]
+            : g.coordinates[0]?.[0];
+      logEvent('mark', `Markierung gesetzt: ${name}`, first ? { lat: first[1], lon: first[0] } : null);
     }
     if (pending?.kind === 'area' || pending?.kind === 'line') {
       setAreaVertices([]);
@@ -3992,8 +4691,10 @@ export function LageMap({
     color: l.color,
     group: l.group,
     hint:
-      l.id === 'stops' && !stopsAvailable
-        ? 'Region unter „Offline" laden'
+      l.id === 'satellites' && !satellites.length
+        ? 'Bahndaten laden und Satelliten wählen →'
+        : l.id === 'stops' && !stopsAvailable
+          ? 'Region unter „Offline" laden'
         : l.id === 'aprs'
           ? aprsTargets.length
             ? `${aprsTargets.length} Rufzeichen`
@@ -4003,6 +4704,11 @@ export function LageMap({
     ...(l.sub ? { sub: true } : {}),
     ...(l.id === 'aprs'
       ? { onEdit: () => setAprsOpen(true), editLabel: 'Rufzeichen verwalten' }
+      : {}),
+    // Die Satellitenebene braucht zwei Dinge, die keine Ebene mitbringt: das
+    // Bahndaten-Paket und die Auswahl. Beides steht im Blatt hinter dem Stift.
+    ...(l.id === 'satellites'
+      ? { onEdit: onSatelliteSetup, editLabel: 'Bahndaten und Auswahl' }
       : {}),
   }));
 
@@ -4193,6 +4899,7 @@ export function LageMap({
         {pointMenu && (
           <div className="pointmenu" style={{ left: pointMenu.x, top: pointMenu.y }} role="menu">
             {pointMenu.label && <div className="pm-title">{pointMenu.label}</div>}
+            {pointMenu.note && <div className="pm-note">{pointMenu.note}</div>}
             {/* Ganz oben, weil es die Frage ist, die man beim langen Antippen
                 meistens hat: Was ist das hier überhaupt? */}
             <button
@@ -4269,6 +4976,28 @@ export function LageMap({
             >
               Funkstrecke prüfen
             </button>
+            {/* Die Sichtverbindung steckte bisher nur im Blatt „Was ist hier?"
+                — dort findet sie niemand, der sie sucht. */}
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'sight', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Sichtverbindung prüfen
+            </button>
+            {/* Ein Gefahrstoffaustritt ist selten dort, wo man selbst steht —
+                deshalb gehört der Einstieg an den angetippten Punkt. */}
+            <button
+              type="button"
+              onClick={() => {
+                onPickPoint(pointMenu.lngLat, 'hazmat', pointMenu.label ?? undefined);
+                setPointMenu(null);
+              }}
+            >
+              Gefahrstoff hier
+            </button>
           </div>
         )}
 
@@ -4297,6 +5026,73 @@ export function LageMap({
                   {SEVERITY_DE[s]}
                 </button>
               ))}
+            </div>
+          )}
+          {showReach && (
+            <div className="legend" aria-label="Erreichbarkeit">
+              <span className="legend-title">
+                Erreichbar in
+                {reachBusy ? ' · rechnet …' : reach?.simplified ? ' · ohne kleine Wege' : ''}
+              </span>
+              <div className="radar-scale">
+                {REACH_STEPS.map((step) => (
+                  <span key={step.label} className="rs-step">
+                    <i style={{ background: step.color }} />
+                    {step.label}
+                  </span>
+                ))}
+              </div>
+              <div className="legend-choice" role="group" aria-label="Fortbewegung">
+                {REACH_PROFILES.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="legend-item"
+                    aria-pressed={reachProfile === p.id}
+                    onClick={() => onReachProfile(p.id)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {reach?.status === 'start-off-grid' && (
+                <span className="legend-note">Startpunkt liegt nicht am gespeicherten Netz</span>
+              )}
+            </div>
+          )}
+          {showShadow && (
+            <div className="legend" aria-label="Schattenwurf">
+              <span className="legend-title">
+                Schatten{' '}
+                {shadowMinutes == null
+                  ? 'jetzt'
+                  : `${String(Math.floor(shadowMinutes / 60)).padStart(2, '0')}:${String(shadowMinutes % 60).padStart(2, '0')} Uhr`}
+                {' · '}
+                {shadowAltitude > 0 ? `Sonne ${Math.round(shadowAltitude)}° hoch` : 'Sonne unter dem Horizont'}
+              </span>
+              <input
+                className="legend-slider"
+                type="range"
+                min={0}
+                max={1425}
+                step={15}
+                value={shadowMinutes ?? new Date().getHours() * 60 + new Date().getMinutes()}
+                onChange={(e) => onShadowMinutes(Number(e.target.value))}
+                aria-label="Uhrzeit für den Schattenwurf"
+              />
+              <div className="legend-choice">
+                <button
+                  type="button"
+                  className="legend-item"
+                  aria-pressed={shadowMinutes == null}
+                  onClick={() => onShadowMinutes(null)}
+                >
+                  jetzt
+                </button>
+              </div>
+              {!shadowImage && (
+                <span className="legend-note">Für diese Gegend fehlt das Geländepaket</span>
+              )}
             </div>
           )}
           {showWind && (
@@ -4507,7 +5303,8 @@ export function LageMap({
           defaultName={pending.defaultName}
           // Punkte bekommen zusätzlich ein Symbol; Linien und Flächen nur Farbe.
           style={pending.kind === 'point' ? { color: lastStyle.color, icon: lastStyle.icon } : { color: lastStyle.color }}
-          onSave={(name, style) => resolvePending(name, style)}
+          note=""
+          onSave={(name, style, note) => resolvePending(name, style, note)}
           onCancel={() => resolvePending(null)}
         />
       )}
@@ -4515,7 +5312,15 @@ export function LageMap({
       {listOpen && (
         <DrawList
           features={drawFeatures}
+          popCodes={popCodes}
           onRename={(id, name) => setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, name } : f)))}
+          onNote={(id, note) =>
+            setDrawFeatures((prev) =>
+              // Leerer Text entfernt die Beschreibung wieder, statt eine leere
+              // Zeichenkette zu speichern.
+              prev.map((f) => (f.id === id ? { ...f, ...(note ? { note } : { note: undefined }) } : f)),
+            )
+          }
           onStyle={(id, style) =>
             setDrawFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, ...style } : f)))
           }

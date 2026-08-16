@@ -202,6 +202,14 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
         terms: 'stündlich erneuert — hier eine Stunde gecacht, Quelle genannt',
       },
       {
+        key: 'celestrak',
+        name: 'CelesTrak (Dr. T. S. Kelso)',
+        use: 'Bahnelemente (TLE) für Satellitenposition und Überflüge',
+        url: 'https://celestrak.org/',
+        terms:
+          'frei nutzbar mit Quellenangabe; die Bitte um seltenen Abruf wird eingehalten — vier Stunden Cache, und im Gerät liegt ein eigenes Paket',
+      },
+      {
         key: 'kc2g',
         name: 'prop.kc2g.com (GIRO)',
         use: 'Ionosonden-Messwerte für die MUF-Ebene',
@@ -237,10 +245,34 @@ export const SOURCE_GROUPS: { group: string; items: SourceInfo[] }[] = [
       {
         key: 'osm-overpass',
         name: 'OpenStreetMap über Overpass',
-        use: 'Rettungspunkte (highway=emergency_access_point) mit ihrer Kennung',
+        use: 'Rettungspunkte (highway=emergency_access_point) und Löschwasserentnahmestellen (emergency=fire_hydrant, suction_point, water_tank)',
         url: 'https://overpass-api.de/',
         terms:
           'gespendeter Dienst — nur der Kartenausschnitt, gerastert abgefragt und 12 Stunden zwischengespeichert',
+      },
+      {
+        key: 'dipul',
+        name: 'dipul (DFS Deutsche Flugsicherung)',
+        use: 'geografische Gebiete für unbemannte Luftfahrt nach § 21h LuftVO (Drohnen-Zonen)',
+        url: 'https://www.dipul.de/',
+        terms:
+          'Datenlizenz Deutschland Namensnennung 2.0 — verbindlich ist immer die Auskunft von dipul bzw. der Luftfahrtbehörde',
+      },
+      {
+        key: 'zensus',
+        name: 'Zensus 2022 (Statistisches Bundesamt)',
+        use: 'Bevölkerungszahl im amtlichen 100-Meter-Gitter — Grundlage der Betroffenenabschätzung',
+        url: 'https://www.zensus2022.de/DE/Ergebnisse-des-Zensus/gitterzellen.html',
+        terms:
+          'Datenlizenz Deutschland Namensnennung 2.0 — Einwohner am Wohnort, Stand Mai 2022, nicht die Tagesbelegung',
+      },
+      {
+        key: 'erg',
+        name: 'Emergency Response Guidebook 2024 (US DOT/PHMSA)',
+        use: 'Gefahrgut: Leitfäden und Ersteinsatz-Abstände zu UN-Nummern',
+        url: 'https://www.phmsa.dot.gov/training/hazmat/erg/emergency-response-guidebook-erg',
+        terms:
+          'Werk der US-Bundesregierung, gemeinfrei — Handbuch für die ersten Minuten, kein Ersatz für ERI-Karte und Beförderungspapier',
       },
       {
         key: 'terrain-tiles',

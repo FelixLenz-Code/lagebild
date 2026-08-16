@@ -8,11 +8,17 @@ import {
 } from './drawStore.js';
 import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
 import { StylePicker } from './StylePicker.js';
+import { useEffect, useState } from 'react';
+import { populationOffline } from './offline/client.js';
 import { colorOf } from './drawStyle.js';
 
 interface Props {
   features: DrawFeature[];
+  /** Regionen mit Einwohner-Paket — ohne sie bleibt die Schätzung aus. */
+  popCodes: string[];
   onRename: (id: string, name: string) => void;
+  /** Beschreibung setzen bzw. mit leerem Text wieder entfernen. */
+  onNote: (id: string, note: string) => void;
   /** Farbe bzw. Symbol nachträglich ändern. */
   onStyle: (id: string, style: { color?: string; icon?: string }) => void;
   /** Eine einzelne Markierung aus- bzw. wieder einblenden. */
@@ -69,8 +75,82 @@ function measureOf(f: DrawFeature): string | null {
   return null;
 }
 
+/**
+ * Wie viele Menschen wohnen in dieser Fläche?
+ *
+ * Steht bewusst direkt an der Markierung: Wer einen Evakuierungsradius oder ein
+ * überflutetes Gebiet einzeichnet, will die Zahl an genau dieser Stelle — nicht
+ * in einem eigenen Werkzeug, in das er die Fläche noch einmal einträgt.
+ */
+function AreaPeople({ ring, codes }: { ring: [number, number][]; codes: string[] }) {
+  const [people, setPeople] = useState<number | null>(null);
+  const [state, setState] = useState<'laden' | 'fehlt' | 'da'>('laden');
+
+  useEffect(() => {
+    if (!codes.length) {
+      setState('fehlt');
+      return;
+    }
+    let cancelled = false;
+    populationOffline(codes, { ring })
+      .then((r) => {
+        if (cancelled) return;
+        if (!r) {
+          setState('fehlt');
+          return;
+        }
+        setPeople(r.people);
+        setState('da');
+      })
+      .catch(() => !cancelled && setState('fehlt'));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codes.join(','), ring.length, ring[0]?.[0], ring[0]?.[1]]);
+
+  if (state === 'fehlt') return null;
+  return (
+    <span className="dl-people">
+      {state === 'laden' ? '… Einwohner' : `≈ ${(people ?? 0).toLocaleString('de-DE')} Einwohner`}
+    </span>
+  );
+}
+
+/**
+ * Beschreibung bearbeiten — bewusst als Feld in der Liste und nicht als
+ * `window.prompt` wie beim Namen: Eine Beschreibung ist oft mehrzeilig, und ein
+ * Systemdialog kann das nicht.
+ */
+function NoteEditor(props: { value: string; onSave: (text: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState(props.value);
+  return (
+    <div className="dl-noteedit">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Was gilt hier?"
+        aria-label="Beschreibung"
+        rows={3}
+        maxLength={600}
+        autoFocus
+      />
+      <div className="dl-notebtns">
+        <button type="button" className="btn-quiet" onClick={props.onCancel}>
+          Abbrechen
+        </button>
+        <button type="button" className="rbtn" onClick={() => props.onSave(text.trim())}>
+          Speichern
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function DrawList(props: Props) {
   const hiddenCount = props.features.filter((f) => f.hidden).length;
+  /** Welche Markierung gerade ihre Beschreibung bearbeitet. */
+  const [noting, setNoting] = useState<string | null>(null);
   return (
     <Sheet
       title="Meine Markierungen"
@@ -120,7 +200,7 @@ export function DrawList(props: Props) {
           </p>
           <div className="region-list">
             {props.features.map((f) => (
-              <div className={`region${f.hidden ? ' is-hidden' : ''}`} key={f.id}>
+              <div className={`region dl-item${f.hidden ? ' is-hidden' : ''}`} key={f.id}>
                 <span className="draw-kind" title={KIND_LABEL[f.kind]} style={{ color: colorOf(f.color) }}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                     {ICONS[f.kind]}
@@ -131,6 +211,12 @@ export function DrawList(props: Props) {
                   <span className="rmeta">
                     {KIND_LABEL[f.kind]}
                     {measureOf(f) ? ` · ${measureOf(f)}` : ''}
+                    {f.geometry.type === 'Polygon' && (f.geometry.coordinates[0]?.length ?? 0) > 2 && (
+                      <>
+                        {' · '}
+                        <AreaPeople ring={f.geometry.coordinates[0]!} codes={props.popCodes} />
+                      </>
+                    )}
                   </span>
                 </div>
                 <div className="raction">
@@ -178,10 +264,31 @@ export function DrawList(props: Props) {
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></svg>
                   </button>
+                  <button
+                    className={`rdel${f.note ? ' is-set' : ''}`}
+                    type="button"
+                    aria-label={f.note ? 'Beschreibung ändern' : 'Beschreibung hinzufügen'}
+                    title={f.note ? 'Beschreibung ändern' : 'Beschreibung hinzufügen'}
+                    onClick={() => setNoting(f.id)}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><path d="M5 5h14M5 10h14M5 15h9" /></svg>
+                  </button>
                   <button className="rdel" type="button" aria-label="Löschen" onClick={() => props.onDelete(f.id)}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>
                   </button>
                 </div>
+                {noting === f.id ? (
+                  <NoteEditor
+                    value={f.note ?? ''}
+                    onSave={(text) => {
+                      props.onNote(f.id, text);
+                      setNoting(null);
+                    }}
+                    onCancel={() => setNoting(null)}
+                  />
+                ) : (
+                  f.note && <p className="dl-note">{f.note}</p>
+                )}
                 <StyleRow feature={f} onStyle={props.onStyle} />
               </div>
             ))}

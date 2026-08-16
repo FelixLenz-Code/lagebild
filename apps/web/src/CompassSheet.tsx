@@ -23,6 +23,11 @@ interface Props {
   /** Angepeilter Punkt (ohne Ziel bleibt es ein reiner Kompass). */
   target: { name: string; lat: number; lon: number } | null;
   onClearTarget: () => void;
+  /**
+   * Sichtverbindung zum angepeilten Ziel prüfen. Peilung und Sicht gehören
+   * zusammen: Eine Richtung nützt wenig, wenn ein Berg dazwischen steht.
+   */
+  onSight: (point: { lat: number; lon: number }, label: string) => void;
   onClose: () => void;
 }
 
@@ -174,9 +179,18 @@ export function CompassSheet(props: Props) {
                   <dd className="mono">{formatDegMin({ lat: props.target.lat, lon: props.target.lon })}</dd>
                 </div>
               </dl>
-              <button type="button" className="btn-quiet" onClick={props.onClearTarget}>
-                Ziel aufheben
-              </button>
+              <div className="tr-actions">
+                <button
+                  type="button"
+                  className="btn-quiet"
+                  onClick={() => props.onSight({ lat: props.target!.lat, lon: props.target!.lon }, props.target!.name)}
+                >
+                  Sichtverbindung prüfen
+                </button>
+                <button type="button" className="btn-quiet" onClick={props.onClearTarget}>
+                  Ziel aufheben
+                </button>
+              </div>
             </>
           ) : (
             <>

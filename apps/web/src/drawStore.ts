@@ -17,6 +17,12 @@ export interface DrawFeature {
   color?: string;
   /** Symbolschlüssel (nur bei Punkten); fehlt = schlichter Punkt. */
   icon?: string;
+  /**
+   * Freie Beschreibung — was an dieser Stelle gilt, wer zuständig ist, was
+   * beim nächsten Mal zu beachten ist. Freiwillig: Der Name allein muss
+   * weiterhin reichen, damit das Einzeichnen schnell bleibt.
+   */
+  note?: string;
 }
 
 const KEY = 'lagebild.draw';
@@ -52,6 +58,10 @@ const esc = (s: string): string =>
 const point = (tag: string, [lon, lat]: [number, number]): string =>
   `<${tag} lat="${lat.toFixed(7)}" lon="${lon.toFixed(7)}"`;
 
+/** `<desc>` einer Markierung — GPX kennt das Feld an Wegpunkten und Spuren. */
+const desc = (f: DrawFeature): string =>
+  f.note?.trim() ? `<desc>${esc(f.note.trim())}</desc>` : '';
+
 /**
  * Markierungen als GPX 1.1.
  *
@@ -64,7 +74,9 @@ export function drawToGpx(features: DrawFeature[]): string {
   for (const f of features) {
     if (f.geometry.type === 'Point') {
       parts.push(
-        `  ${point('wpt', f.geometry.coordinates)}><name>${esc(f.name)}</name></wpt>`,
+        `  ${point('wpt', f.geometry.coordinates)}><name>${esc(f.name)}</name>` +
+          desc(f) +
+          `</wpt>`,
       );
     }
   }
@@ -79,6 +91,7 @@ export function drawToGpx(features: DrawFeature[]): string {
     const points = coords.map((c) => `      ${point('trkpt', c)}/>`).join('\n');
     parts.push(
       `  <trk>\n    <name>${esc(f.name)}</name>\n` +
+        (f.note?.trim() ? `    <desc>${esc(f.note.trim())}</desc>\n` : '') +
         (f.kind === 'area' ? `    <type>Fläche</type>\n` : '') +
         `    <trkseg>\n${points}\n    </trkseg>\n  </trk>`,
     );
@@ -98,7 +111,9 @@ export function drawToGeoJsonText(features: DrawFeature[]): string {
       type: 'FeatureCollection',
       features: features.map((f) => ({
         type: 'Feature',
-        properties: { name: f.name, kind: f.kind },
+        // `description` ist der Name, unter dem die gängigen Programme eine
+        // Beschreibung erwarten (QGIS, geojson.io, Google Earth).
+        properties: { name: f.name, kind: f.kind, ...(f.note?.trim() ? { description: f.note.trim() } : {}) },
         geometry: f.geometry,
       })),
     },

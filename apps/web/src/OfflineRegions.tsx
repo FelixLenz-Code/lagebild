@@ -4,6 +4,7 @@ import { FEDERAL_STATES } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
 import {
   PACKAGE_LABEL,
+  WORLD_CODE,
   deleteRegion,
   downloadPackage,
   regionBytes,
@@ -20,7 +21,7 @@ interface Props {
   onChanged: () => void;
 }
 
-const KINDS: PackageKind[] = ['map', 'route', 'search', 'terrain'];
+const KINDS: PackageKind[] = ['map', 'route', 'search', 'terrain', 'pop'];
 const mb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 
 export function OfflineRegions(props: Props) {
@@ -172,6 +173,55 @@ export function OfflineRegions(props: Props) {
       </p>
 
       <div className="region-list">
+        {(() => {
+          // Die Weltkarte steht vor den Ländern: Sie gehört zu keinem davon
+          // und ist die Grundlage, auf der die Ausschnitte liegen.
+          const code = WORLD_CODE;
+          const have = props.offline[code] ?? {};
+          const offer = props.available[code] ?? {};
+          if (!regionBytes(offer) && !regionBytes(have)) return null;
+          const downloading = busy === code;
+          const frac = progress && progress.code === code ? progress.fraction : 0;
+          const geladen = !!have.map;
+          return (
+            <div className="region is-world" key={code}>
+              <span className="rcode">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18" />
+                </svg>
+              </span>
+              <div className="rinfo">
+                <b>Weltkarte (grob)</b>
+                <span className="rmeta">
+                  {downloading
+                    ? 'Karte wird geladen …'
+                    : `Nur weit herausgezoomt (bis Stufe 5) — damit ohne Netz die ganze Erde etwas zeigt, etwa unter den Satellitenbahnen. ${
+                        offer.map ? mb(offer.map) : ''
+                      }`}
+                </span>
+              </div>
+              <div className="raction">
+                {downloading ? (
+                  <div className="rprog">
+                    <div className="track"><i style={{ width: `${Math.round(frac * 100)}%` }} /></div>
+                    <div className="pct">{Math.round(frac * 100)} %</div>
+                  </div>
+                ) : geladen ? (
+                  <span className="rok">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                    {mb(regionBytes(have))}
+                  </span>
+                ) : (
+                  <button className="rbtn" type="button" disabled={busy !== null} onClick={() => download(code)}>
+                    Laden
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {FEDERAL_STATES.map((s) => {
           const have = props.offline[s.code] ?? {};
           const offer = props.available[s.code] ?? {};

@@ -105,7 +105,14 @@ export function SearchSheet(props: Props) {
   const ownMatches = useMemo(() => {
     const needle = term.toLowerCase();
     return drawings
-      .filter((f) => !needle || f.name.toLowerCase().includes(needle))
+      // Die Beschreibung wird mitdurchsucht: Wer „Schlüssel beim Hausmeister"
+      // notiert hat, sucht später danach und nicht nach dem Namen.
+      .filter(
+        (f) =>
+          !needle ||
+          f.name.toLowerCase().includes(needle) ||
+          (f.note ?? '').toLowerCase().includes(needle),
+      )
       .slice(0, 8)
       .map((f) => {
         const c = drawCenter(f);
@@ -316,10 +323,20 @@ export function SearchSheet(props: Props) {
           <div className="sect-label">Meine Markierungen</div>
           <div className="pp-results">
             {ownMatches.map((m) =>
-              row(`draw-${m.feature.id}`, m.place, m.feature.geometry.type === 'Point' ? 'Punkt' : 'Fläche', undefined, {
-                own: true,
-                distanceM: m.distanceM,
-              }),
+              row(
+                `draw-${m.feature.id}`,
+                m.place,
+                m.feature.note?.trim()
+                  ? m.feature.note.trim()
+                  : m.feature.geometry.type === 'Point'
+                    ? 'Punkt'
+                    : 'Fläche',
+                undefined,
+                {
+                  own: true,
+                  distanceM: m.distanceM,
+                },
+              ),
             )}
           </div>
         </>

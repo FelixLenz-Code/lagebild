@@ -7,8 +7,10 @@
 import type { Coords, GeoResult, RouteOutcome, RouteProfile } from '@lagebild/shared';
 import type { WorkerRequest, WorkerResponse } from './worker.js';
 import type { HouseNumber } from './search.js';
-import type { ContourLine, ElevationProfile, TerrainImage } from './terrain.js';
+import type { ContourLine, ElevationProfile, ShadowImage, SightResult, TerrainImage } from './terrain.js';
 import type { TrailResult } from './trails.js';
+import type { DangerZone, EscapeOutcome, ReachResult } from './router.js';
+import type { PopulationResult } from './population.js';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -115,9 +117,75 @@ export const contoursOffline = (
   intervalM?: number,
 ) => call<{ lines: ContourLine[]; intervalM: number }>({ type: 'contours', codes, bbox, intervalM });
 
+/**
+ * Sichtverbindung zwischen zwei Punkten: Geländeschnitt mit Erdkrümmung und
+ * Fresnelzone. Rechnet allein aus dem Geländepaket im Gerät.
+ */
+export const sightOffline = (
+  codes: string[],
+  from: Coords,
+  to: Coords,
+  options: { fromHeightM?: number; toHeightM?: number; freqMHz?: number } = {},
+) => call<SightResult | null>({ type: 'sight', codes, from, to, ...options });
+
 /** Geländebild einer Region (Höhenfarben mit Schummerung) für die Kartenebene. */
 export const terrainImageOffline = (code: string, maxSize?: number) =>
   call<TerrainImage | null>({ type: 'terrainImage', code, maxSize });
+
+/**
+ * Wie viele Menschen wohnen in dieser Fläche? Aus dem Bevölkerungsraster des
+ * Zensus, das als eigenes Paket im Gerät liegt. `null`, wenn für die Gegend
+ * keins geladen ist.
+ */
+export const populationOffline = (
+  codes: string[],
+  query:
+    | { ring: [number, number][] }
+    | { center: Coords; radiusM: number; towardDeg?: number; halfAngleDeg?: number },
+) => call<(PopulationResult & { code: string }) | null>({ type: 'population', codes, ...query });
+
+/**
+ * Schattenwurf des Geländes zu einem Sonnenstand — als Bild, das die Karte
+ * über die Region legt.
+ */
+export const shadowOffline = (
+  code: string,
+  altitudeDeg: number,
+  azimuthDeg: number,
+  maxSize?: number,
+) => call<ShadowImage | null>({ type: 'shadow', code, altitudeDeg, azimuthDeg, maxSize });
+
+/**
+ * Erreichbarkeit: das Straßennetz, das in der gegebenen Zeit befahrbar ist —
+ * eingefärbt nach Fahrzeit.
+ */
+export const reachOffline = (codes: string[], from: Coords, profile: RouteProfile, budgetS: number) =>
+  call<ReachResult>({ type: 'reach', codes, from, profile, budgetS });
+
+/**
+ * Fahrzeiten zu mehreren Zielen in einer Suche — für „welche Anlaufstelle ist
+ * wirklich am schnellsten da?" statt der Luftlinie.
+ */
+export const travelTimesOffline = (
+  codes: string[],
+  from: Coords,
+  targets: Coords[],
+  profile: RouteProfile,
+  budgetS: number,
+) => call<(number | null)[]>({ type: 'travelTimes', codes, from, targets, profile, budgetS });
+
+/**
+ * Der schnellste Weg **weg von** einer Gefahr — kein Ziel, sondern eine
+ * Bedingung: weit genug entfernt und, wenn Wind gemeldet ist, nicht in der
+ * Fahne stromab.
+ */
+export const escapeOffline = (
+  codes: string[],
+  from: Coords,
+  profile: RouteProfile,
+  danger: DangerZone,
+  options: { minDistanceM?: number; avoidMotorways?: boolean } = {},
+) => call<EscapeOutcome>({ type: 'escape', codes, from, profile, danger, ...options });
 
 export const routeOffline = (
   codes: string[],

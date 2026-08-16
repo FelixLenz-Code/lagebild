@@ -11,14 +11,19 @@
   "scripts": {
     "dev": "pnpm --parallel -r --filter=@lagebild/api --filter=@lagebild/web dev",
     "build": "pnpm -r build",
+    "assets:karte": "node scripts/fetch-basemap-assets.mjs",
     "typecheck": "pnpm -r typecheck",
     "start": "node apps/api/dist/index.js",
-    "check": "pnpm check:import && pnpm check:auth",
+    "check": "pnpm check:import && pnpm check:weather-window && pnpm check:auth",
     "check:import": "tsx scripts/check-import.mts",
+    "check:weather-window": "tsx scripts/check-weather-window.mts",
     "check:offline": "tsx scripts/check-offline.mts",
     "check:via": "tsx scripts/check-via.mts",
     "check:terrain": "tsx scripts/check-terrain.mts",
-    "check:pakete": "pnpm check:offline && pnpm check:via && pnpm check:terrain",
+    "check:reach": "tsx scripts/check-reach.mts",
+    "check:population": "tsx scripts/check-population.mts",
+    "check:live": "node scripts/live-check.mjs",
+    "check:pakete": "pnpm check:offline && pnpm check:via && pnpm check:terrain && pnpm check:reach && pnpm check:population",
     "check:auth": "tsx scripts/check-auth.mts"
   },
   "pnpm": {

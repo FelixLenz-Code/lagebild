@@ -13,12 +13,26 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchBlaulicht, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchBosAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, fetchAvalanche, fetchAvalancheRegions, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchBlaulicht, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchBosAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchFireWater, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, fetchAvalanche, fetchAvalancheRegions, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { withCache } from './cache.js';
 import { LageMap, type ActiveLayers, type MapApi } from './LageMap.js';
 import { ShareSheet } from './ShareSheet.js';
 import { EmergencySheet } from './EmergencySheet.js';
+import { EscapeSheet } from './EscapeSheet.js';
+import { SightSheet } from './SightSheet.js';
+import { SatelliteSheet } from './SatelliteSheet.js';
+import {
+  groundTrack,
+  loadSatSelection,
+  loadSatSet,
+  positionsAt,
+  satrecOf,
+  saveSatSelection,
+  type SatPosition,
+  type StoredSatSet,
+} from './satStore.js';
+import { MapSheet } from './MapSheet.js';
 import { PointSheet } from './PointSheet.js';
 import { clearShareUrl, readShareUrl } from './share.js';
 import { STOP_COLOR } from './mapIcons.js';
@@ -35,6 +49,7 @@ import { RoutePanel, formatDistance, type PlanMode } from './RoutePanel.js';
 import { OfflineRegions } from './OfflineRegions.js';
 import { SettingsSheet } from './SettingsSheet.js';
 import { loadSettings, saveSettings, type Settings } from './settings.js';
+import { applyTheme, useDark } from './theme.js';
 import {
   loadPresets,
   savePresets,
@@ -42,11 +57,19 @@ import {
   type SlideshowSettings,
 } from './mapPresets.js';
 import type { LayerRowId } from './layerCatalog.js';
-import { opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
-import { contoursOffline, elevationOffline, poisOffline, routeOffline, stopsOffline, terrainImageOffline, trailsOffline } from './offline/client.js';
+import { WORLD_CODE, opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
+import { contoursOffline, elevationOffline, poisOffline, reachOffline, routeOffline, shadowOffline, stopsOffline, terrainImageOffline, trailsOffline } from './offline/client.js';
 import type { TrailFeature } from './offline/trails.js';
 import { imageFromRgba } from './gridImage.js';
 import type { ContourLine, ElevationProfile } from './offline/terrain.js';
+import type { ReachResult } from './offline/router.js';
+
+/**
+ * Zeitbudget der Erreichbarkeitsebene. Eine Stunde deckt die drei Stufen ab,
+ * die auf der Karte unterschieden werden (15/30/60 min) — und begrenzt zugleich,
+ * wie groß das durchsuchte Netz werden kann.
+ */
+const REACH_BUDGET_S = 3600;
 import { routeFromLine, viaPointsFromLine } from './offline/router.js';
 import { useNavigation } from './navigation.js';
 import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
@@ -85,7 +108,16 @@ import {
 import { kindOfProduct, relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
 import { WeatherIcon } from './WeatherIcon.js';
 import { nowcastAt, nowcastText, type Nowcast } from './radarNowcast.js';
-import { sunAltitude } from './sun.js';
+import { sunAltitude, sunAzimuth } from './sun.js';
+import { MissionSheet } from './MissionSheet.js';
+import { HazmatSheet, type HazmatZone } from './HazmatSheet.js';
+import { activeMission, logEvent, logOnce, subscribeMissions } from './missionLog.js';
+import { syncBackgroundTargets } from './backgroundWarnings.js';
+import { RouteSituationView, useRouteSituation } from './RouteSituation.js';
+import { situationNow } from './situationNow.js';
+import { SituationLight } from './SituationLight.js';
+import { fireDangerAt } from './hazardGrids.js';
+import { sunTimes } from './sun.js';
 
 type DetailKey = 'weather' | 'warnings' | 'nina' | 'traffic' | 'pegel' | 'news' | 'blaulicht' | 'bosair' | 'transit' | 'hf';
 
@@ -116,13 +148,18 @@ const TABS: { key: MobileTab | 'suche'; label: string; path: string }[] = [
 ];
 
 /**
- * Werkzeuge auf dem „Mehr"-Reiter. Am Rechner stehen sie in der Kopfzeile oder
- * im Standort-Menü; auf dem Handy ist die Kopfzeile dafür zu schmal, und ohne
- * diese Liste wären Einstellungen und Offline-Regionen gar nicht erreichbar.
+ * Die Werkzeuge — **eine** Liste für beide Gestalten: auf dem Handy der Reiter
+ * „Mehr", am Rechner das Blatt hinter dem Werkzeug-Knopf in der Kopfzeile.
+ *
+ * Was im Notfall zählt, steht bewusst **nicht** hier, sondern hinter dem roten
+ * Knopf: Wer das Notfallblatt sucht, soll keine Liste lesen müssen.
  */
 const MORE_TOOLS: { key: string; label: string; hint: string; path: string }[] = [
-  { key: 'notfall', label: 'Notfallblatt', hint: 'Nummern, fünf W-Fragen, eigener Standort', path: 'M9.5 3h5v5.5H20v5h-5.5V19h-5v-5.5H4v-5h5.5z' },
+  { key: 'kartenblatt', label: 'Kartenblatt drucken', hint: 'Ausschnitt mit UTM-Gitter, Maßstab und Nummern', path: 'M6 3h9l5 5v13H6zM15 3v5h5M9 13h8M9 17h5' },
+  { key: 'satelliten', label: 'Satellitenüberflüge', hint: 'ISS, Wetter- und Funksatelliten — offline gerechnet', path: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M5 5l3 3M19 5l-3 3M5 19l3-3M19 19l-3-3' },
   { key: 'kompass', label: 'Kompass und Peilung', hint: 'Richtung halten, Kreuzpeilung', path: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M15 9l-2 5-5 2 2-5z' },
+  { key: 'gefahrgut', label: 'Gefahrgut nachschlagen', hint: 'orangefarbene Tafel: Abstände, Betroffene, Fluchtweg', path: 'M12 3 2 20h20zM12 9v5M12 17.2v.2' },
+  { key: 'logbuch', label: 'Einsatz-Logbuch', hint: 'nur während eines Einsatzes — Ereignisse mit Uhrzeit', path: 'M6 3h11a2 2 0 0 1 2 2v16H8a2 2 0 0 1-2-2zM6 7h13M10 11h6M10 15h4' },
   { key: 'spur', label: 'Spur aufzeichnen', hint: 'Weg mitschreiben, als GPX sichern', path: 'M5 19c4 0 3-7 7-7s3-7 7-7' },
   { key: 'teilen', label: 'Karte teilen', hint: 'Ausschnitt und Ebenen als Link', path: 'M6 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M18 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M18 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M8 10.5l8-4M8 13.5l8 4' },
   { key: 'offline', label: 'Offline-Regionen', hint: 'Karte, Routing und Suche ins Gerät laden', path: 'M12 3v11M12 14l-4-4M12 14l4-4M5 20h14' },
@@ -239,6 +276,31 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const [compassOpen, setCompassOpen] = useState(false);
   /** „Was ist hier?" — Steckbrief einer angetippten Stelle. */
   const [pointInfo, setPointInfo] = useState<{ point: Coords; label: string | null } | null>(null);
+  /** Fluchtrouting: die Stelle, von der weg gerechnet werden soll. */
+  const [escapeFrom, setEscapeFrom] = useState<{
+    danger: Coords;
+    label: string | null;
+    /** Vorgabe für den Sicherheitsabstand, z. B. aus dem Gefahrgut-Blatt. */
+    minDistanceM?: number;
+  } | null>(null);
+  /** Sichtverbindung: die angepeilte Gegenstelle. */
+  const [sightTo, setSightTo] = useState<{ point: Coords; label: string | null } | null>(null);
+  const [satOpen, setSatOpen] = useState(false);
+
+  const [mapSheetOpen, setMapSheetOpen] = useState(false);
+  /** Werkzeugblatt (am Rechner der Ersatz für den „Mehr"-Reiter). */
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [missionOpen, setMissionOpen] = useState(false);
+  /** Angenommene Austrittsstelle eines Gefahrstoffs (Blatt offen) … */
+  const [hazmatAt, setHazmatAt] = useState<{ point: Coords; label: string } | null>(null);
+  /** … und der Bereich, den die Karte davon zeigt. */
+  const [hazmatZone, setHazmatZone] = useState<HazmatZone | null>(null);
+  /**
+   * Läuft gerade ein Einsatz? Nur dafür, den Knopf zu kennzeichnen — die
+   * Aufzeichnung selbst entscheidet `missionLog` bei jedem Eintrag neu.
+   */
+  const [missionRunning, setMissionRunning] = useState(() => activeMission() != null);
+  useEffect(() => subscribeMissions(() => setMissionRunning(activeMission() != null)), []);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [layers, setLayers] = useState<ActiveLayers>({
     radar: false,
@@ -261,14 +323,75 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     rest: false,
     webcams: false,
     rescue: false,
+    water: false,
+    reach: false,
+    shadow: false,
     aurora: false,
     fire: false,
     terrain: false,
     trails: false,
     contours: false,
     avalanche: false,
+    satellites: false,
     aprsTargets: [],
   });
+
+  /* ---------- Satelliten auf der Karte ---------- */
+  /** Das geladene Bahndaten-Paket (einmal aus dem Gerät gelesen). */
+  const [satSet, setSatSet] = useState<StoredSatSet | null>(null);
+  /** Welche Satelliten auf der Karte liegen sollen. */
+  const [satSelected, setSatSelected] = useState<string[]>(() => loadSatSelection());
+  const [satPositions, setSatPositions] = useState<SatPosition[]>([]);
+  const [satTracks, setSatTracks] = useState<{ id: string; name: string; lines: [number, number][][] }[]>(
+    [],
+  );
+  useEffect(() => {
+    loadSatSet()
+      .then(setSatSet)
+      .catch(() => setSatSet(null));
+  }, []);
+  useEffect(() => saveSatSelection(satSelected), [satSelected]);
+  /**
+   * Positionen laufend nachrechnen, solange die Ebene an ist. Ein Satellit
+   * legt in der Sekunde rund acht Kilometer zurück — alle fünf Sekunden neu
+   * ist auf der Karte flüssig genug und kostet nichts, weil die Rechnung
+   * lokal ist.
+   */
+  useEffect(() => {
+    if (!layers.satellites || !satSet || !satSelected.length) {
+      setSatPositions([]);
+      setSatTracks([]);
+      return;
+    }
+    const tick = () =>
+      setSatPositions(positionsAt(satSet.set, satSelected, Date.now(), coords));
+    tick();
+    const timer = window.setInterval(tick, 5000);
+    return () => window.clearInterval(timer);
+  }, [layers.satellites, satSet, satSelected, coords]);
+  // Die Bodenspur ändert sich langsam — sie wird nur bei Auswahl-Wechsel und
+  // dann alle zwei Minuten neu gezogen, nicht im Takt der Position.
+  useEffect(() => {
+    if (!layers.satellites || !satSet || !satSelected.length) return;
+    const build = () => {
+      const wanted = new Set(satSelected);
+      setSatTracks(
+        satSet.set.satellites
+          .filter((t) => {
+            const sat = satrecOf(t);
+            return sat && wanted.has(sat.id);
+          })
+          .map((t) => ({
+            id: satrecOf(t)!.id,
+            name: t.name,
+            lines: groundTrack(t, Date.now()),
+          })),
+      );
+    };
+    build();
+    const timer = window.setInterval(build, 120000);
+    return () => window.clearInterval(timer);
+  }, [layers.satellites, satSet, satSelected]);
   // Wird jetzt **immer** geladen, nicht mehr nur bei eingeschalteter
   // Radarebene: Daraus entsteht die Aussage „Regen erreicht dich um …", und
   // die soll auch dann dastehen, wenn niemand ans Radar gedacht hat.
@@ -383,6 +506,11 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const rescue = useApi(`rescue:${viewKey}`, () => fetchRescue(viewport), [viewKey, refreshTick], {
     enabled: layers.rescue,
   });
+  // Löschwasser: dieselbe Überlegung wie bei den Rettungspunkten, nur dichter —
+  // der Server nimmt deshalb nur kleine Ausschnitte an.
+  const fireWater = useApi(`water:${viewKey}`, () => fetchFireWater(viewport), [viewKey, refreshTick], {
+    enabled: layers.water,
+  });
   const quakes = useApi('quakes', () => fetchQuakes(), [refreshTick], {
     enabled: layers.quakes,
     refreshMs: 600_000,
@@ -428,15 +556,33 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const homeCivil = useApi(`home-nina:${geoKey}`, () => fetchNina(homeBox), [geoKey, refreshTick], {
     refreshMs: 300_000,
   });
-  /** Nur was den Standort wirklich überdeckt — die Rechtecke sind großzügig. */
-  const alerts = useMemo(
-    () =>
-      collectAlerts(
-        (homeWarnings.data?.data ?? []).filter((w) => pointInGeometry(coords, w.geometry)),
-        (homeCivil.data?.data ?? []).filter((w) => pointInGeometry(coords, w.geometry)),
-      ),
-    [homeWarnings.data, homeCivil.data, coords],
+  /**
+   * Nur was den Standort wirklich überdeckt — die Rechtecke sind großzügig.
+   * Ungefiltert nach Stufe: Das Banner siebt selbst, die Lage-Ampel braucht
+   * dagegen auch die milderen Warnungen.
+   */
+  const homeWeatherWarnings = useMemo(
+    () => (homeWarnings.data?.data ?? []).filter((w) => pointInGeometry(coords, w.geometry)),
+    [homeWarnings.data, coords],
   );
+  const homeCivilWarnings = useMemo(
+    () => (homeCivil.data?.data ?? []).filter((w) => pointInGeometry(coords, w.geometry)),
+    [homeCivil.data, coords],
+  );
+  const alerts = useMemo(
+    () => collectAlerts(homeWeatherWarnings, homeCivilWarnings),
+    [homeWeatherWarnings, homeCivilWarnings],
+  );
+
+  /**
+   * Warnungen, die den Standort betreffen, gehören ins Logbuch — aber jede nur
+   * einmal: Dieselbe Warnung liegt bei jeder Aktualisierung wieder vor.
+   * Läuft kein Einsatz, passiert hier nichts.
+   */
+  useEffect(() => {
+    for (const a of alerts) logOnce(`warn:${a.id}`, 'warning', `${a.origin}: ${a.headline}`, coords);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alerts, coords.lat, coords.lon]);
 
   const news = useApi(`news:${geoKey}`, () => fetchNews(coords), [coords, refreshTick]);
   // Blaulicht-Meldungen sind Pressetexte, keine Live-Lage — der Feed selbst
@@ -460,16 +606,40 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const lightningAvailable = health.data?.features?.lightning ?? false;
 
   const maps = useApi('maps', () => fetchMaps(), [refreshTick]);
+  /**
+   * Was der Server je Region anbietet.
+   *
+   * **Achtung bei neuen Paketarten:** Die Felder stehen hier einzeln — eine
+   * neue Art muss in `PACKAGE_EXT`, im Server-Verzeichnis, in `KINDS` der
+   * Offline-Ansicht **und hier** auftauchen, sonst wird sie nie angeboten und
+   * damit nie heruntergeladen.
+   */
   const availableMap: Record<string, RegionFiles> = Object.fromEntries(
     (maps.data?.data ?? []).map((m) => [
       m.code,
-      { map: m.map, route: m.route, search: m.search, terrain: m.terrain },
+      { map: m.map, route: m.route, search: m.search, terrain: m.terrain, pop: m.pop },
     ]),
   );
   const [regionsOpen, setRegionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   useEffect(() => saveSettings(settings), [settings]);
+
+  /**
+   * Nachtsicht und große Bedienziele hängen am Wurzelelement, nicht an einzelnen
+   * Bauteilen: Der Rotfilter muss über **allem** liegen, auch über der Karte und
+   * über Blättern, und die Vergrößerung soll jeden Knopf treffen — auch die, die
+   * erst später dazukommen.
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.toggleAttribute('data-night-red', settings.nightRed);
+    root.toggleAttribute('data-big-targets', settings.bigTargets);
+  }, [settings.nightRed, settings.bigTargets]);
+
+  /** Hell oder dunkel — dieselbe Antwort für Oberfläche und Karte. */
+  const dark = useDark(settings.theme);
+  useEffect(() => applyTheme(settings.theme), [settings.theme]);
 
   /* ---------- Spuraufzeichnung ---------- */
   const recorder = useTrackRecorder();
@@ -766,6 +936,12 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const shownRoutes = gpxRoute ? [gpxRoute] : routes;
   /** Die gerade gewählte Variante — sie wird gefahren und angesagt. */
   const route = gpxRoute ?? routes[routeIndex] ?? null;
+  /**
+   * Lagebild der gewählten Strecke: Warnungen, Regen, Wind und Verkehr entlang
+   * der Fahrt, jeweils zu der Zeit, zu der man dort ist. Nur online — die
+   * Auswertung ist lokal, die Daten dafür sind es nicht.
+   */
+  const situation = useRouteSituation(route, online && profile !== 'transit', refreshTick);
 
   // Profilwechsel rechnet nur die Fahrzeit der Tour neu; die Linie bleibt.
   useEffect(() => {
@@ -922,6 +1098,15 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 
   /* ---------- Meine Orte ---------- */
   const [watched, setWatched] = useState<WatchedPlace[]>(() => loadWatched());
+  /**
+   * Der Service Worker kommt an den localStorage nicht heran — die Orte, an
+   * denen er im Hintergrund nach Warnungen sehen soll, werden ihm deshalb in
+   * die gemeinsame Datenbank gelegt. Das kostet nichts, solange niemand die
+   * Hintergrund-Warnungen eingeschaltet hat: Ohne Anmeldung liest sie niemand.
+   */
+  useEffect(() => {
+    void syncBackgroundTargets(coords, watched);
+  }, [coords, watched]);
   const [watchedOpen, setWatchedOpen] = useState(false);
   useEffect(() => saveWatched(watched), [watched]);
   const watchedStates = useWatchedStatus(watched, refreshTick);
@@ -986,6 +1171,41 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers.trails, viewKey, offlineFiles]);
+
+  /* ---------- Erreichbarkeit ---------- */
+
+  /**
+   * Wie weit komme ich in einer Stunde? Gerechnet wird **einmal** mit dem
+   * größten Budget; die Stufen 15 und 30 Minuten stecken schon in den
+   * Fahrzeiten je Abschnitt und werden auf der Karte nur eingefärbt. Ein
+   * eigener Lauf je Stufe würde dieselbe Suche dreimal machen.
+   */
+  const [reach, setReach] = useState<ReachResult | null>(null);
+  const [reachBusy, setReachBusy] = useState(false);
+  const [reachProfile, setReachProfile] = useState<RouteProfile>('car');
+  const reachOrigin = startPoint;
+  useEffect(() => {
+    if (!layers.reach) {
+      setReach(null);
+      return;
+    }
+    const codes = statesForCorridor(reachOrigin, reachOrigin).filter((code) => offlineFiles[code]?.route);
+    if (!codes.length) {
+      setReach(null);
+      return;
+    }
+    let cancelled = false;
+    setReachBusy(true);
+    reachOffline(codes, reachOrigin, reachProfile, REACH_BUDGET_S)
+      .then((r) => !cancelled && setReach(r))
+      .catch(() => !cancelled && setReach(null))
+      .finally(() => !cancelled && setReachBusy(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers.reach, reachOrigin.lat, reachOrigin.lon, reachProfile, offlineFiles]);
+
 
   /* ---------- Höhenprofil der angezeigten Spur ---------- */
   const [trackProfile, setTrackProfile] = useState<ElevationProfile | null>(null);
@@ -1117,6 +1337,16 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [coords.lat, coords.lon, offlineFiles],
   );
+  /**
+   * Regionen mit Einwohner-Paket in der Nähe. Die Pakete überlappen sich an
+   * den Rändern — welche Region tatsächlich zählt, entscheidet der Worker
+   * anhand des Mittelpunkts der Abfrage, damit niemand doppelt gezählt wird.
+   */
+  const popCodes = useMemo(
+    () => statesForCorridor(coords, coords).filter((code) => offlineFiles[code]?.pop),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [coords.lat, coords.lon, offlineFiles],
+  );
   useEffect(() => {
     if (!layers.terrain || !terrainCode) {
       setTerrainImage(null);
@@ -1134,6 +1364,60 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
       cancelled = true;
     };
   }, [layers.terrain, terrainCode]);
+
+  /* ---------- Schattenwurf ---------- */
+
+  /**
+   * Uhrzeit, für die der Schatten gilt — in Minuten seit Mitternacht des
+   * heutigen Tages. `null` heißt „jetzt" und wandert mit der Uhr mit.
+   */
+  const [shadowMinutes, setShadowMinutes] = useState<number | null>(null);
+  const [shadowImage, setShadowImage] = useState<
+    { url: string; bounds: [number, number, number, number]; key: number; night: boolean } | null
+  >(null);
+  /**
+   * Solange „jetzt" gilt, wandert der Schatten mit der Sonne — alle fünf
+   * Minuten reicht dafür völlig (die Sonne läuft 1,25° in dieser Zeit).
+   */
+  const [shadowTick, setShadowTick] = useState(0);
+  useEffect(() => {
+    if (!layers.shadow || shadowMinutes != null) return;
+    const t = setInterval(() => setShadowTick((n) => n + 1), 300_000);
+    return () => clearInterval(t);
+  }, [layers.shadow, shadowMinutes]);
+
+  /** Sonnenstand zur gewählten Zeit am Standort. */
+  const shadowSun = useMemo(() => {
+    const when = new Date();
+    if (shadowMinutes != null) {
+      when.setHours(Math.floor(shadowMinutes / 60), shadowMinutes % 60, 0, 0);
+    }
+    return {
+      when,
+      altitude: sunAltitude(when, coords.lat, coords.lon),
+      azimuth: sunAzimuth(when, coords.lat, coords.lon),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shadowMinutes, coords.lat, coords.lon, shadowTick]);
+
+  useEffect(() => {
+    if (!layers.shadow || !terrainCode) {
+      setShadowImage(null);
+      return;
+    }
+    let cancelled = false;
+    shadowOffline(terrainCode, shadowSun.altitude, shadowSun.azimuth)
+      .then((img) => {
+        if (cancelled || !img) return;
+        const url = imageFromRgba(img.width, img.height, img.rgba);
+        if (url) setShadowImage({ url, bounds: img.bounds, key: Date.now(), night: img.night });
+      })
+      .catch(() => !cancelled && setShadowImage(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [layers.shadow, terrainCode, shadowSun.altitude, shadowSun.azimuth]);
+
 
   /* ---------- Höhenprofil (aus dem Geländepaket oder aus der Datei) ---------- */
   const [elevation, setElevation] = useState<ElevationProfile | null>(null);
@@ -1264,6 +1548,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   };
 
   const stopRoute = () => {
+    if (navigating) logEvent('route', 'Zielführung beendet', coords);
     setNavigating(false);
     setDestination(null);
     setRoutes([]);
@@ -1277,6 +1562,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   /** Zielführung starten — möglichst ab der echten Position. */
   const startNavigation = () => {
     setNavigating(true);
+    logEvent('route', `Zielführung gestartet: ${destination?.name ?? 'Ziel'}`, coords);
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) =>
@@ -1299,11 +1585,19 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
    */
   const pickPoint = (
     point: Coords,
-    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch' | 'info',
+    kind: 'destination' | 'origin' | 'via' | 'place' | 'radio' | 'bearing' | 'watch' | 'info' | 'sight' | 'hazmat',
     label?: string,
   ) => {
     if (kind === 'radio') {
       setHfTarget(point);
+      return;
+    }
+    if (kind === 'sight') {
+      setSightTo({ point, label: label ?? null });
+      return;
+    }
+    if (kind === 'hazmat') {
+      setHazmatAt({ point, label: label ?? 'angetippte Stelle' });
       return;
     }
     if (kind === 'info') {
@@ -1427,10 +1721,39 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     ? Math.round(fc.hourly.slice(0, 24).reduce((sum, h) => sum + (h.precipitationMm ?? 0), 0) * 10) / 10
     : null;
 
+  /**
+   * Die Lage-Ampel: aus allem, was hier gilt, eine Stufe und ein Satz. Rein
+   * gerechnet aus Daten, die ohnehin geladen sind — die Waldbrandgefahr geht
+   * nur ein, wenn ihre Ebene das Gitter schon geholt hat; für eine Zahl ein
+   * bundesweites Raster nachzuladen wäre es nicht wert.
+   */
+  const nowSituation = useMemo(
+    () =>
+      situationNow({
+        weatherWarnings: homeWeatherWarnings,
+        civilWarnings: homeCivilWarnings,
+        weather: w ?? null,
+        nowcast,
+        air: airNow,
+        fireDanger: fire.data?.data ? fireDangerAt(fire.data.data, coords.lat, coords.lon) : null,
+        sunsetMs: sunTimes(new Date(), coords.lat, coords.lon).sunset?.getTime() ?? null,
+        online,
+        lastSyncMs: lastSync ?? null,
+      }),
+    [homeWeatherWarnings, homeCivilWarnings, w, nowcast, airNow, fire.data, coords, online, lastSync],
+  );
+
   /** Was die Werkzeugliste auf dem „Mehr"-Reiter öffnet. */
   const MORE_ACTIONS: Record<string, () => void> = {
     notfall: () => setEmergencyOpen(true),
+    // Ohne angetippte Stelle gilt der eigene Standort als Gefahrenort — das
+    // ist der häufigste Fall: Man steht darin.
+    flucht: () => setEscapeFrom({ danger: coords, label: 'Mein Standort' }),
+    kartenblatt: () => setMapSheetOpen(true),
+    satelliten: () => setSatOpen(true),
     kompass: () => setCompassOpen(true),
+    logbuch: () => setMissionOpen(true),
+    gefahrgut: () => setHazmatAt({ point: coords, label: 'Mein Standort' }),
     spur: () => setTrackOpen(true),
     teilen: () => setShareOpen(true),
     offline: () => setRegionsOpen(true),
@@ -1496,40 +1819,58 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           </svg>
         </button>
 
+        {/* Werkzeuge: dieselbe Liste wie auf dem „Mehr"-Reiter. Der rote Punkt
+            meldet eine laufende Spuraufzeichnung, die sonst hier ihr eigenes
+            Symbol hatte. */}
         <button
           type="button"
-          className={`iconbtn ib-track${recorder.recording ? ' is-rec' : ''}`}
-          onClick={() => setTrackOpen(true)}
-          title={recorder.recording ? 'Aufzeichnung läuft' : 'Spur aufzeichnen'}
-          aria-label="Spur aufzeichnen"
+          className={`iconbtn ib-tools${recorder.recording || missionRunning ? ' is-rec' : ''}`}
+          onClick={() => setToolsOpen(true)}
+          title={missionRunning ? 'Werkzeuge — Einsatz läuft' : 'Werkzeuge'}
+          aria-label="Werkzeuge"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 19c3-1 3-6 6-6s3 4 6 3 2-6 2-6" />
-            <circle cx="5" cy="19" r="1.8" fill="currentColor" stroke="none" />
-            <circle cx="19" cy="10" r="1.8" fill="currentColor" stroke="none" />
+            <path d="M14.7 6.3a4 4 0 0 0 5.3 5.3l-8 8a2.8 2.8 0 0 1-4-4z" />
+            <path d="M14.7 6.3 17 4l3 3-2.3 2.3" />
           </svg>
         </button>
 
         <button
           type="button"
-          className="iconbtn ib-settings"
-          onClick={() => setSettingsOpen(true)}
-          title="Einstellungen und Quellen"
-          aria-label="Einstellungen und Quellen"
+          className="iconbtn ib-emergency"
+          onClick={() => setEmergencyOpen(true)}
+          title="Notfall: Nummern, Standort, Fluchtweg"
+          aria-label="Notfall"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3.2" />
-            <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" />
+            <path d="M12 3 2.5 20h19z" />
+            <path d="M12 9v5M12 17h.01" />
           </svg>
         </button>
 
-        {opfsSupported() && (
-          <button type="button" className="iconbtn ib-offline" onClick={() => setRegionsOpen(true)} title="Offline-Regionen" aria-label="Offline-Regionen">
+        {/* Hell/Dunkel. Ein Druck legt es fest — „dem System folgen" steht in
+            den Einstellungen, weil man das einmal entscheidet und nicht
+            unterwegs. */}
+        <button
+          type="button"
+          className="iconbtn ib-theme"
+          onClick={() => setSettings((prev) => ({ ...prev, theme: dark ? 'light' : 'dark' }))}
+          title={dark ? 'Helle Darstellung' : 'Dunkle Darstellung'}
+          aria-label={dark ? 'Helle Darstellung' : 'Dunkle Darstellung'}
+        >
+          {dark ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v11M12 14l-4-4M12 14l4-4M5 20h14" />
+              <circle cx="12" cy="12" r="4.2" />
+              <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" />
             </svg>
-          </button>
-        )}
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5" />
+            </svg>
+          )}
+        </button>
+
+
         </div>
       </header>
 
@@ -1599,6 +1940,13 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             rest={rest.data?.data ?? []}
             webcams={webcams.data?.data ?? []}
             rescue={rescue.data?.data ?? []}
+            fireWater={fireWater.data?.data ?? []}
+            popCodes={popCodes}
+            hazmatZone={hazmatZone}
+            reach={reach}
+            reachBusy={reachBusy}
+            reachProfile={reachProfile}
+            onReachProfile={setReachProfile}
             lightningAvailable={lightningAvailable}
             aurora={aurora.data?.data ?? null}
             fire={fire.data?.data ?? null}
@@ -1622,6 +1970,15 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             addDraw={addDraw}
             fitBbox={fitBbox}
             terrainImage={terrainImage}
+            shadowImage={shadowImage}
+            shadowMinutes={shadowMinutes}
+            onShadowMinutes={setShadowMinutes}
+            shadowAltitude={shadowSun.altitude}
+            dark={dark}
+            worldOffline={!!offlineFiles[WORLD_CODE]?.map}
+            satellites={satPositions}
+            satTracks={satTracks}
+            onSatelliteSetup={() => setSatOpen(true)}
             trails={trails}
             contours={contours}
             avalanche={avalancheFeatures}
@@ -1688,6 +2045,12 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
                     ? null
                     : 'Für das Höhenprofil fehlt das Geländepaket dieser Region — im Offline-Bildschirm ladbar.'
               }
+              situation={
+                <RouteSituationView
+                  state={situation}
+                  onShow={(lat, lon) => showOnMap(lat, lon, 11)}
+                />
+              }
               onSelectRoute={setRouteIndex}
               avoidMotorways={avoidMotorways}
               onToggleMotorways={() => setAvoidMotorways((v) => !v)}
@@ -1725,6 +2088,12 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         </div>
 
         <section className="tiles-col">
+        {/* Ganz oben, vor allen Kacheln: die eine Antwort. Alles darunter ist
+            die Begründung. */}
+        <SituationLight
+          situation={nowSituation}
+          onDetails={() => setDetail(homeCivilWarnings.length ? 'nina' : 'warnings')}
+        />
         <Tile tab="mehr" title="Wetter" source={weather.data?.source} cached={weather.fromCache} className="warnborder" onOpen={w ? () => setDetail('weather') : undefined}>
           {!w && weather.loading && <p className="muted">Lade …</p>}
           {!w && weather.error && <p className="err">{weather.error}</p>}
@@ -2080,34 +2449,11 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           </section>
         )}
 
-        {/* Alles, was auf dem Handy keinen eigenen Reiter hat. Am Rechner
-            steht es weiterhin in der Kopfzeile bzw. im Standort-Menü — dort
-            bleibt diese Liste ausgeblendet. */}
+        {/* Auf dem Handy der Reiter „Mehr" — dieselbe Liste steht am Rechner
+            im Werkzeugblatt. Eine Quelle, zwei Gestalten. */}
         <section className="more-tools mobile-only" data-tab="mehr">
           <div className="sect-label">Werkzeuge</div>
-          <div className="mt-grid">
-            {MORE_TOOLS.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                className="mt-item"
-                onClick={() => {
-                  MORE_ACTIONS[t.key]?.();
-                }}
-              >
-                <span className="mt-ico" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-                    <path d={t.path} />
-                  </svg>
-                </span>
-                <span className="mt-text">
-                  <b>{t.label}</b>
-                  <span>{t.hint}</span>
-                </span>
-                <span className="chevron" aria-hidden="true">›</span>
-              </button>
-            ))}
-          </div>
+          <ToolGrid onPick={(key) => MORE_ACTIONS[key]?.()} />
         </section>
         </section>
       </div>
@@ -2167,6 +2513,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           loading={muf.loading && !mufGrid}
           from={place}
           to={hfTarget}
+          onSight={() => setSightTo({ point: hfTarget, label: 'Gegenstelle' })}
           onClose={() => setHfTarget(null)}
         />
       )}
@@ -2229,7 +2576,10 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           live={recorder.points}
           recording={recorder.recording}
           error={recorder.error}
-          onStart={recorder.start}
+          onStart={() => {
+            recorder.start();
+            logEvent('track', 'Spuraufzeichnung begonnen', coords);
+          }}
           onStop={() => {
             const name = window.prompt(
               'Name der Spur',
@@ -2238,6 +2588,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             // Abbrechen im Namensdialog beendet die Aufzeichnung trotzdem —
             // die Punkte gingen sonst verloren.
             const saved = recorder.stop(name ?? '');
+            if (saved) logEvent('track', `Spur gesichert: ${saved.name}`, coords);
             if (saved) setShownTrack(saved);
           }}
           onShow={setShownTrack}
@@ -2297,7 +2648,107 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             setPointInfo(null);
             startRouteTo(p);
           }}
+          onEscape={(point, label) => {
+            setPointInfo(null);
+            setEscapeFrom({ danger: point, label });
+          }}
+          onSight={(point, label) => {
+            setPointInfo(null);
+            setSightTo({ point, label });
+          }}
           onClose={() => setPointInfo(null)}
+        />
+      )}
+
+      {toolsOpen && (
+        <Sheet
+          title="Werkzeuge"
+          meta={'dieselbe Liste wie auf dem Reiter „Mehr"'}
+          onClose={() => setToolsOpen(false)}
+        >
+          <ToolGrid
+            onPick={(key) => {
+              setToolsOpen(false);
+              MORE_ACTIONS[key]?.();
+            }}
+          />
+        </Sheet>
+      )}
+
+      {mapSheetOpen && (
+        <MapSheet
+          mapApi={mapApi}
+          place={place}
+          coords={coords}
+          rescue={rescue.data?.data ?? []}
+          onClose={() => setMapSheetOpen(false)}
+        />
+      )}
+
+      {satOpen && (
+        <SatelliteSheet
+          coords={coords}
+          stored={satSet}
+          onStored={setSatSet}
+          selected={satSelected}
+          onSelected={setSatSelected}
+          onClose={() => setSatOpen(false)}
+        />
+      )}
+
+      {sightTo && (
+        <SightSheet
+          from={coords}
+          to={sightTo.point}
+          label={sightTo.label}
+          terrainCodes={terrainCode ? [terrainCode] : []}
+          onClose={() => setSightTo(null)}
+        />
+      )}
+
+      {escapeFrom && (
+        <EscapeSheet
+          danger={escapeFrom.danger}
+          label={escapeFrom.label}
+          from={coords}
+          codes={routeCodes}
+          initialDistanceM={escapeFrom.minDistanceM}
+          windFromDeg={w?.windDirDeg ?? null}
+          windKmh={w?.windGustKmh ?? w?.windKmh ?? null}
+          onTake={(escape, target) => {
+            // Der Fluchtweg läuft über denselben Weg wie eine eingelesene Tour:
+            // fertige Linie, der die App folgt. So gilt er auf der Karte, in
+            // den Anweisungen und in der Zielführung, ohne dass ihn die normale
+            // Routensuche wieder überschreibt.
+            setEscapeFrom(null);
+            setNavigating(false);
+            setRouteOrigin(null);
+            setVia([]);
+            setPin(null);
+            setDestination({ name: 'Sicherer Ort', lat: target.lat, lon: target.lon });
+            setGpxLine({ coords: escape.coordinates, name: 'Fluchtweg' });
+          }}
+          onClose={() => setEscapeFrom(null)}
+        />
+      )}
+
+      {missionOpen && <MissionSheet coords={coords} onClose={() => setMissionOpen(false)} />}
+
+      {hazmatAt && (
+        <HazmatSheet
+          at={hazmatAt.point}
+          atLabel={hazmatAt.label}
+          popCodes={popCodes}
+          windFromDeg={w?.windDirDeg ?? null}
+          windKmh={w?.windKmh ?? null}
+          onShowZone={setHazmatZone}
+          onEscape={(radiusM) => {
+            // Der Absperrradius aus dem Handbuch ist genau die Vorgabe, die das
+            // Fluchtrouting als Kern der Gefahr braucht.
+            setHazmatAt(null);
+            setEscapeFrom({ danger: hazmatAt.point, label: hazmatAt.label, minDistanceM: radiusM });
+          }}
+          onClose={() => setHazmatAt(null)}
         />
       )}
 
@@ -2305,17 +2756,36 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         <EmergencySheet
           coords={coords}
           offlineCode={searchCode}
+          routeCodes={statesForCorridor(coords, coords).filter((code) => offlineFiles[code]?.route)}
           rescue={rescue.data?.data ?? []}
           onRoute={(p) => {
             setEmergencyOpen(false);
             startRouteTo(p);
+          }}
+          onEscape={() => {
+            setEmergencyOpen(false);
+            setEscapeFrom({ danger: coords, label: 'Mein Standort' });
           }}
           onClose={() => setEmergencyOpen(false)}
         />
       )}
 
       {shareOpen && (
-        <ShareSheet api={mapApi} layers={activeLayers} onClose={() => setShareOpen(false)} />
+        <ShareSheet
+          api={mapApi}
+          layers={activeLayers}
+          onHandover={(view, features) => {
+            // Genau der Weg, den auch ein geteilter Link nimmt — nur ohne Netz.
+            setCoords({ lat: view.lat, lon: view.lon });
+            setViewport(boxAround({ lat: view.lat, lon: view.lon }));
+            setPlace('Übernommene Ansicht');
+            setLocationSource('manual');
+            setFlyTo({ lat: view.lat, lon: view.lon, zoom: view.zoom, key: Date.now() });
+            if (view.layers.length) setApplyLayers({ layers: view.layers, key: Date.now() });
+            if (features.length) setAddDraw({ features, key: Date.now() });
+          }}
+          onClose={() => setShareOpen(false)}
+        />
       )}
 
       {watchedOpen && (
@@ -2355,6 +2825,10 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             setCompassOpen(false);
           }}
           target={bearingTarget}
+          onSight={(point, label) => {
+            setCompassOpen(false);
+            setSightTo({ point, label });
+          }}
           onClearTarget={() => setBearingTarget(null)}
           onClose={() => setCompassOpen(false)}
         />
@@ -2455,14 +2929,6 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             locate();
             setLocationOpen(false);
           }}
-          onEmergency={() => {
-            setLocationOpen(false);
-            setEmergencyOpen(true);
-          }}
-          onCompass={() => {
-            setLocationOpen(false);
-            setCompassOpen(true);
-          }}
           onPickOnMap={() => {
             setLocationOpen(false);
             setPickingLocation(true);
@@ -2504,6 +2970,31 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           {detail === 'hf' && hfNow && <HfDetail data={hfNow} />}
         </Sheet>
       )}
+    </div>
+  );
+}
+
+/**
+ * Die Werkzeugliste. Zweimal verwendet: als Handy-Reiter „Mehr" und im
+ * Werkzeugblatt am Rechner — damit es die Liste nur einmal gibt.
+ */
+function ToolGrid({ onPick }: { onPick: (key: string) => void }) {
+  return (
+    <div className="mt-grid">
+      {MORE_TOOLS.map((t) => (
+        <button key={t.key} type="button" className="mt-item" onClick={() => onPick(t.key)}>
+          <span className="mt-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+              <path d={t.path} />
+            </svg>
+          </span>
+          <span className="mt-text">
+            <b>{t.label}</b>
+            <span>{t.hint}</span>
+          </span>
+          <span className="chevron" aria-hidden="true">›</span>
+        </button>
+      ))}
     </div>
   );
 }

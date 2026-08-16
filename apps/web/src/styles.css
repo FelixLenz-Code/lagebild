@@ -24,8 +24,14 @@
   --stop-other: #5b5b60;
   color-scheme: light;
 }
+/*
+ * Dunkel gilt in zwei Fällen: das System möchte es und niemand hat
+ * widersprochen, oder es ist ausdrücklich gewählt. Beide Fälle brauchen
+ * dieselben Werte — CSS kennt dafür keine Abkürzung, deshalb stehen sie
+ * zweimal da. Wer eine Farbe ändert, ändert sie in beiden Blöcken.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #0f0f10; --surface: #1a1a1c; --surface-2: #141416;
     --ink: #e7e7e9; --muted: #9a9a9f; --faint: #66666b;
     --line: #2a2a2d; --line-strong: #38383c;
@@ -36,6 +42,16 @@
     --stop-other: #a6a6ac;
     color-scheme: dark;
   }
+}
+:root[data-theme='dark'] {
+  --bg: #0f0f10; --surface: #1a1a1c; --surface-2: #141416;
+  --ink: #e7e7e9; --muted: #9a9a9f; --faint: #66666b;
+  --line: #2a2a2d; --line-strong: #38383c;
+  --accent: #4a90d9; --accent-ink: #7fb4e6;
+  --sev1: #d9ad2e; --sev2: #dd8226; --sev3: #cf4034; --sev4: #9a56c8; --ok: #3c9c66;
+  --stop-bus: #6ba9e6; --stop-tram: #c193e8; --stop-rail: #ef7a6d; --stop-ferry: #45cfcf;
+  --stop-other: #a6a6ac;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -91,7 +107,7 @@ svg { display: block; }
 
 /* mobile: full-screen map + tiles as a bottom, tappable strip */
 .tiles-col { flex: none; display: flex; gap: 8px; overflow-x: auto; padding: 8px; border-top: 1px solid var(--line); background: var(--bg); }
-.tiles-col > .tile { flex: none; width: 210px; min-height: 0; }
+.tiles-col > .tile, .tiles-col > .ampel { flex: none; width: 210px; min-height: 0; }
 
 /* Zwei Spalten am Rechner. Darunter greift das App-Layout am Ende der Datei. */
 @media (min-width: 900px) {
@@ -102,7 +118,7 @@ svg { display: block; }
     flex: 1; max-width: 480px; flex-direction: column;
     overflow-x: hidden; overflow-y: auto; padding: 12px; border-top: none;
   }
-  .tiles-col > .tile { width: auto; }
+  .tiles-col > .tile, .tiles-col > .ampel { width: auto; }
 }
 /* Bedienleisten oben links; rechts bleibt Platz für die Zoom-Buttons. */
 .mapcontrols {
@@ -113,6 +129,8 @@ svg { display: block; }
 .mapcontrols > * { pointer-events: auto; }
 .maptools { display: flex; flex-wrap: wrap; gap: 6px; }
 /* Spuraufzeichnung */
+.iconbtn.ib-emergency { color: var(--sev3); border-color: color-mix(in srgb, var(--sev3) 45%, transparent); }
+.iconbtn.ib-emergency:hover { color: #fff; background: var(--sev3); border-color: var(--sev3); }
 .iconbtn.is-rec { color: var(--sev3); position: relative; }
 .iconbtn.is-rec::after {
   content: ''; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
@@ -356,10 +374,24 @@ svg { display: block; }
   padding: 6px;
 }
 .lm-group + .lm-group { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+/* Überschrift = Schalter für die Kategorie. Zugeklappt ist der Normalfall. */
 .lm-group-title {
-  font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .09em;
-  color: var(--faint); padding: 6px 8px 3px;
+  width: 100%; display: flex; align-items: center; gap: 7px;
+  padding: 8px; border: none; border-radius: var(--r-sm); background: transparent;
+  font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--muted); text-align: left; cursor: pointer;
 }
+.lm-group-title:hover { background: var(--surface-2); color: var(--ink); }
+.lm-group.is-open .lm-group-title { color: var(--ink); }
+.lm-gcaret { width: 13px; height: 13px; flex: none; color: var(--faint); transition: transform .12s ease; }
+.lm-group.is-open .lm-gcaret { transform: rotate(90deg); }
+.lm-gname { flex: 1; min-width: 0; }
+.lm-gcount {
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; flex: none;
+  background: var(--accent); color: #fff; font-size: .6rem; font-weight: 700; letter-spacing: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.lm-gtotal { flex: none; font-size: .6rem; font-weight: 600; color: var(--faint); letter-spacing: 0; }
 .lm-row { display: flex; align-items: center; gap: 2px; }
 .lm-row.is-sub { padding-left: 18px; }
 .lm-row.is-sub .lm-item { font-size: .78rem; color: var(--muted); }
@@ -730,6 +762,9 @@ svg { display: block; }
 .region { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
 .region:last-child { border-bottom: none; }
 .rcode { font-size: .72rem; color: var(--faint); width: 20px; flex: none; font-variant-numeric: tabular-nums; }
+/* Die Weltkarte trägt statt einer Ländernummer eine Kugel. */
+.region.is-world .rcode svg { width: 18px; height: 18px; display: block; color: var(--accent); }
+.region.is-world { border-bottom: 1px solid var(--line-strong); }
 .rinfo { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
 .rinfo b { font-size: .9rem; font-weight: 600; }
 .rinfo .rmeta { font-size: .72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -833,6 +868,17 @@ svg { display: block; }
 .raction .rdel:disabled { opacity: .3; cursor: default; }
 
 .legend-note { max-width: 260px; font-size: .72rem; line-height: 1.35; color: var(--sev2); }
+
+/* Zeitregler und Umschalter in einer Legende (Schattenwurf, Erreichbarkeit).
+   Die Legende ist schmal — deshalb bricht die Zeile um, statt zu überlaufen. */
+.legend-choice { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; }
+.legend-slider { width: 100%; min-width: 150px; accent-color: var(--accent); margin: 2px 0; }
+
+/* Liste der Drohnen-Gebiete im Popup. Popups sind immer hell — feste Farben. */
+.dz-list { margin: 4px 0 0; padding-left: 16px; font-size: .8rem; line-height: 1.35; color: #1f2933; }
+.dz-list li + li { margin-top: 5px; }
+.dz-note { color: #8a1d14; }
+.dz-alt { color: #5b6570; font-variant-numeric: tabular-nums; }
 
 /* „Wann erreicht mich der Regen?" in der Wetterkachel */
 .wx-nowcast {
@@ -948,9 +994,116 @@ svg { display: block; }
   .app > header, .statusline, .map-col, .tiles-col, .alertbar { display: none !important; }
   .scrim { position: static !important; background: none !important; display: block !important; }
   .sheet { box-shadow: none !important; max-height: none !important; border: 0 !important; }
-  .sheet .iconbtn.close, .em-print { display: none !important; }
+  .sheet .iconbtn.close, .em-print, .no-print { display: none !important; }
   .em-numbers { break-inside: avoid; }
+  /* Kartenblatt: feste Blattbreite — nur so stimmt die Maßstabszahl. */
+  .mapsheet .ms-map { width: 180mm; }
+  .mapsheet .ms-legend { break-inside: avoid; }
+  .mapsheet { color: #000; }
 }
+
+/* ---------- Werkzeugliste (Reiter „Mehr" und Werkzeugblatt) ---------- */
+.mt-grid { display: flex; flex-direction: column; gap: 8px; }
+.mt-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 11px 12px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); color: var(--ink); font: inherit; cursor: pointer;
+}
+.mt-item:hover { border-color: var(--accent); }
+.mt-item:active { background: var(--surface-2); }
+.mt-ico {
+  flex: none; display: grid; place-items: center; width: 34px; height: 34px;
+  border-radius: var(--r-sm); background: var(--surface-2); color: var(--accent);
+}
+.mt-ico svg { width: 19px; height: 19px; }
+.mt-text { display: flex; flex-direction: column; min-width: 0; }
+.mt-text b { font-size: .88rem; font-weight: 650; }
+.mt-text span { font-size: .73rem; color: var(--muted); }
+.mt-item .chevron { margin-left: auto; color: var(--faint); }
+
+/* ---------- Nachtsicht und große Bedienziele ---------- */
+/*
+ * Nachtsicht: ein Filter über der ganzen Seite statt einer zweiten Farbpalette.
+ * Nur so wird auch die Karte rot — und die ist der größte helle Fleck. Die
+ * Reihenfolge zählt: erst alles auf Grau, dann in den roten Bereich drehen,
+ * zuletzt abdunkeln.
+ */
+html[data-night-red] body {
+  filter: grayscale(1) sepia(1) hue-rotate(-38deg) saturate(5.5) brightness(.72) contrast(1.05);
+  background: #000;
+}
+/* Ein QR-Code muss lesbar bleiben — durch den Rotfilter erkennt ihn keine Kamera. */
+html[data-night-red] .qr { filter: grayscale(1) brightness(1.6) contrast(1.4); }
+
+html[data-big-targets] {
+  --r-sm: 7px;
+}
+html[data-big-targets] .iconbtn,
+html[data-big-targets] .chip,
+html[data-big-targets] .rp-chip,
+html[data-big-targets] .lm-item,
+html[data-big-targets] .lm-group-title,
+html[data-big-targets] .btn-primary,
+html[data-big-targets] .lm-alloff,
+html[data-big-targets] .es-choice,
+html[data-big-targets] .tabbar button {
+  min-height: 48px;
+}
+html[data-big-targets] .btn-quiet { min-height: 44px; padding: 10px 8px; font-size: .84rem; }
+html[data-big-targets] .lm-panel { width: 320px; }
+html[data-big-targets] .lm-item { font-size: .92rem; }
+html[data-big-targets] .lm-switch { width: 40px; height: 24px; }
+html[data-big-targets] .lm-switch i { width: 20px; height: 20px; }
+html[data-big-targets] .lm-item[aria-checked='true'] .lm-switch i { transform: translateX(16px); }
+html[data-big-targets] .st-item { min-height: 56px; }
+html[data-big-targets] .sat-list li,
+html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
+
+/* ---------- QR-Übergabe ---------- */
+.qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 5px; margin: 10px 0; }
+/* Immer auf Weiß, auch im dunklen Aufzug — ein Leser braucht den Kontrast. */
+.qr { background: #fff; border-radius: 4px; padding: 0; max-width: 100%; height: auto; }
+.qr-info { font-size: .66rem; color: var(--faint); }
+.qr-scan { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.qr-video { width: 100%; max-width: 320px; border-radius: var(--r-sm); background: #000; }
+.qr-manual { display: flex; gap: 6px; width: 100%; }
+.qr-manual input {
+  flex: 1; min-width: 0; font-size: .78rem; padding: 8px 10px;
+  border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink);
+}
+.qr-took { font-size: .78rem; color: var(--ok); margin: 0 0 6px; }
+
+/* ---------- Kartenblatt ---------- */
+.ms-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.ms-check { display: flex; align-items: center; gap: 7px; font-size: .8rem; }
+.ms-controls .btn-primary { flex: none; padding: 0 18px; }
+.mapsheet { display: flex; flex-direction: column; gap: 8px; }
+.ms-head { display: flex; align-items: flex-end; gap: 12px; border-bottom: 1.5px solid currentColor; padding-bottom: 5px; }
+.ms-head b { display: block; font-size: 1rem; }
+.ms-head span { font-size: .7rem; color: var(--muted); }
+.ms-scale { margin-left: auto; text-align: right; }
+.ms-scale b { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.ms-map { position: relative; width: 100%; border: 1px solid currentColor; }
+.ms-map img { display: block; width: 100%; height: auto; }
+.ms-grid { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ms-grid line { stroke: rgba(0,0,0,.55); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.ms-grid-label { font-size: 22px; font-weight: 700; fill: rgba(0,0,0,.75); paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 4px; }
+.ms-bar {
+  position: absolute; left: 8px; bottom: 8px; display: flex; align-items: center; gap: 6px;
+  background: #fff; padding: 3px 7px; border: 1px solid #000; font-size: .68rem;
+  /* Feste Farben statt Variablen: Das Blatt ist immer hell — im dunklen Thema
+     wäre die Beschriftung sonst weiß auf weiß. */
+  color: #000; font-weight: 600;
+}
+.ms-bar i { display: block; height: 5px; background: repeating-linear-gradient(90deg, #000 0 50%, #fff 50% 100%); border: 1px solid #000; min-width: 24px; }
+.ms-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: start; }
+.ms-block { border: 1px solid var(--line-strong); padding: 6px 8px; }
+.ms-block.ms-wide { grid-column: 1 / -1; }
+.ms-block h4 { margin: 0 0 3px; font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.ms-block p { margin: 0; font-size: .72rem; line-height: 1.4; }
+.ms-small { font-size: .64rem !important; color: var(--muted); }
+.ms-foot { margin: 0; font-size: .62rem; color: var(--muted); }
 
 /* Karte teilen */
 .share-btn { bottom: 72px; }
@@ -1084,11 +1237,179 @@ svg { display: block; }
 .btn-primary { flex: 1; min-height: 40px; border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: .86rem; font-weight: 650; cursor: pointer; }
 .btn-quiet { background: transparent; border: none; color: var(--muted); font-size: .76rem; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; padding: 4px; }
 .btn-quiet:hover { color: var(--ink); }
+/* Der Fluchtknopf im Notfallblatt: dieselbe Form wie ein Hauptknopf, aber in
+   der Farbe der Gefahr. Die doppelte Klasse ist nötig, damit er die Grundfarbe
+   von .btn-primary überschreibt. */
+.em-note {
+  width: 100%; margin: 4px 0 8px; padding: 8px 10px; font: inherit; font-size: .82rem;
+  border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink); resize: vertical;
+}
+/* Was rausgeht, steht vorher da — im Notfall verschickt niemand etwas blind. */
+.em-preview {
+  margin: 0 0 8px; padding: 9px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--surface-2);
+  font-family: var(--mono, ui-monospace, monospace); font-size: .72rem; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word; color: var(--muted);
+}
+.btn-primary.em-send { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-primary.em-send svg { width: 17px; height: 17px; }
+.em-sent { font-size: .74rem; color: var(--ok); align-self: center; }
+
+.btn-primary.em-escape {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin: 12px 0 16px; padding: 10px 14px;
+  background: var(--sev3); border-color: var(--sev3);
+}
+.btn-primary.em-escape svg { width: 18px; height: 18px; }
 .rp-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .rp-steps li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: .82rem; }
 .st-ico { width: 22px; flex: none; color: var(--accent); display: grid; place-items: center; }
 .st-text { flex: 1; min-width: 0; }
 .st-dist { color: var(--muted); font-size: .74rem; white-space: nowrap; }
+
+/* ---------- Satellitenüberflüge ---------- */
+.sat-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+.sat-group {
+  display: flex; align-items: flex-start; gap: 8px; padding: 7px 9px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer;
+}
+.sat-group.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.sat-group b { display: block; font-size: .8rem; }
+.sat-hint { display: block; font-size: .66rem; color: var(--muted); }
+.sat-store { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.sat-state { margin: 0; font-size: .78rem; color: var(--muted); }
+.sat-old { color: var(--sev2); }
+/* Löschen sieht nicht aus wie Erneuern — sonst trifft man im Halbdunkeln das
+   Falsche. */
+.btn-quiet.sat-delete { color: var(--sev3); }
+.sat-filters { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 6px; }
+.sat-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sat-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.sat-when { display: flex; flex-direction: column; min-width: 54px; }
+.sat-when b { font-size: .92rem; font-variant-numeric: tabular-nums; }
+.sat-when span { font-size: .64rem; color: var(--faint); }
+.sat-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sat-name { font-size: .82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sat-meta { font-size: .68rem; color: var(--muted); }
+.sat-el { display: flex; flex-direction: column; align-items: flex-end; min-width: 56px; }
+.sat-el b { font-size: .92rem; }
+.sat-el span { font-size: .62rem; }
+.sat-note { margin: 10px 0 0; font-size: .68rem; color: var(--faint); line-height: 1.4; }
+.sat-pick-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.sat-search {
+  flex: 1; min-width: 0; font-size: .8rem; padding: 8px 10px;
+  border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink);
+}
+.sat-pick {
+  list-style: none; margin: 0; padding: 2px 4px; max-height: 250px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
+}
+.sat-pick li + li { border-top: 1px solid var(--line); }
+/* Ohne feste Breite schrumpft ein Knopf auf seinen Inhalt — der Schalter säße
+   dann mitten in der Zeile statt am Rand. */
+.sat-pick .lm-item { width: 100%; }
+
+/* ---------- Sichtverbindung ---------- */
+.sight-verdict {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--r-sm);
+  margin-bottom: 8px;
+}
+.sight-verdict b { font-size: .88rem; }
+.sight-verdict .mono { margin-left: auto; font-size: .74rem; color: var(--muted); }
+.sight-chart { height: 140px; }
+.sight-fresnel { fill: none; stroke: var(--sev1); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.sight-line { stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.sight-line.is-frei { stroke: var(--ok); }
+.sight-line.is-angeschnitten { stroke: var(--sev1); }
+.sight-line.is-verdeckt { stroke: var(--sev3); }
+.sight-block { stroke: var(--sev3); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.sight-note { margin: 6px 0 0; font-size: .78rem; line-height: 1.4; }
+.sight-warn { margin: 4px 0 0; font-size: .68rem; color: var(--sev2); }
+.sight-rows { display: flex; flex-direction: column; gap: 6px; }
+.sight-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sight-row > span:first-child { font-size: .72rem; color: var(--muted); min-width: 34px; }
+
+/* ---------- Fluchtweg ---------- */
+.es-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.es-choice {
+  display: flex; flex-direction: column; gap: 1px; padding: 8px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: transparent; color: var(--muted); text-align: left; cursor: pointer;
+}
+.es-choice b { font-size: .88rem; color: var(--ink); }
+.es-choice span { font-size: .66rem; }
+.es-choice.is-on { border-color: var(--sev3); background: color-mix(in srgb, var(--sev3) 10%, transparent); }
+.es-choice.is-on b { color: var(--sev3); }
+.es-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.es-row > span { font-size: .72rem; color: var(--muted); }
+.es-wind {
+  display: flex; align-items: flex-start; gap: 9px; margin: 10px 0;
+  padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer;
+}
+.es-wind.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.es-wind input { margin-top: 2px; }
+.es-wind b { display: block; font-size: .82rem; font-weight: 650; }
+.es-wind-hint { display: block; font-size: .7rem; color: var(--muted); line-height: 1.35; }
+.es-summary { display: flex; align-items: baseline; gap: 14px; font-size: .8rem; color: var(--muted); }
+.es-summary b { font-size: 1.15rem; font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
+.es-note { margin: 4px 0 0; font-size: .76rem; color: var(--muted); }
+.es-steps { margin-top: 8px; }
+.ps-escape { color: var(--sev3); }
+
+/* ---------- Lage-Ampel ---------- */
+.ampel {
+  flex: none; display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--ok);
+  border-radius: var(--r); padding: 10px 12px;
+}
+.am-head { display: flex; align-items: center; gap: 8px; }
+.am-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.am-level { font-size: .84rem; font-weight: 700; letter-spacing: -.01em; }
+.am-title { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+.am-speak { margin-left: auto; width: 30px; height: 30px; }
+.am-speak.is-on { color: var(--accent); }
+.am-sentence { margin: 0; font-size: .86rem; line-height: 1.35; }
+.am-reasons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.am-reasons li { display: flex; align-items: center; gap: 7px; font-size: .74rem; color: var(--muted); }
+.am-reasons i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.am-unknown { margin: 0; font-size: .68rem; color: var(--faint); }
+.am-more { align-self: flex-start; padding-left: 0; }
+
+/* ---------- Lagebild der Strecke ---------- */
+.routesit { display: flex; flex-direction: column; gap: 6px; }
+.rs-loading { font-size: .78rem; margin: 0; }
+.rs-head { display: flex; align-items: baseline; gap: 8px; padding-left: 8px; border-left: 3px solid var(--line-strong); }
+.rs-head h4 { margin: 0; font-size: .82rem; font-weight: 650; }
+.rs-head.is-note { border-left-color: var(--sev1); }
+.rs-head.is-warn { border-left-color: var(--sev2); }
+.rs-head.is-alarm { border-left-color: var(--sev3); }
+.rs-arrival { margin-left: auto; font-size: .74rem; color: var(--muted); }
+.rs-clear { margin: 0; font-size: .78rem; color: var(--ok); }
+.rs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rs-ev + .rs-ev { border-top: 1px solid var(--line); }
+.rs-ev-btn {
+  width: 100%; display: flex; align-items: flex-start; gap: 9px; padding: 7px 4px;
+  border: none; background: transparent; color: var(--ink); text-align: left; cursor: pointer;
+}
+.rs-ev-btn:hover { background: var(--surface-2); }
+.rs-ico { width: 20px; height: 20px; flex: none; color: var(--muted); }
+.rs-ico svg { width: 100%; height: 100%; }
+.rs-ev.is-note .rs-ico { color: var(--sev1); }
+.rs-ev.is-warn .rs-ico { color: var(--sev2); }
+.rs-ev.is-alarm .rs-ico { color: var(--sev3); }
+.rs-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.rs-title { font-size: .82rem; line-height: 1.25; }
+.rs-ev.is-alarm .rs-title { font-weight: 650; }
+.rs-meta { font-size: .68rem; color: var(--faint); }
+.rs-kind {
+  flex: none; font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--faint); padding-top: 3px;
+}
+.rs-foot { margin: 0; font-size: .68rem; color: var(--faint); }
+.rs-foot.warn { color: var(--sev2); }
 
 /* ---------- Zielführung ---------- */
 .navbar { flex: none; background: var(--accent); color: #fff; padding: 10px 14px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -1353,7 +1674,7 @@ svg { display: block; }
     padding: 10px 10px 14px; overflow-x: hidden; overflow-y: auto;
     background: var(--bg); border-top: none;
   }
-  .tiles-col > .tile { width: auto; }
+  .tiles-col > .tile, .tiles-col > .ampel { width: auto; }
   /* Auf dem Kartenreiter liegt nichts über der Karte. */
   .layout[data-tab='karte'] .tiles-col { display: none; }
   /* Sonst nur, was zu diesem Reiter gehört. */
@@ -1389,23 +1710,108 @@ svg { display: block; }
     background: var(--sev3); color: #fff; font-size: .58rem; font-style: normal; font-weight: 700;
   }
 
-  /* ---- Werkzeugliste auf „Mehr" ---- */
-  .mt-grid { display: flex; flex-direction: column; gap: 8px; }
-  .mt-item {
-    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-    padding: 11px 12px; background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--r); color: var(--ink); font: inherit; cursor: pointer;
-  }
-  .mt-item:active { background: var(--surface-2); }
-  .mt-ico { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--accent); }
-  .mt-ico svg { width: 19px; height: 19px; }
-  .mt-text { display: flex; flex-direction: column; min-width: 0; }
-  .mt-text b { font-size: .88rem; font-weight: 650; }
-  .mt-text span { font-size: .73rem; color: var(--muted); }
-  .mt-item .chevron { margin-left: auto; color: var(--faint); }
-
   /* ---- Bedienelemente groß genug für den Daumen ---- */
   .maplibregl-ctrl-group button { width: 40px; height: 40px; }
   .mapcontrols { top: 8px; left: 8px; right: 56px; }
   .routepanel { max-height: 46dvh; }
 }
+
+
+/* Wetterfenster: Regler und Trefferliste. Die Regler sollen nebeneinander
+   passen, brechen auf schmalen Geräten aber um statt zu schrumpfen. */
+.ww-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; margin: 6px 0 10px; }
+.ww-controls label { display: flex; flex-direction: column; gap: 2px; font-size: .78rem; color: var(--muted); min-width: 150px; flex: 1 1 150px; }
+.ww-controls input[type='range'] { accent-color: var(--accent); width: 100%; }
+.ww-toggle { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 5px 12px; font-size: .78rem; cursor: pointer; }
+.ww-toggle.is-on { border-color: var(--accent); color: var(--accent); }
+.ww-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ww-list li { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.ww-list li span { font-size: .76rem; color: var(--muted); }
+
+
+/* Einsatz-Logbuch. Der laufende Einsatz steht oben und hebt sich ab; der
+   Verlauf ist eine Tabelle aus Uhrzeit, Zeichen und Text — sie soll sich im
+   Einsatz überfliegen lassen, nicht schön aussehen. */
+.ml-sheet { display: grid; gap: 10px; }
+.ml-start { display: flex; gap: 8px; flex-wrap: wrap; }
+.ml-start input { flex: 1 1 200px; }
+.ml-active { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); }
+.ml-active > div { display: flex; flex-direction: column; }
+.ml-active span { font-size: .76rem; }
+.ml-end { border: 1px solid var(--line); background: var(--surface-2); color: var(--sev3); border-radius: 999px;
+  padding: 6px 14px; font-size: .82rem; cursor: pointer; }
+.ml-add { display: flex; gap: 6px; flex-wrap: wrap; }
+.ml-add input { flex: 1 1 180px; }
+.ml-add button { border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  border-radius: 8px; padding: 6px 12px; font-size: .82rem; cursor: pointer; }
+.ml-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 40vh; overflow: auto; }
+.ml-list li { display: grid; grid-template-columns: auto auto 1fr auto; gap: 8px; align-items: baseline;
+  padding: 5px 8px; border-radius: 6px; }
+.ml-list li:nth-child(odd) { background: var(--surface-2); }
+.ml-time { font-size: .76rem; color: var(--muted); }
+.ml-mark { color: var(--faint); width: 1em; text-align: center; }
+.ml-text { font-size: .86rem; }
+.ml-text em { color: var(--muted); font-style: normal; font-size: .76rem; }
+.ml-kind { font-size: .68rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.ml-list li.ml-warning .ml-mark, .ml-list li.ml-warning .ml-kind { color: var(--sev3); }
+.ml-list li.ml-start .ml-mark, .ml-list li.ml-end .ml-mark { color: var(--accent); }
+.ml-past { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ml-past li { display: flex; align-items: center; gap: 6px; }
+.ml-past li > button:first-child { flex: 1; display: flex; flex-direction: column; align-items: flex-start;
+  gap: 1px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  color: var(--text); cursor: pointer; text-align: left; }
+.ml-past span { font-size: .74rem; color: var(--muted); }
+.ml-del { border: none; background: none; color: var(--faint); font-size: 1rem; cursor: pointer; padding: 4px 8px; }
+.ml-back { margin-left: 8px; border: none; background: none; color: var(--accent); font-size: .74rem; cursor: pointer; }
+
+
+/* Gefahrgut-Blatt. Die Zahlen sind das Wichtigste — sie stehen groß und
+   allein, damit man sie im Einsatz auf einen Blick abliest. */
+.hz-sheet { display: grid; gap: 10px; }
+.hz-input { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--muted); }
+.hz-input input { font-size: 1.05rem; padding: 9px 12px; font-variant-numeric: tabular-nums; }
+.hz-kemler ul { margin: 4px 0 6px; padding-left: 18px; font-size: .84rem; display: grid; gap: 2px; }
+.hz-warn { color: var(--sev3); font-weight: 600; margin: 2px 0; }
+.hz-matches { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 30vh; overflow: auto; }
+.hz-matches button { width: 100%; display: flex; gap: 10px; align-items: baseline; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text);
+  cursor: pointer; text-align: left; }
+.hz-matches span { font-size: .82rem; color: var(--muted); }
+.hz-name { font-size: 1rem; }
+.hz-guide { font-size: .84rem; color: var(--muted); }
+.hz-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.hz-choice button { border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  border-radius: 999px; padding: 5px 12px; font-size: .8rem; cursor: pointer; }
+.hz-choice button[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
+.hz-choice button:disabled { opacity: .4; cursor: default; }
+.hz-when { font-size: .74rem; color: var(--faint); margin-left: auto; }
+.hz-numbers, .hz-people { display: grid; gap: 8px; }
+.hz-numbers > div, .hz-people > div { display: flex; align-items: baseline; gap: 10px; }
+.hz-numbers b, .hz-people b { font-size: 1.5rem; font-variant-numeric: tabular-nums; color: var(--sev3); min-width: 5.5rem; }
+.hz-people b { color: var(--text); }
+.hz-numbers span, .hz-people span { font-size: .84rem; color: var(--muted); }
+.hz-note { font-size: .74rem; line-height: 1.4; }
+
+/* Einwohnerzahl in der Markierungsliste. */
+.dl-people { font-variant-numeric: tabular-nums; }
+
+
+/* Beschreibung an eigenen Markierungen. */
+.noteinput { width: 100%; resize: vertical; font: inherit; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+/* Die Zeile einer Markierung darf umbrechen, damit Beschreibung und
+   Farbwahl darunter volle Breite bekommen. `.region` selbst bleibt
+   unangetastet — dieselbe Klasse trägt auch der Offline-Bildschirm. */
+.dl-item { flex-wrap: wrap; }
+.dl-note { flex: 0 0 100%; margin: 4px 0 0; font-size: .82rem; line-height: 1.35; color: var(--muted);
+  white-space: pre-wrap; }
+.dl-noteedit { flex: 0 0 100%; display: grid; gap: 6px; margin-top: 6px; }
+.dl-noteedit textarea { width: 100%; resize: vertical; font: inherit; font-size: .86rem; padding: 8px 10px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+.dl-notebtns { display: flex; gap: 8px; justify-content: flex-end; }
+/* Der Knopf zeigt, ob schon eine Beschreibung hinterlegt ist. */
+.rdel.is-set { color: var(--accent); }
+/* Im Punktmenü steht sie unter dem Namen. */
+.pm-note { padding: 2px 12px 6px; font-size: .8rem; line-height: 1.35; color: var(--muted);
+  white-space: pre-wrap; max-width: 260px; }

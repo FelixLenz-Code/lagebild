@@ -12,6 +12,7 @@
 
 import { deflateRawSync } from 'node:zlib';
 import { ImportError, drawFrom, readImport, tracksFrom } from '../apps/web/src/importFiles.js';
+import { drawToGeoJsonText, drawToGpx } from '../apps/web/src/drawStore.js';
 import { toGpx, type Track } from '../apps/web/src/trackStore.js';
 import { distance, lineLength, midpoint, ringArea } from '../apps/web/src/geo.js';
 
@@ -384,6 +385,73 @@ for (const [name, data, erwartet] of [
     message = e instanceof ImportError ? e.message : `falsche Fehlerart: ${String(e)}`;
   }
   check(`${name} meldet den Grund`, message.includes(erwartet), message || 'kein Fehler geworfen');
+}
+
+/* ------------------------------------------------------------------ *
+ * Beschreibungen (freiwilliges Feld an Markierungen)
+ * ------------------------------------------------------------------ */
+
+{
+  const GPX_DESC = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="53.07" lon="8.80"><name>Sammelplatz</name><desc>Zufahrt nur von Norden</desc></wpt>
+  <trk><name>Zufahrt</name><desc>ab 3,5 t gesperrt</desc><trkseg>
+    <trkpt lat="53.07" lon="8.80"/><trkpt lat="53.08" lon="8.81"/>
+  </trkseg></trk>
+</gpx>`;
+  const r = await readImport('desc.gpx', buf(GPX_DESC));
+  const draw = drawFrom(r);
+  const wpt = draw.find((d) => d.kind === 'point');
+  const trk = draw.find((d) => d.kind === 'line');
+  check('GPX: Beschreibung am Wegpunkt', wpt?.note === 'Zufahrt nur von Norden', wpt?.note ?? '—');
+  check('GPX: Beschreibung an der Spur', trk?.note === 'ab 3,5 t gesperrt', trk?.note ?? '—');
+
+  // Ausgabe und Wiedereinlesen müssen dasselbe ergeben — sonst geht die
+  // Beschreibung beim Weitergeben still verloren.
+  const zurueck = drawFrom(await readImport('zurueck.gpx', buf(drawToGpx(draw))));
+  check(
+    'GPX-Ausgabe trägt die Beschreibung zurück',
+    zurueck.find((d) => d.kind === 'point')?.note === 'Zufahrt nur von Norden' &&
+      zurueck.find((d) => d.kind === 'line')?.note === 'ab 3,5 t gesperrt',
+    zurueck.map((d) => d.note ?? '—').join(' | '),
+  );
+
+  const geo = JSON.parse(drawToGeoJsonText(draw)) as {
+    features: { properties: { description?: string } }[];
+  };
+  check(
+    'GeoJSON-Ausgabe nennt sie `description`',
+    geo.features.some((f) => f.properties.description === 'Zufahrt nur von Norden'),
+    JSON.stringify(geo.features.map((f) => f.properties.description)),
+  );
+
+  const wieder = drawFrom(await readImport('zurueck.geojson', buf(drawToGeoJsonText(draw))));
+  check(
+    'GeoJSON gelesen ergibt dieselbe Beschreibung',
+    wieder.every((d) => d.note),
+    wieder.map((d) => d.note ?? '—').join(' | '),
+  );
+
+  const KML_DESC = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark><name>Sperrfläche</name><description>Betreten verboten</description>
+    <Polygon><outerBoundaryIs><LinearRing><coordinates>
+      8.80,53.07 8.81,53.07 8.81,53.08 8.80,53.07
+    </coordinates></LinearRing></outerBoundaryIs></Polygon>
+  </Placemark>
+</Document></kml>`;
+  const kml = drawFrom(await readImport('desc.kml', buf(KML_DESC)));
+  check('KML: Beschreibung an der Fläche', kml[0]?.note === 'Betreten verboten', kml[0]?.note ?? '—');
+
+  // Ohne Beschreibung darf kein leeres Feld entstehen.
+  const ohne = drawFrom(
+    await readImport(
+      'ohne.gpx',
+      buf(`<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+        <wpt lat="53.07" lon="8.80"><name>Nur Name</name></wpt></gpx>`),
+    ),
+  );
+  check('ohne Beschreibung bleibt das Feld leer', ohne[0]?.note === undefined);
 }
 
 console.log(failed ? `\n${failed} Prüfung(en) fehlgeschlagen\n` : '\nAlle Prüfungen bestanden\n');

@@ -338,6 +338,118 @@ export function renderTerrain(terrain: Terrain, maxSize = 1024): TerrainImage {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* Sichtverbindung                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Ein Punkt des Geländeschnitts zwischen zwei Stellen. */
+export interface SightPoint {
+  distanceM: number;
+  /** Geländehöhe. */
+  groundM: number | null;
+  /** Höhe der Sichtlinie an dieser Stelle (Antenne zu Antenne). */
+  lineM: number;
+  /** Untere Grenze der ersten Fresnelzone. */
+  fresnelM: number;
+}
+
+export interface SightResult {
+  points: SightPoint[];
+  distanceM: number;
+  /** Freie Sicht, nur die Fresnelzone angeschnitten, oder verdeckt? */
+  verdict: 'frei' | 'angeschnitten' | 'verdeckt';
+  /** Stelle des schlimmsten Hindernisses. */
+  worst: { distanceM: number; overM: number; lat: number; lon: number } | null;
+  /** Wie hoch die Antenne am Anfang stehen müsste, damit es frei wird. */
+  neededHeightM: number | null;
+  fromEleM: number | null;
+  toEleM: number | null;
+}
+
+/** Erdradius mit Refraktion (k = 4/3) — so rechnet die Funktechnik. */
+const EFFECTIVE_EARTH_M = 6371008.8 * (4 / 3);
+/** Lichtgeschwindigkeit in Metern je Sekunde, für die Wellenlänge. */
+const C = 299792458;
+
+/**
+ * Sieht Punkt A den Punkt B — über das Gelände hinweg?
+ *
+ * Zwei Dinge, die man ohne Rechnung falsch macht: Die **Erdkrümmung** nimmt
+ * über 20 km schon zwanzig Meter weg, und eine Funkstrecke braucht mehr als die
+ * nackte Sichtlinie. Um sie herum liegt die **erste Fresnelzone**, ein
+ * Rotationsellipsoid; ragt Gelände hinein, dämpft es, auch wenn „man sieht sich"
+ * noch stimmt. Deshalb gibt es hier drei Urteile statt zwei.
+ *
+ * Das Geländemodell kennt weder Wald noch Häuser — im Zweifel steht mehr im Weg
+ * als hier steht. Das Blatt sagt das auch.
+ */
+export function sightLine(
+  terrain: Terrain,
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+  options: { fromHeightM?: number; toHeightM?: number; freqMHz?: number; samples?: number } = {},
+): SightResult | null {
+  const total = distanceM(from.lat, from.lon, to.lat, to.lon);
+  if (total < 1) return null;
+  const fromEle = terrain.elevationAt(from.lat, from.lon);
+  const toEle = terrain.elevationAt(to.lat, to.lon);
+  if (fromEle == null || toEle == null) return null;
+
+  const hFrom = fromEle + (options.fromHeightM ?? 2);
+  const hTo = toEle + (options.toHeightM ?? 2);
+  const wavelength = options.freqMHz ? C / (options.freqMHz * 1e6) : null;
+  const count = Math.max(32, Math.min(options.samples ?? 400, 1200));
+
+  const points: SightPoint[] = [];
+  let worst: SightResult['worst'] = null;
+  let fresnelCut = false;
+  /** Größter Betrag, um den die Sichtlinie angehoben werden müsste. */
+  let needed = 0;
+
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    const d = total * t;
+    const lat = from.lat + (to.lat - from.lat) * t;
+    const lon = from.lon + (to.lon - from.lon) * t;
+    const raw = terrain.elevationAt(lat, lon);
+    // Die Erde fällt unter der Sehne weg — das hilft der Sicht, deshalb wird
+    // die Geländehöhe um diesen Betrag abgesenkt.
+    const drop = (d * (total - d)) / (2 * EFFECTIVE_EARTH_M);
+    const ground = raw == null ? null : raw - drop;
+    const line = hFrom + (hTo - hFrom) * t;
+    // Radius der ersten Fresnelzone an dieser Stelle.
+    const radius = wavelength ? Math.sqrt((wavelength * d * (total - d)) / total) : 0;
+    const fresnel = line - radius * 0.6;
+
+    points.push({
+      distanceM: d,
+      groundM: ground == null ? null : Math.round(ground * 10) / 10,
+      lineM: Math.round(line * 10) / 10,
+      fresnelM: Math.round(fresnel * 10) / 10,
+    });
+
+    if (ground == null || i === 0 || i === count - 1) continue;
+    if (ground > fresnel) fresnelCut = true;
+    const over = ground - line;
+    if (over > 0 && (!worst || over > worst.overM)) {
+      worst = { distanceM: d, overM: Math.round(over * 10) / 10, lat, lon };
+    }
+    // Wie viel höher müsste A stehen, damit die Linie hier vorbeikommt? Die
+    // Linie kippt um B, deshalb der Faktor 1/(1−t).
+    if (over > 0 && t < 1) needed = Math.max(needed, over / (1 - t));
+  }
+
+  return {
+    points,
+    distanceM: Math.round(total),
+    verdict: worst ? 'verdeckt' : fresnelCut ? 'angeschnitten' : 'frei',
+    worst,
+    neededHeightM: worst ? Math.ceil(needed) : null,
+    fromEleM: Math.round(fromEle),
+    toEleM: Math.round(toEle),
+  };
+}
+
 /**
  * Was noch vor einem liegt: Anstieg und Abstieg ab einer bestimmten Stelle der
  * Strecke. Während der Fahrt zählt genau das — die Gesamtsumme sagt am Berg
@@ -534,4 +646,128 @@ export function contourLines(
     if (geo.length) out.push({ eleM: level, paths: geo });
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Schattenwurf                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface ShadowImage extends TerrainImage {
+  /** Sonnenstand, für den gerechnet wurde. */
+  altitudeDeg: number;
+  azimuthDeg: number;
+  /** true, wenn die Sonne unter dem Horizont steht — dann ist alles Schatten. */
+  night: boolean;
+}
+
+/**
+ * Schattenwurf des Geländes zu einem Sonnenstand.
+ *
+ * **Verfahren:** Für jede Rasterzelle wäre die naive Frage „steht zwischen mir
+ * und der Sonne ein Berg?" ein eigener Strahl — bei Millionen Zellen zu teuer.
+ * Stattdessen wird das Raster in Strahlen **in Sonnenrichtung** durchlaufen und
+ * dabei ein laufender Horizont mitgeführt: Bei jedem Schritt um die Strecke L
+ * sinkt der bisherige Horizont um `L · tan(Höhenwinkel)`, und die Höhe der
+ * eben verlassenen Zelle hebt ihn wieder an. Liegt eine Zelle unter diesem
+ * Horizont, kommt kein Sonnenlicht mehr an. Damit kostet das ganze Bild einen
+ * Durchlauf statt einer Suche je Zelle.
+ *
+ * Gerechnet wird der **Schlagschatten des Geländes**, nicht die Beleuchtung der
+ * Hangneigung — ein Nordhang wird also nicht eingefärbt, solange die Sonne ihn
+ * noch streift. Bäume und Häuser stehen nicht im Höhenmodell und werfen hier
+ * folglich keinen Schatten; in der Ebene ist das Ergebnis deshalb leer.
+ */
+export function renderShadow(
+  terrain: Terrain,
+  altitudeDeg: number,
+  azimuthDeg: number,
+  maxSize = 1024,
+): ShadowImage {
+  const { width: srcW, height: srcH, zoom, tileX, tileY } = terrain.meta;
+  const step = Math.max(1, Math.ceil(Math.max(srcW, srcH) / maxSize));
+  const width = Math.floor(srcW / step);
+  const height = Math.floor(srcH / step);
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  const midLat = tileToLat(tileY + srcH / 512, zoom);
+  const cell = ((156543.03392 * Math.cos((midLat * Math.PI) / 180)) / 2 ** zoom) * step;
+
+  const bounds: [number, number, number, number] = [
+    tileToLon(tileX, zoom),
+    tileToLat(tileY + srcH / 256, zoom),
+    tileToLon(tileX + srcW / 256, zoom),
+    tileToLat(tileY, zoom),
+  ];
+  const night = altitudeDeg <= 0;
+
+  // Nacht: Es gibt keinen Schattenwurf, sondern gar kein Licht. Die Fläche wird
+  // gleichmäßig gelegt, damit die Ebene nicht wortlos leer bleibt.
+  if (night) {
+    for (let i = 0; i < width * height; i++) {
+      const at = i * 4;
+      rgba[at] = 22;
+      rgba[at + 1] = 30;
+      rgba[at + 2] = 58;
+      rgba[at + 3] = 90;
+    }
+    return { width, height, rgba, bounds, altitudeDeg, azimuthDeg, night };
+  }
+
+  const sample = (x: number, y: number): number | null =>
+    terrain.sample(Math.min(srcW - 1, x * step), Math.min(srcH - 1, y * step));
+
+  // Richtung **zur** Sonne in Rasterkoordinaten (y zeigt nach Süden).
+  const rad = (azimuthDeg * Math.PI) / 180;
+  const sunX = Math.sin(rad);
+  const sunY = -Math.cos(rad);
+  // Gelaufen wird von der Sonne weg, damit jede Zelle ihre Vorgänger kennt.
+  const dx = -sunX;
+  const dy = -sunY;
+  const tan = Math.tan((altitudeDeg * Math.PI) / 180);
+
+  const shaded = new Uint8Array(width * height);
+
+  /** Ein Strahl vom Rand aus quer durchs Raster. */
+  const walk = (startX: number, startY: number) => {
+    let x = startX;
+    let y = startY;
+    let horizon = -Infinity;
+    let prev: number | null = null;
+    // Schrittlänge in Metern: ein Schritt in der Hauptachse, schräg entsprechend länger.
+    const stepLen = Math.hypot(dx, dy) * cell;
+    while (true) {
+      const ix = Math.round(x);
+      const iy = Math.round(y);
+      if (ix < 0 || iy < 0 || ix >= width || iy >= height) return;
+      const z = sample(ix, iy);
+      if (z != null) {
+        if (prev != null) horizon = Math.max(horizon, prev) - stepLen * tan;
+        if (horizon > z) shaded[iy * width + ix] = 1;
+        prev = z;
+      }
+      x += dx;
+      y += dy;
+    }
+  };
+
+  // Startpunkte: die beiden Ränder, aus deren Richtung die Sonne scheint.
+  if (dx > 0) for (let y = 0; y < height; y++) walk(0, y);
+  if (dx < 0) for (let y = 0; y < height; y++) walk(width - 1, y);
+  if (dy > 0) for (let x = 0; x < width; x++) walk(x, 0);
+  if (dy < 0) for (let x = 0; x < width; x++) walk(x, height - 1);
+
+  for (let i = 0; i < width * height; i++) {
+    const at = i * 4;
+    if (!shaded[i]) {
+      rgba[at + 3] = 0;
+      continue;
+    }
+    // Kühles Blau statt Grau: Schatten liest sich als Schatten, und die
+    // Grundkarte bleibt darunter erkennbar.
+    rgba[at] = 30;
+    rgba[at + 1] = 42;
+    rgba[at + 2] = 78;
+    rgba[at + 3] = 120;
+  }
+
+  return { width, height, rgba, bounds, altitudeDeg, azimuthDeg, night };
 }

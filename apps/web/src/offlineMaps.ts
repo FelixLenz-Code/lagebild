@@ -17,14 +17,23 @@ import { reportUnauthorized } from './auth.js';
 /** Basis-URL der herunterladbaren Pakete (Prod: eigener VPS-Host). */
 export const MAPS_BASE: string = import.meta.env.VITE_MAPS_BASE ?? '/api/maps';
 
+/**
+ * Die Weltkarte trägt den Code `00` — keine Region, sondern der Hintergrund
+ * für alles: grob aufgelöst (bis Zoomstufe 5), dafür überall vorhanden. Sie
+ * füllt die Karte, wenn man ohne Netz herauszoomt, etwa um die Satellitenbahnen
+ * zu sehen; die Bundesland-Pakete decken nur ihren Ausschnitt ab.
+ */
+export const WORLD_CODE = '00';
+
 /** Die Bestandteile einer Offline-Region. */
-export type PackageKind = 'map' | 'route' | 'search' | 'terrain';
+export type PackageKind = 'map' | 'route' | 'search' | 'terrain' | 'pop';
 
 export const PACKAGE_EXT: Record<PackageKind, string> = {
   map: 'pmtiles',
   route: 'route',
   search: 'search',
   terrain: 'terrain',
+  pop: 'pop',
 };
 
 /** Diese Pakete liegen gepackt auf dem Server. */
@@ -33,6 +42,7 @@ const COMPRESSED: Record<PackageKind, boolean> = {
   route: true,
   search: true,
   terrain: true,
+  pop: true,
 };
 
 export const PACKAGE_LABEL: Record<PackageKind, string> = {
@@ -40,6 +50,7 @@ export const PACKAGE_LABEL: Record<PackageKind, string> = {
   route: 'Routing',
   search: 'Suche',
   terrain: 'Höhen',
+  pop: 'Einwohner',
 };
 
 /** Belegter Platz je Bestandteil, in Bytes. */
@@ -65,7 +76,7 @@ export async function listOffline(): Promise<Record<string, RegionFiles>> {
   const iter = (dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries();
   for await (const [name, handle] of iter) {
     if (handle.kind !== 'file') continue;
-    const m = name.match(/^(\d{2})\.(pmtiles|route|search|terrain)$/);
+    const m = name.match(/^(\d{2})\.(pmtiles|route|search|terrain|pop)$/);
     if (!m) continue;
     const kind = (Object.keys(PACKAGE_EXT) as PackageKind[]).find((k) => PACKAGE_EXT[k] === m[2]);
     if (!kind) continue;

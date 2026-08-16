@@ -42,6 +42,15 @@ export function fireBounds(grid: FireDangerGrid) {
   return corners(grid.west, south, east, grid.north);
 }
 
+/** Gefahrenstufe an einem Ort (nächste Gitterzelle), `null` außerhalb. */
+export function fireDangerAt(grid: FireDangerGrid, lat: number, lon: number): number | null {
+  const col = Math.round((lon - grid.west) / grid.cellDeg);
+  const row = Math.round((grid.north - lat) / grid.cellDeg);
+  if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) return null;
+  const v = grid.values[row * grid.cols + col];
+  return v == null || v <= 0 ? null : v;
+}
+
 export function fireToDataUrl(grid: FireDangerGrid, width = 512, height = 640): string | null {
   if (!grid.values.length) return null;
   const south = grid.north - (grid.rows - 1) * grid.cellDeg;

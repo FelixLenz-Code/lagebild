@@ -36,6 +36,10 @@ interface Props {
   terrainCodes: string[];
   searchCode: string | null;
   onRoute: (place: { name: string; lat: number; lon: number }) => void;
+  /** „Weg von hier": Fluchtrouting mit dieser Stelle als Gefahr. */
+  onEscape: (point: Coords, label: string | null) => void;
+  /** Sichtverbindung vom eigenen Standort zu dieser Stelle prüfen. */
+  onSight: (point: Coords, label: string | null) => void;
   onClose: () => void;
 }
 
@@ -233,6 +237,17 @@ export function PointSheet(props: Props) {
           }
         >
           Route hierher
+        </button>
+        {/* Die Gegenrichtung: Diese Stelle ist die Gefahr, nicht das Ziel. */}
+        <button type="button" className="btn-quiet" onClick={() => props.onSight(here, props.label ?? null)}>
+          Sichtverbindung
+        </button>
+        <button
+          type="button"
+          className="btn-quiet ps-escape"
+          onClick={() => props.onEscape(here, props.label ?? null)}
+        >
+          Weg von hier
         </button>
       </div>
     </Sheet>

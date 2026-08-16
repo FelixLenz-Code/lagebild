@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sheet } from './Sheet.js';
 import { BackupError, backupSummary, makeBackup, restoreBackup } from './backup.js';
 import { downloadText } from './drawStore.js';
@@ -12,11 +12,28 @@ import {
 import { PROJECTS, SOURCE_BY_KEY, SOURCE_GROUPS } from './sources.js';
 import { REFRESH_CHOICES, type Settings } from './settings.js';
 import {
+  backgroundSyncSupported,
+  backgroundWarningsActive,
+  disableBackgroundWarnings,
+  enableBackgroundWarnings,
+  type EnableResult,
+} from './backgroundWarnings.js';
+import {
   DEFAULT_SECONDS,
   newPresetId,
   type MapPreset,
   type SlideshowSettings,
 } from './mapPresets.js';
+
+/** Was der Browser geantwortet hat, in Klartext. */
+const BG_NOTE: Record<Exclude<EnableResult, 'ok'>, string> = {
+  unsupported: 'Dieser Browser kann das nicht.',
+  'no-notification-permission':
+    'Ohne die Erlaubnis für Mitteilungen geht es nicht — sie lässt sich in den Browsereinstellungen nachtragen.',
+  'not-allowed':
+    'Der Browser erlaubt der App noch keine Hintergrundarbeit. Das gibt er meist erst frei, wenn die App installiert ist und eine Weile benutzt wurde.',
+  failed: 'Das Anmelden ist fehlgeschlagen.',
+};
 
 interface Props {
   settings: Settings;
@@ -65,6 +82,13 @@ export function SettingsSheet(props: Props) {
   const restoreInput = useRef<HTMLInputElement>(null);
   const [restored, setRestored] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
+  /** Zustand der Hintergrund-Warnungen (liegt beim Browser, nicht bei uns). */
+  const bgSupported = backgroundSyncSupported();
+  const [bgActive, setBgActive] = useState(false);
+  const [bgNote, setBgNote] = useState<string | null>(null);
+  useEffect(() => {
+    void backgroundWarningsActive().then(setBgActive);
+  }, []);
   const { settings } = props;
 
   const set = (patch: Partial<Settings>) => props.onChange({ ...settings, ...patch });
@@ -185,7 +209,34 @@ export function SettingsSheet(props: Props) {
 
       {tab === 'app' && (
         <>
-          <div className="sect-label">Aktualisieren</div>
+          <div className="sect-label">Darstellung</div>
+          <p className="muted st-intro">
+            Gilt für Oberfläche und Karte. Der Knopf in der Kopfzeile schaltet zwischen hell und
+            dunkel um; hier steht zusätzlich „dem System folgen".
+          </p>
+          <div className="st-choices" role="group" aria-label="Darstellung">
+            {(
+              [
+                ['system', 'System'],
+                ['light', 'Hell'],
+                ['dark', 'Dunkel'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`st-choice${settings.theme === value ? ' is-on' : ''}`}
+                aria-pressed={settings.theme === value}
+                onClick={() => set({ theme: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="sect-label" style={{ marginTop: 18 }}>
+            Aktualisieren
+          </div>
           <p className="muted st-intro">
             Der Knopf in der Kopfzeile holt alles sofort neu. Zusätzlich kann die App das in einem
             festen Takt tun — ohne Verbindung passiert dabei nichts.
@@ -228,6 +279,42 @@ export function SettingsSheet(props: Props) {
               </button>
             </li>
             <li>
+              {/* Hintergrund-Warnungen sind der einzige Schalter, der etwas
+                  außerhalb der App bewirkt — deshalb steht neben ihm, was der
+                  Browser dazu gesagt hat, statt eines stillen Fehlschlags. */}
+              <button
+                type="button"
+                className="st-item"
+                role="switch"
+                aria-checked={bgActive}
+                disabled={!bgSupported}
+                onClick={async () => {
+                  if (bgActive) {
+                    await disableBackgroundWarnings();
+                    setBgActive(false);
+                    setBgNote(null);
+                    return;
+                  }
+                  const result = await enableBackgroundWarnings();
+                  setBgActive(result === 'ok');
+                  setBgNote(result === 'ok' ? null : BG_NOTE[result]);
+                }}
+              >
+                <span className="st-label">
+                  Warnungen im Hintergrund
+                  <span className="st-hint">
+                    {!bgSupported
+                      ? 'Dieser Browser kann das nicht — es gibt die Schnittstelle bisher nur in Chromium-Browsern und nur für installierte Anwendungen.'
+                      : (bgNote ??
+                        'Die App sieht gelegentlich selbst nach, ob am Standort oder an einem beobachteten Ort eine neue Warnung liegt, und meldet sich. Wann der Browser sie weckt, entscheidet er selbst — für den Ernstfall bleiben Sirene, Rundfunk und die Warn-App des Bundes zuständig.')}
+                  </span>
+                </span>
+                <span className={`st-switch${bgActive ? ' is-on' : ''}`} aria-hidden="true">
+                  <i />
+                </span>
+              </button>
+            </li>
+            <li>
               <button
                 type="button"
                 className="st-item"
@@ -240,6 +327,42 @@ export function SettingsSheet(props: Props) {
                   <span className="st-hint">gesprochene Abbiegehinweise über die Gerätestimme</span>
                 </span>
                 <span className={`st-switch${settings.voiceGuidance ? ' is-on' : ''}`} aria-hidden="true">
+                  <i />
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="st-item"
+                role="switch"
+                aria-checked={settings.nightRed}
+                onClick={() => set({ nightRed: !settings.nightRed })}
+              >
+                <span className="st-label">
+                  Nachtsicht (rot)
+                  <span className="st-hint">
+                    alles in Rot — das Auge bleibt dunkeladaptiert, für Feld, Fahrzeug und Sternhimmel
+                  </span>
+                </span>
+                <span className={`st-switch${settings.nightRed ? ' is-on' : ''}`} aria-hidden="true">
+                  <i />
+                </span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="st-item"
+                role="switch"
+                aria-checked={settings.bigTargets}
+                onClick={() => set({ bigTargets: !settings.bigTargets })}
+              >
+                <span className="st-label">
+                  Große Bedienziele
+                  <span className="st-hint">für Handschuhe, Kälte und Wackeln — alle Knöpfe wachsen</span>
+                </span>
+                <span className={`st-switch${settings.bigTargets ? ' is-on' : ''}`} aria-hidden="true">
                   <i />
                 </span>
               </button>

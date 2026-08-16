@@ -13,10 +13,17 @@ import { distanceKm } from '../lib/distance.js';
  */
 export const pegelRoute = new Hono();
 
+interface RawCharacteristicValue {
+  shortname?: string;
+  longname?: string;
+  value?: number;
+}
+
 interface RawTimeseries {
   shortname?: string;
   unit?: string;
   currentMeasurement?: { value?: number; timestamp?: string };
+  characteristicValues?: RawCharacteristicValue[];
 }
 
 interface RawStation {
@@ -33,21 +40,92 @@ const PO_BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations
 function stationsUrl(center: Coords, radiusKm: number): string {
   return (
     `${PO_BASE}?latitude=${center.lat}&longitude=${center.lon}&radius=${radiusKm}` +
-    `&includeTimeseries=true&includeCurrentMeasurement=true`
+    `&includeTimeseries=true&includeCurrentMeasurement=true&includeCharacteristicValues=true`
   );
 }
+
+/**
+ * Einstufung des Wasserstands.
+ *
+ * **Warum nicht die amtlichen Meldestufen der Länder?** Die gibt es nur je
+ * Bundesland und je Pegel, und das Länderübergreifende Hochwasserportal (LHP)
+ * beantwortet seine Webservices von außen mit leerem Rumpf — darauf lässt sich
+ * nichts bauen. PEGELONLINE liefert dagegen zu jeder Messstelle die **amtlichen
+ * Kennwerte** der WSV mit (MNW, MW, MHW, HHW, an vielen Pegeln zusätzlich die
+ * Meldemarken M I und M II sowie den höchsten Schifffahrtswasserstand HSW).
+ * Daraus lässt sich bundesweit einheitlich einordnen, wo der Pegel gerade
+ * steht — und die Schwellen stehen als Zahlen daneben, sodass die Einstufung
+ * nachprüfbar bleibt.
+ *
+ * An **Tidepegeln** gibt es kein MHW; dort gilt die übliche Staffelung über dem
+ * mittleren Tidehochwasser: ab 1,5 m Sturmflut, ab 2,5 m schwere, ab 3,5 m sehr
+ * schwere Sturmflut.
+ */
+function classify(
+  value: number | null,
+  marks: Record<string, number>,
+): { stage: WaterLevel['stage']; stageNote: string | null } {
+  if (value == null) return { stage: null, stageNote: null };
+  const cm = (n: number) => `${Math.round(n)} cm`;
+
+  // Tidepegel: MThw/MTnw statt MW/MHW.
+  const mthw = marks.MThw;
+  if (mthw != null) {
+    if (value >= mthw + 350) return { stage: 'severe', stageNote: `mehr als 3,5 m über MThw (${cm(mthw)})` };
+    if (value >= mthw + 250) return { stage: 'flood', stageNote: `schwere Sturmflut: über 2,5 m über MThw (${cm(mthw)})` };
+    if (value >= mthw + 150) return { stage: 'raised', stageNote: `Sturmflut: über 1,5 m über MThw (${cm(mthw)})` };
+    if (marks.MTnw != null && value < marks.MTnw) return { stage: 'low', stageNote: `unter mittlerem Tideniedrigwasser (${cm(marks.MTnw)})` };
+    return { stage: 'normal', stageNote: `im Tidebereich (MThw ${cm(mthw)})` };
+  }
+
+  if (marks.HHW != null && value >= marks.HHW) {
+    return { stage: 'severe', stageNote: `über dem höchsten bekannten Wert (${cm(marks.HHW)})` };
+  }
+  // Meldemarke II bzw. der höchste Schifffahrtswasserstand — was zuerst zutrifft.
+  const hoch = marks.M_II ?? marks.HSW;
+  if (hoch != null && value >= hoch) {
+    return { stage: 'flood', stageNote: `über ${marks.M_II != null ? 'Marke II' : 'HSW'} (${cm(hoch)})` };
+  }
+  if (marks.M_I != null && value >= marks.M_I) {
+    return { stage: 'flood', stageNote: `über Marke I (${cm(marks.M_I)})` };
+  }
+  if (marks.MHW != null && value >= marks.MHW) {
+    return { stage: 'flood', stageNote: `über mittlerem Hochwasser (${cm(marks.MHW)})` };
+  }
+  if (marks.MW != null && value >= marks.MW) {
+    return { stage: 'raised', stageNote: `über Mittelwasser (${cm(marks.MW)})` };
+  }
+  if (marks.MNW != null && value < marks.MNW) {
+    return { stage: 'low', stageNote: `unter mittlerem Niedrigwasser (${cm(marks.MNW)})` };
+  }
+  if (marks.MW != null || marks.MNW != null) return { stage: 'normal', stageNote: null };
+  return { stage: null, stageNote: null };
+}
+
+/** Die Kennwerte, die für die Einstufung und das Popup gebraucht werden. */
+const KENNWERTE = ['MNW', 'MW', 'MHW', 'HHW', 'NNW', 'M_I', 'M_II', 'HSW', 'MThw', 'MTnw', 'HThw'];
 
 function toLevel(s: RawStation): WaterLevel {
   // Zeitreihe "W" = Wasserstand (in cm)
   const w = (s.timeseries ?? []).find((t) => t.shortname === 'W');
+  const marks: Record<string, number> = {};
+  for (const cv of w?.characteristicValues ?? []) {
+    const name = cv.shortname?.trim();
+    if (name && KENNWERTE.includes(name) && Number.isFinite(cv.value)) marks[name] = cv.value as number;
+  }
+  const levelCm = w?.currentMeasurement?.value ?? null;
+  const { stage, stageNote } = classify(levelCm, marks);
   return {
     id: s.uuid,
     station: s.shortname ?? s.longname ?? 'Pegel',
     water: s.water?.longname ?? s.water?.shortname ?? '',
-    levelCm: w?.currentMeasurement?.value ?? null,
+    levelCm,
     trend: null,
     measuredAt: w?.currentMeasurement?.timestamp ?? null,
     coordinates: { lat: s.latitude as number, lon: s.longitude as number },
+    stage,
+    stageNote,
+    marks,
   };
 }
 

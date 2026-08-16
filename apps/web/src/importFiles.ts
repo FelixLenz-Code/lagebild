@@ -188,6 +188,8 @@ export type ImportFormat = 'gpx' | 'kml' | 'kmz' | 'geojson';
 export interface ImportLine {
   name: string;
   points: TrackPoint[];
+  /** Beschreibung aus der Datei (`<desc>`, `<description>`, `description`). */
+  note?: string;
 }
 
 export interface ImportPoint {
@@ -202,6 +204,7 @@ export interface ImportArea {
   name: string;
   /** Äußerer Ring, [lon, lat]. */
   ring: [number, number][];
+  note?: string;
 }
 
 export interface ImportResult {
@@ -357,6 +360,7 @@ function readGpx(root: XmlNode, source: string): Omit<ImportResult, 'bbox' | 'fo
 
   for (const trk of descendants(gpx, 'trk')) {
     const base = childText(trk, 'name') || 'Spur';
+    const trkNote = childText(trk, 'desc') || childText(trk, 'cmt');
     const segments = descendants(trk, 'trkseg');
     // Ein Track kann mehrere Abschnitte haben (Pausen im Gerät). Sie werden
     // nicht zusammengezogen — sonst zöge sich eine gerade Linie über die
@@ -369,7 +373,11 @@ function readGpx(root: XmlNode, source: string): Omit<ImportResult, 'bbox' | 'fo
       continue;
     }
     usable.forEach((pts, i) =>
-      lines.push({ name: usable.length > 1 ? `${base} (${i + 1})` : base, points: pts }),
+      lines.push({
+        name: usable.length > 1 ? `${base} (${i + 1})` : base,
+        points: pts,
+        ...(trkNote ? { note: trkNote } : {}),
+      }),
     );
   }
 
@@ -377,7 +385,10 @@ function readGpx(root: XmlNode, source: string): Omit<ImportResult, 'bbox' | 'fo
     const pts = descendants(rte, 'rtept')
       .map(gpxPoint)
       .filter((p): p is TrackPoint => !!p);
-    if (pts.length > 1) lines.push({ name: childText(rte, 'name') || 'Route', points: pts });
+    if (pts.length > 1) {
+      const note = childText(rte, 'desc') || childText(rte, 'cmt');
+      lines.push({ name: childText(rte, 'name') || 'Route', points: pts, ...(note ? { note } : {}) });
+    }
     else skipped++;
   }
 
@@ -465,7 +476,7 @@ function readKml(root: XmlNode, source: string): Omit<ImportResult, 'bbox' | 'fo
       const pts = kmlCoords(child(l, 'coordinates')?.text ?? '');
       if (pts.length < 2) continue;
       found++;
-      lines.push({ name, points: pts });
+      lines.push({ name, points: pts, ...(note ? { note } : {}) });
     }
 
     // gx:Track — so legt Google Earth aufgezeichnete Wege ab: Zeit und Ort
@@ -487,7 +498,7 @@ function readKml(root: XmlNode, source: string): Omit<ImportResult, 'bbox' | 'fo
         });
       if (pts.length < 2) continue;
       found++;
-      lines.push({ name, points: pts });
+      lines.push({ name, points: pts, ...(note ? { note } : {}) });
     }
 
     for (const poly of descendants(mark, 'polygon')) {
@@ -495,7 +506,7 @@ function readKml(root: XmlNode, source: string): Omit<ImportResult, 'bbox' | 'fo
       const ring = kmlCoords(descendants(outer, 'linearring')[0]?.children.find((c) => c.name === 'coordinates')?.text ?? '');
       if (ring.length < 3) continue;
       found++;
-      areas.push({ name, ring: ring.map((p) => [p.lon, p.lat] as [number, number]) });
+      areas.push({ name, ring: ring.map((p) => [p.lon, p.lat] as [number, number]), ...(note ? { note } : {}) });
     }
 
     if (!found) skipped++;
@@ -555,26 +566,28 @@ function readGeoJson(text: string, source: string): Omit<ImportResult, 'bbox' | 
         return;
       case 'LineString': {
         const pts = toPoints(c);
-        pts.length > 1 ? lines.push({ name, points: pts }) : skipped++;
+        pts.length > 1 ? lines.push({ name, points: pts, ...(note ? { note } : {}) }) : skipped++;
         return;
       }
       case 'MultiLineString':
         for (const part of Array.isArray(c) ? c : []) {
           const pts = toPoints(part);
-          if (pts.length > 1) lines.push({ name, points: pts });
+          if (pts.length > 1) lines.push({ name, points: pts, ...(note ? { note } : {}) });
         }
         return;
       case 'Polygon': {
         const ring = toPoints(Array.isArray(c) ? c[0] : null);
         ring.length > 2
-          ? areas.push({ name, ring: ring.map((p) => [p.lon, p.lat] as [number, number]) })
+          ? areas.push({ name, ring: ring.map((p) => [p.lon, p.lat] as [number, number]), ...(note ? { note } : {}) })
           : skipped++;
         return;
       }
       case 'MultiPolygon':
         for (const poly of Array.isArray(c) ? c : []) {
           const ring = toPoints(Array.isArray(poly) ? poly[0] : null);
-          if (ring.length > 2) areas.push({ name, ring: ring.map((p) => [p.lon, p.lat] as [number, number]) });
+          if (ring.length > 2) {
+            areas.push({ name, ring: ring.map((p) => [p.lon, p.lat] as [number, number]), ...(note ? { note } : {}) });
+          }
         }
         return;
       case 'GeometryCollection':
@@ -800,12 +813,14 @@ export function drawFrom(result: ImportResult): DrawFeature[] {
       type: 'LineString' as const,
       coordinates: l.points.map((p) => [p.lon, p.lat] as [number, number]),
     },
+    ...(l.note ? { note: l.note } : {}),
   }));
   const points: DrawFeature[] = result.points.map((p) => ({
     id: newId(),
     name: p.name,
     kind: 'point' as const,
     geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] as [number, number] },
+    ...(p.note ? { note: p.note } : {}),
   }));
   const areas: DrawFeature[] = result.areas.map((a) => {
     // Markierte Flächen sind in der App geschlossene Ringe.
@@ -818,6 +833,7 @@ export function drawFrom(result: ImportResult): DrawFeature[] {
       name: a.name,
       kind: 'area' as const,
       geometry: { type: 'Polygon' as const, coordinates: [ring] },
+      ...(a.note ? { note: a.note } : {}),
     };
   });
   return [...lines, ...points, ...areas];

@@ -1,3 +1,4 @@
+import type { ThemeSetting } from './theme.js';
 import type { LayerRowId } from './layerCatalog.js';
 
 /**
@@ -14,6 +15,16 @@ export interface Settings {
   locateOnStart: boolean;
   /** Ansagen während der Zielführung. */
   voiceGuidance: boolean;
+  /**
+   * Nachtsicht: alles in Rot. Rotes Licht lässt das Auge dunkeladaptiert —
+   * nach einem Blick auf einen weißen Bildschirm dauert es zwanzig Minuten,
+   * bis man draußen wieder etwas sieht.
+   */
+  nightRed: boolean;
+  /** Größere Bedienziele — für Handschuhe, Kälte und Wackeln im Fahrzeug. */
+  bigTargets: boolean;
+  /** Hell, dunkel oder dem System folgen. Gilt für Oberfläche und Karte. */
+  theme: ThemeSetting;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -21,6 +32,9 @@ export const DEFAULT_SETTINGS: Settings = {
   autoRefreshMin: 0,
   locateOnStart: true,
   voiceGuidance: true,
+  nightRed: false,
+  bigTargets: false,
+  theme: 'system',
 };
 
 /** Erlaubte Werte für das selbsttätige Aktualisieren. */

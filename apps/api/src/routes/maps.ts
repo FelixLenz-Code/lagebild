@@ -11,6 +11,7 @@ import { config } from '../config.js';
  *   04.route     Routing-Graph für die Navigation
  *   04.terrain   Höhenraster für das Höhenprofil (optional)
  *   04.search    Suchindex mit Adressen und POIs
+ *   04.pop       Bevölkerungsraster für die Betroffenenabschätzung (optional)
  *
  * Ausgeliefert werden die Dateien über /api/maps/<datei> (serveStatic in
  * index.ts). Erzeugt werden sie mit scripts/build-maps.sh bzw.
@@ -18,11 +19,12 @@ import { config } from '../config.js';
  */
 export const mapsRoute = new Hono();
 
-const KIND_BY_EXT: Record<string, 'map' | 'route' | 'search' | 'terrain'> = {
+const KIND_BY_EXT: Record<string, 'map' | 'route' | 'search' | 'terrain' | 'pop'> = {
   pmtiles: 'map',
   route: 'route',
   search: 'search',
   terrain: 'terrain',
+  pop: 'pop',
 };
 
 export interface MapRegionInfo {
@@ -31,13 +33,14 @@ export interface MapRegionInfo {
   route?: number;
   search?: number;
   terrain?: number;
+  pop?: number;
 }
 
 mapsRoute.get('/', (c) => {
   const byCode = new Map<string, MapRegionInfo>();
   if (existsSync(config.mapsDir)) {
     for (const file of readdirSync(config.mapsDir)) {
-      const m = file.match(/^(\d{2})\.(pmtiles|route|search|terrain)$/);
+      const m = file.match(/^(\d{2})\.(pmtiles|route|search|terrain|pop)$/);
       if (!m) continue;
       const code = m[1]!;
       let entry = byCode.get(code);

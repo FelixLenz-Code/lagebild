@@ -10,9 +10,24 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        // Kartenschriften & -symbole (Protomaps-Assets) offline vorhalten, damit
-        // die Offline-Karte auch Beschriftungen zeigt, sobald sie einmal online
-        // gerendert wurde.
+        /*
+         * Schriften und Symbole der Karte liegen unter `public/basemaps` und
+         * gehören in den Vorrat — sonst steht eine kalt gestartete Offline-App
+         * ohne einen einzigen Namen auf der Karte da. `.pbf` und `.json` sind
+         * in der Voreinstellung nicht dabei, deshalb die eigene Liste.
+         */
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,pbf,json}'],
+        /*
+         * Eigener Anteil am Service Worker: der Wecker für Warnungen. Workbox
+         * erzeugt den Worker selbst, deshalb wird der Zusatz hineingezogen
+         * statt die Erzeugung auf `injectManifest` umzustellen — sonst müsste
+         * das ganze Zwischenspeichern von Hand nachgebaut werden.
+         */
+        importScripts: ['/sw-warnings.js'],
+        // Ein Symbolsatz kann ein paar Megabyte groß sein.
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // Wurden die Dateien beim Bauen nicht geholt, lädt die Karte sie doch
+        // von Protomaps — dann wenigstens ab dem ersten Mal aus dem Vorrat.
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/protomaps\.github\.io\/basemaps-assets\/.*/i,

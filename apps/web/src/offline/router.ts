@@ -875,6 +875,237 @@ function escapes(graph: RouteGraph, cand: Snap, profile: Profile): boolean {
   return seen.size >= ESCAPE_NODES;
 }
 
+/* ------------------------------------------------------------------ */
+/* Fluchtrouting: weg von einer Gefahr                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Eine Gefahrenstelle, von der weg geroutet werden soll.
+ *
+ * `windFromDeg` ist die meteorologische Windrichtung (Grad, **aus** denen der
+ * Wind weht). Ist sie gesetzt, gilt die Fahne stromab als betroffen — bei einem
+ * Gefahrstoffaustritt ist die Richtung wichtiger als die Entfernung: Wer mit dem
+ * Wind flieht, bleibt in der Wolke, auch nach zehn Kilometern.
+ */
+export interface DangerZone {
+  center: Coords;
+  /** Kern der Gefahr in Metern. */
+  radiusM: number;
+  windFromDeg?: number | null;
+}
+
+export interface EscapeOptions {
+  /** Ab dieser Entfernung vom Kern gilt ein Ort als sicher. */
+  minDistanceM?: number;
+  avoidMotorways?: boolean;
+}
+
+export interface EscapeOutcome extends RouteOutcome {
+  /** Erreichter sicherer Ort. */
+  target: Coords | null;
+  /** Entfernung dieses Ortes vom Kern der Gefahr. */
+  targetDistanceM: number | null;
+  /** Wurde quer zum Wind ausgewichen? */
+  crosswind: boolean;
+}
+
+/** Aufschlag auf Kanten im Kern der Gefahr — befahrbar, aber nur im Notfall. */
+const DANGER_PENALTY = 25;
+/** Aufschlag in der Windfahne stromab. */
+const PLUME_PENALTY = 6;
+/** Halber Öffnungswinkel der Fahne in Grad. */
+const PLUME_HALF_ANGLE = 35;
+/** So weit reicht die Fahne, gemessen in Kernradien. */
+const PLUME_LENGTH_FACTOR = 6;
+/** Wie weit querab vom Wind ein Ort liegen muss, um als frei zu gelten. */
+const CROSSWIND_MIN_ANGLE = 55;
+
+/**
+ * Der schnellste Weg **aus** einer Gefahr heraus.
+ *
+ * Kein A* — es gibt kein Ziel, das man ansteuern könnte. Stattdessen läuft eine
+ * Dijkstra-Suche vom Standort aus in alle Richtungen und hält an, sobald sie
+ * einen Ort erreicht, der die Sicherheitsbedingung erfüllt. Weil die Kosten
+ * innerhalb der Gefahr (und in der Windfahne) vervielfacht sind, wählt sie von
+ * selbst den Weg, der am schnellsten ins Freie führt — und bei Wind quer dazu
+ * statt mit ihm.
+ *
+ * Genau das kann eine App mit fremdem Routing-Dienst nicht: Die Kostenfunktion
+ * gehört uns, weil die Rechnung auf dem Gerät läuft.
+ */
+export function escapeRoute(
+  graph: RouteGraph,
+  from: Coords,
+  profileId: RouteProfile,
+  danger: DangerZone,
+  options: EscapeOptions = {},
+): EscapeOutcome {
+  const profile = PROFILES[profileId];
+  const empty: EscapeOutcome = {
+    status: 'no-path',
+    route: null,
+    routes: [],
+    startOffRoadM: null,
+    endOffRoadM: null,
+    target: null,
+    targetDistanceM: null,
+    crosswind: false,
+  };
+
+  const cands = usable(graph, snapCandidates(graph, from, profile), profile);
+  const a = cands[0];
+  if (!a || a.offRoadM > OFF_GRID_M) return { ...empty, status: 'start-off-grid', startOffRoadM: a?.offRoadM ?? null };
+
+  const minDistance = Math.max(options.minDistanceM ?? danger.radiusM * 2, danger.radiusM + 300);
+  const downwind = danger.windFromDeg != null ? (danger.windFromDeg + 180) % 360 : null;
+
+  /** Abstand und Richtung eines Ortes zur Gefahr. */
+  const relative = (lat: number, lon: number) => ({
+    d: distanceM(lat, lon, danger.center.lat, danger.center.lon),
+    b: bearing(danger.center.lat, danger.center.lon, lat, lon),
+  });
+
+  /** Ist dieser Ort weit genug weg — und nicht in der Fahne? */
+  const safe = (lat: number, lon: number): boolean => {
+    const { d, b } = relative(lat, lon);
+    if (d < minDistance) return false;
+    if (downwind == null) return true;
+    // Stromab muss man erheblich weiter weg sein, um als frei zu gelten.
+    return (
+      Math.abs(angleDiff(downwind, b)) >= CROSSWIND_MIN_ANGLE || d >= minDistance * PLUME_LENGTH_FACTOR
+    );
+  };
+
+  /** Aufschlag einer Kante nach ihrer Lage zur Gefahr. */
+  const dangerFactor = (edge: number): number => {
+    const lat = (graph.nodeLat(graph.edgeA[edge]!) + graph.nodeLat(graph.edgeB[edge]!)) / 2;
+    const lon = (graph.nodeLon(graph.edgeA[edge]!) + graph.nodeLon(graph.edgeB[edge]!)) / 2;
+    const { d, b } = relative(lat, lon);
+    if (d <= danger.radiusM) return DANGER_PENALTY;
+    if (
+      downwind != null &&
+      d <= danger.radiusM * PLUME_LENGTH_FACTOR &&
+      Math.abs(angleDiff(downwind, b)) <= PLUME_HALF_ANGLE
+    ) {
+      return PLUME_PENALTY;
+    }
+    return 1;
+  };
+
+  const edgeCost = (edge: number): number => {
+    let cost = profile.cost(graph, edge) * dangerFactor(edge);
+    if (options.avoidMotorways && graph.edgeClass[edge]! <= CLASS.trunk) cost *= MOTORWAY_PENALTY;
+    return cost;
+  };
+
+  const st = stateFor(graph);
+  st.begin();
+  const { dist, stamp, prevArc, heap } = st;
+  const head = (arc: number) => (arc & 1 ? graph.edgeA[arc >> 1]! : graph.edgeB[arc >> 1]!);
+  const push = (arc: number, g: number, prev: number) => {
+    if (stamp[arc] === st.run && dist[arc]! <= g) return;
+    stamp[arc] = st.run;
+    dist[arc] = g;
+    prevArc[arc] = prev;
+    // Ohne Ziel gibt es keine Schätzung — der Schlüssel ist die reine Fahrzeit.
+    heap.push(g, arc);
+  };
+
+  const startFlags = graph.edgeFlags[a.edge]!;
+  const startCost = edgeCost(a.edge) / Math.max(1, a.totalM);
+  if (profile.allowed(startFlags, true)) push(a.edge * 2, startCost * (a.totalM - a.alongM), -1);
+  if (profile.allowed(startFlags, false)) push(a.edge * 2 + 1, startCost * a.alongM, -1);
+
+  let foundArc = -1;
+  let guard = 0;
+  const modeBit = profile.restrictionBit;
+
+  while (heap.size > 0) {
+    if (++guard > 4_000_000) break;
+    const arc = heap.pop();
+    if (stamp[arc] !== st.run) continue;
+    const g = dist[arc]!;
+    const edge = arc >> 1;
+    const node = head(arc);
+
+    if (safe(graph.nodeLat(node), graph.nodeLon(node))) {
+      foundArc = arc;
+      break;
+    }
+
+    let banned: Restriction[] | null = null;
+    let onlyTo = -1;
+    if (modeBit) {
+      const list = graph.restrictionsAt(node);
+      if (list) {
+        for (const r of list) {
+          if (r.from !== edge || !(r.flags & modeBit)) continue;
+          if (r.flags & RESTRICTION.ONLY) onlyTo = r.to;
+          else (banned ??= []).push(r);
+        }
+      }
+    }
+
+    for (let i = graph.arcOff[node]!; i < graph.arcOff[node + 1]!; i++) {
+      const next = graph.arcEdge[i]!;
+      if (next === edge) continue;
+      const forward = graph.edgeA[next]! === node;
+      if (!profile.allowed(graph.edgeFlags[next]!, forward)) continue;
+      if (onlyTo >= 0 && next !== onlyTo) continue;
+      if (banned?.some((r) => r.to === next)) continue;
+      const nextArc = next * 2 + (forward ? 0 : 1);
+      const ng = g + edgeCost(next) + profile.junctionPenaltyS;
+      if (stamp[nextArc] === st.run && dist[nextArc]! <= ng) continue;
+      push(nextArc, ng, arc);
+    }
+  }
+
+  if (foundArc < 0) return { ...empty, startOffRoadM: a.offRoadM };
+
+  // Weg zurückverfolgen — wie in der A*-Suche.
+  const edges: number[] = [];
+  const forwards: boolean[] = [];
+  for (let arc = foundArc; arc >= 0; arc = prevArc[arc]!) {
+    edges.push(arc >> 1);
+    forwards.push((arc & 1) === 0);
+  }
+  edges.reverse();
+  forwards.reverse();
+
+  // Zielpunkt ist ein **Knoten**, keine gefangene Stelle. Damit `assemble` ihn
+  // wie ein normales Ziel behandeln kann, wird die letzte Kante als Zielkante
+  // ausgegeben, deren gefangener Punkt genau auf dem Knoten liegt.
+  const lastEdge = foundArc >> 1;
+  const lastForward = (foundArc & 1) === 0;
+  const endNode = head(foundArc);
+  const b: Snap = {
+    edge: lastEdge,
+    lat: graph.nodeLat(endNode),
+    lon: graph.nodeLon(endNode),
+    offRoadM: 0,
+    alongM: lastForward ? graph.lengthM(lastEdge) : 0,
+    totalM: graph.lengthM(lastEdge),
+    nodeA: graph.edgeA[lastEdge]!,
+    nodeB: graph.edgeB[lastEdge]!,
+    name: graph.name(lastEdge),
+  };
+
+  const built = assemble(graph, a, b, { edges, forwards, endNode }, profile, profileId);
+  if (!built) return { ...empty, startOffRoadM: a.offRoadM };
+
+  const { d, b: brg } = relative(b.lat, b.lon);
+  return {
+    status: 'ok',
+    route: built.result,
+    routes: [built.result],
+    startOffRoadM: a.offRoadM,
+    endOffRoadM: 0,
+    target: { lat: b.lat, lon: b.lon },
+    targetDistanceM: Math.round(d),
+    crosswind: downwind != null && Math.abs(angleDiff(downwind, brg)) >= CROSSWIND_MIN_ANGLE,
+  };
+}
+
 /** Reihenfolge der Versuche (Index der Anfangs-/Endkante). */
 const SNAP_TRIES: [number, number][] = [
   [0, 0],
@@ -1293,4 +1524,275 @@ function assemble(
       snappedEnd: { lat: b.lat, lon: b.lon },
     },
   };
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Ein erreichter Straßenabschnitt mit der Fahrzeit an seinen beiden Enden. */
+export interface ReachEdge {
+  coordinates: [number, number][];
+  /** Fahrzeit vom Start bis zum **Ende** dieses Abschnitts, in Sekunden. */
+  seconds: number;
+  /**
+   * Fahrzeit an seinem **Anfang**. Für die Einfärbung genügt der Endwert; wer
+   * aber die Fahrzeit zu einem Punkt *auf* dem Abschnitt braucht, muss zwischen
+   * beiden Enden geradlinig teilen — sonst wird jedes Ziel um bis zu eine
+   * Kantenlänge zu spät angesetzt (gemessen: 10 statt 7 Minuten).
+   */
+  entrySeconds: number;
+  /** Läuft `coordinates` in Fahrtrichtung? Sonst ist der Anfang das Ende. */
+  forward: boolean;
+}
+
+export interface ReachResult {
+  status: 'ok' | 'start-off-grid';
+  edges: ReachEdge[];
+  /** Gefahrene Streckenlänge im erreichten Netz, in Metern. */
+  networkM: number;
+  /** Wie weit der Startpunkt neben der Straße lag. */
+  startOffRoadM: number | null;
+  /**
+   * true, wenn für die Ausgabe die kleinsten Straßen weggelassen wurden. Der
+   * **Umriss** stimmt dann weiterhin — es fehlen nur Wohn- und Wirtschaftswege
+   * im Inneren.
+   */
+  simplified: boolean;
+}
+
+/** So viele Abschnitte gehen an die Karte; darüber wird ausgedünnt. */
+const REACH_MAX_EDGES = 25_000;
+/**
+ * Notbremse für die Suche selbst. Sie greift erst bei Netzen, die kein Gerät
+ * mehr zeichnen würde; bis dahin läuft die Suche **vollständig** bis zum
+ * Zeitbudget — bricht man sie mitten im Heap ab, endet das Ergebnis an einer
+ * willkürlichen Kante, und die Karte behauptet eine Grenze, wo keine ist.
+ */
+const REACH_MAX_SEARCH = 400_000;
+
+/**
+ * Erreichbarkeit: Wie weit komme ich in einer bestimmten Zeit?
+ *
+ * Dieselbe zielfreie Dijkstra-Suche wie bei der Fluchtroute, nur ohne
+ * Abbruchbedingung — sie läuft, bis das Zeitbudget erschöpft ist, und gibt
+ * **jede** erreichte Kante mit ihrer Fahrzeit zurück.
+ *
+ * **Bewusst keine Flächen.** Der naheliegende Weg wäre, aus den erreichten
+ * Punkten Isochronen-Polygone zu bilden. Das sieht gefälliger aus, behauptet
+ * aber Erreichbarkeit für alles zwischen den Straßen — für Wald, Felder und
+ * das Gelände hinter einem Fluss. Eingefärbt wird deshalb das Straßennetz
+ * selbst: Es zeigt genau das, was die Rechnung hergibt, und man sieht sofort,
+ * dass es an der einen Landstraße hängt.
+ */
+export function reachable(
+  graph: RouteGraph,
+  from: Coords,
+  profileId: RouteProfile,
+  budgetS: number,
+  options: {
+    /**
+     * Kleine Wege für die Karte weglassen, wenn es zu viele werden (Standard).
+     * Wer im Ergebnis **nachschlagen** will, schaltet das ab: Kliniken und
+     * Apotheken liegen an genau diesen kleinen Straßen, und ohne sie läge der
+     * nächste bekannte Punkt ein paar hundert Meter daneben — gemessen 300
+     * statt 392 Sekunden.
+     */
+    simplify?: boolean;
+  } = {},
+): ReachResult {
+  const profile = PROFILES[profileId];
+  const empty: ReachResult = { status: 'ok', edges: [], networkM: 0, startOffRoadM: null, simplified: false };
+
+  const cands = usable(graph, snapCandidates(graph, from, profile), profile);
+  const a = cands[0];
+  if (!a || a.offRoadM > OFF_GRID_M) {
+    return { ...empty, status: 'start-off-grid', startOffRoadM: a?.offRoadM ?? null };
+  }
+
+  const st = stateFor(graph);
+  st.begin();
+  const { dist, stamp, prevArc, heap } = st;
+  /**
+   * Reine Fahrzeit ohne die Kreuzungsaufschläge.
+   *
+   * Gesucht wird **mit** ihnen — sonst führt die Suche über jede Nebenstraße,
+   * als koste das Abbiegen nichts. Ausgegeben wird **ohne** sie, weil die
+   * Routenplanung der App ihre Dauer genauso ausweist: Sonst stünde im
+   * Notfallblatt „10 Minuten" und in der Route zum selben Ziel „7 Minuten".
+   */
+  const drive = new Float32Array(graph.edgeCount * 2);
+  const head = (arc: number) => (arc & 1 ? graph.edgeA[arc >> 1]! : graph.edgeB[arc >> 1]!);
+  const push = (arc: number, g: number, d: number) => {
+    if (stamp[arc] === st.run && dist[arc]! <= g) return;
+    stamp[arc] = st.run;
+    dist[arc] = g;
+    drive[arc] = d;
+    prevArc[arc] = -1;
+    heap.push(g, arc);
+  };
+
+  const startFlags = graph.edgeFlags[a.edge]!;
+  const startCost = profile.cost(graph, a.edge) / Math.max(1, a.totalM);
+  if (profile.allowed(startFlags, true)) {
+    const t = startCost * (a.totalM - a.alongM);
+    push(a.edge * 2, t, t);
+  }
+  if (profile.allowed(startFlags, false)) {
+    const t = startCost * a.alongM;
+    push(a.edge * 2 + 1, t, t);
+  }
+
+  /** Beste **Fahrzeit** je Kante samt Anfahrtsrichtung — daraus wird gezeichnet. */
+  const best = new Map<number, { end: number; start: number; forward: boolean }>();
+  const modeBit = profile.restrictionBit;
+
+  while (heap.size > 0) {
+    const arc = heap.pop();
+    if (stamp[arc] !== st.run) continue;
+    const g = dist[arc]!;
+    if (g > budgetS) break; // Der Heap gibt aufsteigend heraus: ab hier ist alles zu teuer.
+    const d = drive[arc]!;
+    const edge = arc >> 1;
+    const node = head(arc);
+
+    const seen = best.get(edge);
+    if (seen == null || d < seen.end) {
+      best.set(edge, { end: d, start: Math.max(0, d - profile.cost(graph, edge)), forward: (arc & 1) === 0 });
+    }
+    if (best.size >= REACH_MAX_SEARCH) break;
+
+    let banned: Restriction[] | null = null;
+    let onlyTo = -1;
+    if (modeBit) {
+      const list = graph.restrictionsAt(node);
+      if (list) {
+        for (const r of list) {
+          if (r.from !== edge || !(r.flags & modeBit)) continue;
+          if (r.flags & RESTRICTION.ONLY) onlyTo = r.to;
+          else (banned ??= []).push(r);
+        }
+      }
+    }
+
+    for (let i = graph.arcOff[node]!; i < graph.arcOff[node + 1]!; i++) {
+      const next = graph.arcEdge[i]!;
+      if (next === edge) continue;
+      const forward = graph.edgeA[next]! === node;
+      if (!profile.allowed(graph.edgeFlags[next]!, forward)) continue;
+      if (onlyTo >= 0 && next !== onlyTo) continue;
+      if (banned?.some((r) => r.to === next)) continue;
+      const nextArc = next * 2 + (forward ? 0 : 1);
+      const fahrt = profile.cost(graph, next);
+      const ng = g + fahrt + profile.junctionPenaltyS;
+      if (ng > budgetS) continue;
+      if (stamp[nextArc] === st.run && dist[nextArc]! <= ng) continue;
+      push(nextArc, ng, d + fahrt);
+    }
+  }
+
+  // Ausdünnen, wenn es zu viel für die Karte wird: **von unten**, also zuerst
+  // Wirtschaftswege und Zufahrten. Der Rand des erreichbaren Gebiets hängt an
+  // den größeren Straßen, deshalb bleibt der Umriss dabei erhalten — anders als
+  // beim Abbrechen der Suche.
+  let limit = CLASS.cycleway;
+  if (options.simplify !== false && best.size > REACH_MAX_EDGES) {
+    for (const cls of [CLASS.service, CLASS.residential, CLASS.unclassified, CLASS.tertiary]) {
+      let bleibt = 0;
+      for (const edge of best.keys()) if (graph.edgeClass[edge]! < cls) bleibt++;
+      limit = cls - 1;
+      if (bleibt <= REACH_MAX_EDGES) break;
+    }
+  }
+  const simplified = limit < CLASS.cycleway;
+
+  const edges: ReachEdge[] = [];
+  let networkM = 0;
+  for (const [edge, when] of best) {
+    if (graph.edgeClass[edge]! > limit) continue;
+    const pts = graph.geometry(edge, true);
+    const coordinates: [number, number][] = [];
+    for (let i = 0; i < pts.length; i += 2) coordinates.push([pts[i + 1]!, pts[i]!]);
+    if (coordinates.length < 2) continue;
+    edges.push({
+      coordinates,
+      seconds: when.end,
+      entrySeconds: Math.max(0, when.start),
+      forward: when.forward,
+    });
+    networkM += graph.lengthM(edge);
+  }
+
+  return { status: 'ok', edges, networkM, startOffRoadM: a.offRoadM, simplified };
+}
+
+/**
+ * Fahrzeit zu einer Liste von Zielen — in **einer** Suche.
+ *
+ * Für „welche Klinik ist am schnellsten erreichbar?" wäre es falsch, je Ziel
+ * eine Route zu rechnen: Das sind bei acht Anlaufstellen acht Suchen. Hier
+ * läuft die Erreichbarkeitssuche einmal, und jedes Ziel liest die Zeit an der
+ * Kante ab, die ihm am nächsten liegt. Ziele, die im Budget nicht erreicht
+ * werden, kommen ohne Zeit zurück — dann bleibt die Luftlinie die einzige
+ * Auskunft, und die Oberfläche sagt das auch.
+ */
+export function travelTimes(
+  graph: RouteGraph,
+  from: Coords,
+  targets: Coords[],
+  profileId: RouteProfile,
+  budgetS: number,
+): (number | null)[] {
+  const reach = reachable(graph, from, profileId, budgetS, { simplify: false });
+  if (reach.status !== 'ok' || !reach.edges.length) return targets.map(() => null);
+
+  // Erreichte Punkte in ein grobes Gitter einsortieren (rund 500 m je Zelle),
+  // sonst wird der Vergleich jedes Ziels mit jedem Punkt quadratisch.
+  const CELL = 0.005;
+  const grid = new Map<string, { lat: number; lon: number; s: number }[]>();
+  const key = (lat: number, lon: number) => `${Math.floor(lat / CELL)},${Math.floor(lon / CELL)}`;
+  for (const e of reach.edges) {
+    // Zeit je Stützpunkt: zwischen Anfang und Ende der Kante nach der bereits
+    // zurückgelegten Länge geteilt. Ohne das trüge jeder Punkt die Zeit des
+    // Kantenendes — auf einer 2 km langen Landstraße wären das zwei Minuten
+    // Aufschlag für ein Ziel gleich hinter der Einmündung.
+    const laengen: number[] = [0];
+    for (let i = 1; i < e.coordinates.length; i++) {
+      const [ax, ay] = e.coordinates[i - 1]!;
+      const [bx, by] = e.coordinates[i]!;
+      laengen.push(laengen[i - 1]! + distanceM(ay, ax, by, bx));
+    }
+    const gesamt = laengen[laengen.length - 1] || 1;
+    const spanne = e.seconds - e.entrySeconds;
+    for (let i = 0; i < e.coordinates.length; i++) {
+      const [lon, lat] = e.coordinates[i]!;
+      // `coordinates` läuft immer von A nach B; befahren wurde die Kante
+      // gegebenenfalls andersherum.
+      const anteil = e.forward ? laengen[i]! / gesamt : 1 - laengen[i]! / gesamt;
+      const s = e.entrySeconds + spanne * anteil;
+      const k = key(lat, lon);
+      const list = grid.get(k);
+      const point = { lat, lon, s };
+      if (list) list.push(point);
+      else grid.set(k, [point]);
+    }
+  }
+
+  return targets.map((t) => {
+    let bestS: number | null = null;
+    let bestD = Infinity;
+    const cy = Math.floor(t.lat / CELL);
+    const cx = Math.floor(t.lon / CELL);
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (const p of grid.get(`${cy + dy},${cx + dx}`) ?? []) {
+          const d = distanceM(t.lat, t.lon, p.lat, p.lon);
+          // Mehr als 400 m neben der Straße heißt: Das Ziel hängt nicht an
+          // diesem Netz — dann lieber keine Zeit als eine erfundene.
+          if (d > 400 || d >= bestD) continue;
+          bestD = d;
+          bestS = p.s;
+        }
+      }
+    }
+    return bestS == null ? null : Math.round(bestS);
+  });
 }

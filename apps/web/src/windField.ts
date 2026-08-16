@@ -73,6 +73,21 @@ export class WindGrid {
     const v = mix(a.v, b.v, c.v, d.v);
     return { u, v, speed: Math.hypot(u, v) };
   }
+
+  /**
+   * Böe an einer Stelle (km/h) — nächster Gitterpunkt, ohne Interpolation.
+   *
+   * Böen sind Spitzenwerte; sie zwischen vier Punkten zu mitteln würde genau
+   * das wegrechnen, worauf es ankommt. Meldet das Modell keine Böe, bleibt die
+   * mittlere Geschwindigkeit als untere Schranke.
+   */
+  gustAt(lat: number, lon: number): number {
+    const c = Math.min(Math.max(Math.round((lon - this.lon0) / this.dLon), 0), this.cols - 1);
+    const r = Math.min(Math.max(Math.round((lat - this.lat0) / this.dLat), 0), this.rows - 1);
+    const p = this.points[r * this.cols + c];
+    if (!p) return 0;
+    return Math.max(p.gustKmh ?? 0, p.speedKmh);
+  }
 }
 
 interface Particle {

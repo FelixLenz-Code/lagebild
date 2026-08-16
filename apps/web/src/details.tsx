@@ -35,6 +35,13 @@ import {
 import { BOS_COLORS, BOS_LABEL } from './mapIcons.js';
 import { WeatherIcon } from './WeatherIcon.js';
 import { sunAltitude } from './sun.js';
+import {
+  BLOCKER_DE,
+  DEFAULT_CRITERIA,
+  findWindows,
+  type Blocker,
+  type WindowCriteria,
+} from './weatherWindow.js';
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
@@ -81,9 +88,110 @@ export function WeatherDetail({
       </div>
 
       {forecast && forecast.hourly.length > 0 && <HourlyForecast hourly={forecast.hourly} coords={coords} />}
+      {forecast && forecast.hourly.length > 0 && (
+        <WeatherWindows hourly={forecast.hourly} coords={coords} />
+      )}
       {forecast && forecast.daily.length > 0 && <DailyList daily={forecast.daily} />}
       {air && <AirSection air={air} />}
       {pollen && <PollenSection pollen={pollen} />}
+    </>
+  );
+}
+
+/**
+ * Wetterfenster — „wann kann ich raus?".
+ *
+ * Die Voreinstellungen sind für draußen arbeiten gedacht (trocken, wenig Wind,
+ * hell). Wer etwas anderes vorhat, verschiebt die Regler; gerechnet wird sofort
+ * neu, weil alles im Gerät passiert.
+ */
+function WeatherWindows({ hourly, coords }: { hourly: WeatherForecast['hourly']; coords: Coords }) {
+  const [criteria, setCriteria] = useState<WindowCriteria>(DEFAULT_CRITERIA);
+  const [minHours, setMinHours] = useState(2);
+  const result = findWindows(hourly, coords, criteria, minHours);
+  const set = (patch: Partial<WindowCriteria>) => setCriteria((c) => ({ ...c, ...patch }));
+
+  // Wenn nichts passt, ist die nützlichste Auskunft, **woran** es liegt.
+  const worst = (Object.entries(result.reasons) as [Blocker, number][])
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  return (
+    <>
+      <div className="sect-label">Wetterfenster</div>
+      <div className="ww-controls">
+        <label>
+          Wind bis <b className="mono">{criteria.maxWindKmh} km/h</b>
+          <input
+            type="range"
+            min={10}
+            max={80}
+            step={5}
+            value={criteria.maxWindKmh}
+            onChange={(e) => set({ maxWindKmh: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          Regenrisiko bis <b className="mono">{criteria.maxRainProbPct} %</b>
+          <input
+            type="range"
+            min={0}
+            max={90}
+            step={10}
+            value={criteria.maxRainProbPct}
+            onChange={(e) => set({ maxRainProbPct: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          Mindestens <b className="mono">{minHours} h</b> am Stück
+          <input
+            type="range"
+            min={1}
+            max={8}
+            step={1}
+            value={minHours}
+            onChange={(e) => setMinHours(Number(e.target.value))}
+          />
+        </label>
+        <button
+          type="button"
+          className={`ww-toggle${criteria.daylightOnly ? ' is-on' : ''}`}
+          aria-pressed={criteria.daylightOnly}
+          onClick={() => set({ daylightOnly: !criteria.daylightOnly })}
+        >
+          nur bei Tageslicht
+        </button>
+      </div>
+
+      {result.windows.length === 0 ? (
+        <p className="muted">
+          In den nächsten {result.checked} Stunden passt nichts zusammen.
+          {worst.length > 0 && (
+            <>
+              {' '}
+              Im Weg steht vor allem {BLOCKER_DE[worst[0]![0]]}
+              {worst[1] ? ` und ${BLOCKER_DE[worst[1]![0]]}` : ''}.
+            </>
+          )}
+        </p>
+      ) : (
+        <ul className="ww-list">
+          {result.windows.map((w) => (
+            <li key={w.start}>
+              <b>
+                {dayLabel(w.start.slice(0, 10))} {hourLabel(w.start)}–
+                {hourLabel(new Date(new Date(w.end).getTime() + 3600_000).toISOString())}
+              </b>
+              <span className="mono">
+                {w.hours} h
+                {w.maxTempC != null ? ` · bis ${Math.round(w.maxTempC)}°` : ''}
+                {w.maxWindKmh != null ? ` · Wind bis ${Math.round(w.maxWindKmh)} km/h` : ''}
+                {w.maxRainProbPct != null ? ` · Regen ${Math.round(w.maxRainProbPct)} %` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

@@ -23,6 +23,8 @@ import type {
   RestFacility,
   WebcamSpot,
   RescuePoint,
+  FireWaterPoint,
+  DroneZone,
   PollenForecast,
   EarthquakeItem,
   AuroraGrid,
@@ -121,8 +123,8 @@ export const fetchStopDepartures = (ids: string[]): Promise<ApiEnvelope<TransitD
 export const fetchRadar = (): Promise<ApiEnvelope<RadarData>> => getJson(`/api/radar`);
 
 /** DWD-Radarvorhersage (5-Min-Schritte bis +2 h) rund um einen Punkt. */
-export const fetchRadarForecast = (c: Coords): Promise<ApiEnvelope<RadarForecast>> =>
-  getJson(`/api/radar/forecast?${q(c)}&distance=150000`);
+export const fetchRadarForecast = (c: Coords, distanceM = 150000): Promise<ApiEnvelope<RadarForecast>> =>
+  getJson(`/api/radar/forecast?${q(c)}&distance=${Math.round(distanceM)}`);
 
 /** Online-Ortssuche; mit Bezugspunkt bevorzugt Photon nahe Treffer. */
 /** Fahrzeuge des öffentlichen Verkehrs im Ausschnitt (Position geschätzt). */
@@ -159,6 +161,17 @@ export const fetchRest = (b: Bbox): Promise<ApiEnvelope<RestFacility[]>> =>
 /** Rettungspunkte im Ausschnitt (OSM über Overpass). */
 export const fetchRescue = (b: Bbox): Promise<ApiEnvelope<RescuePoint[]>> =>
   getJson(`/api/rescue?${bboxQ(b)}`);
+
+/** Löschwasserentnahmestellen im Ausschnitt (OSM über Overpass). */
+export const fetchFireWater = (b: Bbox): Promise<ApiEnvelope<FireWaterPoint[]>> =>
+  getJson(`/api/water?${bboxQ(b)}`);
+
+/**
+ * Welche Drohnen-Gebiete liegen unter diesem Punkt? Wird erst beim Antippen
+ * geholt — die Ebene selbst ist ein Bild.
+ */
+export const fetchDroneZones = (c: Coords): Promise<ApiEnvelope<DroneZone[]>> =>
+  getJson(`/api/drones/info?${q(c)}`);
 
 /** Standorte öffentlicher Webcams im Ausschnitt. */
 export const fetchWebcams = (b: Bbox): Promise<ApiEnvelope<WebcamSpot[]>> =>
@@ -209,7 +222,7 @@ export const fetchAvalancheRegions = (): Promise<{
 
 /** Auf dem Server bereitliegende Offline-Pakete je Bundesland (Bytes). */
 export interface MapsList {
-  data: { code: string; map?: number; route?: number; search?: number; terrain?: number }[];
+  data: { code: string; map?: number; route?: number; search?: number; terrain?: number; pop?: number }[];
 }
 export const fetchMaps = (): Promise<MapsList> => getJson(`/api/maps`);
 

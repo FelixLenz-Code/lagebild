@@ -151,7 +151,22 @@ export interface WaterLevel {
   trend: 'rising' | 'falling' | 'steady' | null;
   measuredAt: string | null;
   coordinates?: Coords | null;
+  /**
+   * Einstufung gegen die amtlichen Kennwerte der Messstelle. `null`, wenn die
+   * Stelle keine Vergleichswerte führt — dann steht nur die Zahl da.
+   */
+  stage?: WaterStage | null;
+  /** Woran die Einstufung hängt, im Klartext („über Marke I (620 cm)"). */
+  stageNote?: string | null;
+  /** Die Kennwerte selbst (MNW, MW, MHW, M_I, M_II, HSW, HHW, MThw …) in cm. */
+  marks?: Record<string, number>;
 }
+
+/**
+ * Stufen von niedrig bis sehr hoch. Bewusst grob: Die Länder führen ihre
+ * Meldestufen 1–4 uneinheitlich, die WSV-Kennwerte gibt es dagegen überall.
+ */
+export type WaterStage = 'low' | 'normal' | 'raised' | 'flood' | 'severe';
 
 /** Ein Messpunkt im Pegelverlauf. */
 export interface WaterLevelPoint {
@@ -964,6 +979,25 @@ export interface RouteResult {
   legs?: RouteLeg[];
 }
 
+/**
+ * Bahnelemente eines Satelliten im klassischen Zwei-Zeilen-Format (TLE).
+ * Sie gelten einige Tage; die Überflugrechnung läuft danach ohne Netz.
+ */
+export interface SatelliteTle {
+  name: string;
+  line1: string;
+  line2: string;
+  /** Aus welcher Gruppe der Eintrag stammt (Stationen, Wetter, Amateurfunk …). */
+  group?: string;
+}
+
+/** Ein herunterladbares Paket Bahnelemente. */
+export interface SatelliteSet {
+  satellites: SatelliteTle[];
+  /** Wann der Server die Daten geholt hat. */
+  updatedAt: string;
+}
+
 /** Amtlicher Gemeindeschlüssel → die ersten zwei Ziffern kennzeichnen das Bundesland. */
 export type StateCode =
   | '01' | '02' | '03' | '04' | '05' | '06' | '07' | '08'
@@ -1049,4 +1083,41 @@ export interface AvalancheReport {
   regions: AvalancheRegion[];
   /** true, wenn außerhalb der Saison nichts veröffentlicht wird. */
   offSeason: boolean;
+}
+
+/**
+ * Ein geografisches Gebiet nach § 21h LuftVO, wie dipul es an einem Punkt
+ * meldet. Enthält bewusst **keine Geometrie** — abgefragt wird immer nur der
+ * angetippte Punkt, gezeichnet wird die Ebene als Bild.
+ */
+export interface DroneZone {
+  /** Kennung der Gebietsart beim Dienst, z. B. `kontrollzonen`. */
+  kind: string;
+  /** Gebietsart im Klartext. */
+  art: string;
+  name: string;
+  /** Untere und obere Grenze („0 m AGL", „2500 ft MSL"), falls angegeben. */
+  lower: string | null;
+  upper: string | null;
+  /** Fundstelle der Festlegung (NfL-Nummer). */
+  legalRef: string | null;
+  /** Kurzer Hinweis, warum das Gebiet eingetragen ist — keine Rechtsauskunft. */
+  note: string | null;
+}
+
+/** Löschwasserentnahmestelle aus OpenStreetMap. */
+export interface FireWaterPoint {
+  id: string;
+  kind: 'hydrant' | 'suction' | 'tank';
+  /** Bauform des Hydranten (Über-/Unterflur, Wand). */
+  form: string | null;
+  ref: string | null;
+  /** Nennweite, wie am Schild vermerkt. */
+  diameter: string | null;
+  couplings: string | null;
+  /** Fördermenge, wie in den Daten angegeben (nicht umgerechnet). */
+  flowRate: string | null;
+  operator: string | null;
+  lat: number;
+  lon: number;
 }

@@ -11,8 +11,9 @@ import type { Coords, RouteProfile } from '@lagebild/shared';
 import { getOfflineFile } from '../offlineMaps.js';
 import { Container, HEADER_PROBE_BYTES, parseHeader } from './container.js';
 import { RouteGraph, mergeGraphs } from './graph.js';
-import { routeVia } from './router.js';
-import { Terrain, contourInterval, contourLines, elevationProfile, renderTerrain } from './terrain.js';
+import { escapeRoute, reachable, routeVia, travelTimes, type DangerZone } from './router.js';
+import { Terrain, contourInterval, contourLines, elevationProfile, renderShadow, renderTerrain, sightLine } from './terrain.js';
+import { Population, type PopulationResult } from './population.js';
 import type { TrailFeature } from './trails.js';
 import { SearchIndex } from './search.js';
 
@@ -46,7 +47,28 @@ export type WorkerRequest =
       own?: (number | undefined)[];
     }
   | { id: number; type: 'elevationAt'; codes: string[]; lat: number; lon: number }
+  | {
+      id: number;
+      type: 'sight';
+      codes: string[];
+      from: Coords;
+      to: Coords;
+      /** Höhe der Antenne bzw. der Augen über Grund. */
+      fromHeightM?: number;
+      toHeightM?: number;
+      /** Frequenz für die Fresnelzone; ohne sie zählt nur die nackte Sichtlinie. */
+      freqMHz?: number;
+    }
   | { id: number; type: 'terrainImage'; code: string; maxSize?: number }
+  | {
+      id: number;
+      type: 'shadow';
+      code: string;
+      /** Sonnenstand in Grad: Höhe über dem Horizont und Azimut ab Nord. */
+      altitudeDeg: number;
+      azimuthDeg: number;
+      maxSize?: number;
+    }
   | {
       id: number;
       type: 'contours';
@@ -75,6 +97,48 @@ export type WorkerRequest =
       profile: RouteProfile;
       alternatives?: number;
       avoidMotorways?: boolean;
+    }
+  | {
+      id: number;
+      type: 'population';
+      /** Regionen, in denen die Fläche liegen könnte. */
+      codes: string[];
+      /** Entweder eine Fläche … */
+      ring?: [number, number][];
+      /** … oder ein Kreis bzw. Sektor um einen Punkt. */
+      center?: Coords;
+      radiusM?: number;
+      /** Richtung, **in** die der Sektor zeigt (Grad ab Nord). */
+      towardDeg?: number;
+      halfAngleDeg?: number;
+    }
+  | {
+      id: number;
+      type: 'reach';
+      codes: string[];
+      from: Coords;
+      profile: RouteProfile;
+      /** Zeitbudget in Sekunden. */
+      budgetS: number;
+    }
+  | {
+      id: number;
+      type: 'travelTimes';
+      codes: string[];
+      from: Coords;
+      targets: Coords[];
+      profile: RouteProfile;
+      budgetS: number;
+    }
+  | {
+      id: number;
+      type: 'escape';
+      codes: string[];
+      from: Coords;
+      profile: RouteProfile;
+      danger: DangerZone;
+      minDistanceM?: number;
+      avoidMotorways?: boolean;
     };
 
 export interface WorkerResponse {
@@ -91,6 +155,8 @@ let index: SearchIndex | null = null;
 let indexCode = '';
 /** Zuletzt benutztes Höhenraster (nur eins — sie sind mehrere Megabyte groß). */
 let terrain: { code: string; data: Terrain } | null = null;
+/** Dasselbe für das Bevölkerungsraster. */
+let population: { code: string; data: Population } | null = null;
 
 async function readGraph(code: string): Promise<RouteGraph> {
   const file = await getOfflineFile(code, 'route');
@@ -143,6 +209,20 @@ async function loadTerrain(code: string): Promise<Terrain | null> {
   } catch {
     // Kein Höhenpaket für diese Region — das ist keine Störung, sondern der
     // Normalfall, solange es niemand heruntergeladen hat.
+    return null;
+  }
+}
+
+async function loadPopulation(code: string): Promise<Population | null> {
+  if (population?.code === code) return population.data;
+  try {
+    const file = await getOfflineFile(code, 'pop');
+    const buffer = await file.arrayBuffer();
+    const data = new Population(new Container(parseHeader(buffer), buffer));
+    population = { code, data };
+    return data;
+  } catch {
+    // Kein Bevölkerungspaket für diese Region — die Oberfläche sagt das.
     return null;
   }
 }
@@ -260,6 +340,20 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
       }
       return null;
     }
+    case 'sight': {
+      // Die Strecke kann über die Landesgrenze laufen; entscheidend ist die
+      // Region, die den Anfang kennt — die Ränder der Pakete überlappen.
+      for (const code of msg.codes) {
+        const t = await loadTerrain(code);
+        if (!t || !t.covers(msg.from.lat, msg.from.lon)) continue;
+        return sightLine(t, msg.from, msg.to, {
+          fromHeightM: msg.fromHeightM,
+          toHeightM: msg.toHeightM,
+          freqMHz: msg.freqMHz,
+        });
+      }
+      return null;
+    }
     case 'terrainImage': {
       const t = await loadTerrain(msg.code);
       return t ? renderTerrain(t, msg.maxSize ?? 1024) : null;
@@ -268,6 +362,51 @@ async function handle(msg: WorkerRequest): Promise<unknown> {
       const g = await loadRoute(msg.codes);
       return routeVia(g, [msg.from, ...(msg.via ?? []), msg.to], msg.profile, {
         alternatives: msg.alternatives,
+        avoidMotorways: msg.avoidMotorways,
+      });
+    }
+    case 'shadow': {
+      const t = await loadTerrain(msg.code);
+      if (!t) return null;
+      return renderShadow(t, msg.altitudeDeg, msg.azimuthDeg, msg.maxSize);
+    }
+    case 'population': {
+      // Die erste Region, die den Mittelpunkt der Abfrage kennt, gewinnt —
+      // die Pakete überlappen sich an den Rändern, und zweimal zu zählen wäre
+      // schlimmer als am Rand etwas zu verlieren (das meldet `covered`).
+      const mid =
+        msg.center ??
+        (msg.ring?.length
+          ? {
+              lat: msg.ring.reduce((a, p) => a + p[1], 0) / msg.ring.length,
+              lon: msg.ring.reduce((a, p) => a + p[0], 0) / msg.ring.length,
+            }
+          : null);
+      if (!mid) return null;
+      for (const code of msg.codes) {
+        const p = await loadPopulation(code);
+        if (!p || !p.covers(mid.lat, mid.lon)) continue;
+        let out: PopulationResult;
+        if (msg.ring?.length) out = p.inPolygon(msg.ring);
+        else if (msg.halfAngleDeg != null && msg.towardDeg != null) {
+          out = p.inSector(mid, msg.radiusM ?? 0, msg.towardDeg, msg.halfAngleDeg);
+        } else out = p.inCircle(mid, msg.radiusM ?? 0);
+        return { ...out, code };
+      }
+      return null;
+    }
+    case 'reach': {
+      const g = await loadRoute(msg.codes);
+      return reachable(g, msg.from, msg.profile, msg.budgetS);
+    }
+    case 'travelTimes': {
+      const g = await loadRoute(msg.codes);
+      return travelTimes(g, msg.from, msg.targets, msg.profile, msg.budgetS);
+    }
+    case 'escape': {
+      const g = await loadRoute(msg.codes);
+      return escapeRoute(g, msg.from, msg.profile, msg.danger, {
+        minDistanceM: msg.minDistanceM,
         avoidMotorways: msg.avoidMotorways,
       });
     }

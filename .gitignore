@@ -36,3 +36,6 @@ coverage/
 
 # local tooling
 .claude/
+
+# Kartenschriften und -symbole: fremde Dateien, mit scripts/fetch-basemap-assets.mjs geholt
+apps/web/public/basemaps/

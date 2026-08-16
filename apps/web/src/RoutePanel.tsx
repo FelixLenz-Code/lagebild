@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type {
   ManeuverModifier,
   ManeuverType,
@@ -62,6 +62,12 @@ interface Props {
   elevation: ElevationProfile | null;
   /** Warum es kein Profil gibt (z. B. fehlendes Geländepaket). */
   elevationHint: string | null;
+  /**
+   * Das Lagebild der Strecke (Warnungen, Regen, Wind, Verkehr entlang der
+   * Fahrt). Kommt fertig von außen, weil es eigene Abrufe braucht — die Route
+   * führt dorthin, wo die Karte gerade nicht hinsieht.
+   */
+  situation?: ReactNode;
   navigating: boolean;
   progress: RouteProgress | null;
   muted: boolean;
@@ -420,6 +426,7 @@ export function RoutePanel(props: Props) {
           {!props.elevation && props.elevationHint && (
             <p className="rp-hint">{props.elevationHint}</p>
           )}
+          {props.situation}
 
           {route.legs && route.legs.length > 1 && (
             <ol className="rp-legs">

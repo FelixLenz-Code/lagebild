@@ -238,6 +238,15 @@ const GLYPH_RESCUE = 'M13.4 7h5.2v6.4H25v5.2h-6.4V25h-5.2v-6.4H7v-5.2h6.4Z';
 const GLYPH_CAMERA =
   'M6 11.5h13.5v9H6Zm15.5 2.6 4.5-2.6v9l-4.5-2.6ZM9 21.5h5v2.2H9Z';
 
+/**
+ * Löschwasser: Hydrant als stilisierter Überflurhydrant (Säule mit zwei
+ * Abgängen), Saugstelle als Tropfen mit Pfeil, Behälter als Tank. Bei 10 px
+ * trägt nur die grobe Form — deshalb kräftige Blöcke statt Strichzeichnung.
+ */
+const GLYPH_HYDRANT = 'M14.4 7h3.2v3.2h3.4v3H21V25h-3v-4h-4v4h-3V13.2h-.2v-3h3.4Z';
+const GLYPH_SUCTION = 'M16 6c4.2 5.2 6.6 8.7 6.6 11.8A6.6 6.6 0 0 1 16 24.4a6.6 6.6 0 0 1-6.6-6.6C9.4 14.7 11.8 11.2 16 6Z';
+const GLYPH_TANK = 'M7 11h18v11.5H7Zm3-4h12v2.6H10Z';
+
 /** Warndreieck für Behördenwarnungen (Mitte der Fläche). */
 /* Ausrufezeichen als Aussparung (fill-rule evenodd) — das Piktogramm wird
    weiß gefüllt, die inneren Flächen bleiben dadurch farbig. */
@@ -340,6 +349,9 @@ export async function ensureMapIcons(map: MlMap): Promise<void> {
     drawSvg(map, 'rest-charging', badge(GLYPH_PLUG, '#2c7448')),
     drawSvg(map, 'rescue-point', badge(GLYPH_RESCUE, '#1f8a4c')),
     drawSvg(map, 'webcam-spot', badge(GLYPH_CAMERA, '#5b5b60')),
+    drawSvg(map, 'water-hydrant', badge(GLYPH_HYDRANT, '#1d6fa5')),
+    drawSvg(map, 'water-suction', badge(GLYPH_SUCTION, '#2c7448')),
+    drawSvg(map, 'water-tank', badge(GLYPH_TANK, '#5b5b60')),
     drawSvg(map, 'webcam-off', badge(GLYPH_CAMERA, '#9a9aa0')),
     // Behördenwarnung: Dreieck je Warnstufe, damit die Stufe nicht allein an
     // der Flächenfarbe hängt.

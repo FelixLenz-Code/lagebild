@@ -55,6 +55,21 @@ export function sunAltitude(date: Date, lat: number, lon: number): number {
   );
 }
 
+/**
+ * Sonnenazimut in Grad, von Nord über Ost gezählt (0 = Norden, 90 = Osten).
+ *
+ * Die Formel liefert den Stundenwinkel-Azimut ab Süden; für den Schattenwurf
+ * und alles, was man auf eine Karte legt, ist die von Nord gezählte Richtung
+ * die gebräuchliche — deshalb wird hier umgerechnet und nicht beim Aufrufer.
+ */
+export function sunAzimuth(date: Date, lat: number, lon: number): number {
+  const { dec, subsolarLon } = solarState(date);
+  const h = lon * RAD - subsolarLon;
+  const phi = lat * RAD;
+  const south = Math.atan2(Math.sin(h), Math.cos(h) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
+  return (south / RAD + 180 + 360) % 360;
+}
+
 /** Sonnenauf- und -untergang des Tages von `date` an einem Ort. */
 export function sunTimes(date: Date, lat: number, lon: number): { sunrise: Date | null; sunset: Date | null } {
   const lw = -lon * RAD;

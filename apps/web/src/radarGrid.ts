@@ -38,6 +38,74 @@ export async function inflateGrid(base64: string): Promise<Uint16Array> {
 }
 
 /**
+ * Umkehrung der Eckpunkt-Verortung: zu einem Ort die Stelle im Gitter.
+ *
+ * Die vier Ecken (NW, NO, SO, SW) spannen das Bild bilinear auf. Die Hinrichtung
+ * ist eine einfache Formel, die Rückrichtung eine quadratische Gleichung —
+ * gelöst wird sie deshalb mit ein paar Newton-Schritten. Über einem Ausschnitt
+ * von zweihundert Kilometern ist die Abbildung fast affin; nach fünf Schritten
+ * liegt der Fehler weit unter einer Gitterzelle.
+ *
+ * Ergebnis in Bildpunkten (x nach Osten, y nach Süden), `null` außerhalb.
+ */
+export function gridPositionAt(
+  corners: [number, number][],
+  width: number,
+  height: number,
+  lat: number,
+  lon: number,
+): { x: number; y: number } | null {
+  const [nw, ne, se, sw] = corners;
+  if (!nw || !ne || !se || !sw) return null;
+  // P(u,v) = NW + u·(NE−NW) + v·(SW−NW) + u·v·(NW−NE+SE−SW)
+  const ex = [ne[0] - nw[0], ne[1] - nw[1]];
+  const fy = [sw[0] - nw[0], sw[1] - nw[1]];
+  const g = [nw[0] - ne[0] + se[0] - sw[0], nw[1] - ne[1] + se[1] - sw[1]];
+  let u = 0.5;
+  let v = 0.5;
+  for (let i = 0; i < 6; i++) {
+    const rx = nw[0] + u * ex[0]! + v * fy[0]! + u * v * g[0]! - lon;
+    const ry = nw[1] + u * ex[1]! + v * fy[1]! + u * v * g[1]! - lat;
+    // Jacobi-Matrix der Abbildung an der Stelle (u, v).
+    const a = ex[0]! + v * g[0]!;
+    const b = fy[0]! + u * g[0]!;
+    const c = ex[1]! + v * g[1]!;
+    const d = fy[1]! + u * g[1]!;
+    const det = a * d - b * c;
+    if (!det) return null;
+    u -= (d * rx - b * ry) / det;
+    v -= (a * ry - c * rx) / det;
+  }
+  if (u < 0 || v < 0 || u > 1 || v > 1) return null;
+  return { x: u * (width - 1), y: v * (height - 1) };
+}
+
+/**
+ * Niederschlagsrate (mm/h) an einer Gitterstelle, gemittelt über die neun
+ * benachbarten Bildpunkte — ein einzelner Punkt ist ein Kilometer und kann ein
+ * Störecho sein.
+ */
+export function rateAt(
+  grid: Uint16Array,
+  width: number,
+  height: number,
+  at: { x: number; y: number },
+): number {
+  const cx = Math.round(at.x);
+  const cy = Math.round(at.y);
+  let sum = 0;
+  let n = 0;
+  for (let y = cy - 1; y <= cy + 1; y++) {
+    for (let x = cx - 1; x <= cx + 1; x++) {
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      sum += grid[y * width + x] ?? 0;
+      n++;
+    }
+  }
+  return n ? (sum / n) * MM_PER_HOUR : 0;
+}
+
+/**
  * Farbskala nach Niederschlagsrate (mm/h) — von Nieselregen (hellblau) bis
  * Starkregen/Hagel (rot/violett), angelehnt an gängige Radardarstellungen.
  */

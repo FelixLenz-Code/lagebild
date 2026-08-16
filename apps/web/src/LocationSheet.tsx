@@ -12,10 +12,6 @@ interface Props {
   onClose: () => void;
   onUseGeolocation: () => void;
   onPickOnMap: () => void;
-  /** Kompass und Peilung öffnen. */
-  onCompass: () => void;
-  /** Notfallblatt öffnen. */
-  onEmergency: () => void;
 }
 
 /**
@@ -51,20 +47,6 @@ export function LocationSheet(props: Props) {
             <circle cx="12" cy="10" r="2.2" />
           </svg>
           Auf der Karte setzen
-        </button>
-        <button type="button" className="pp-action" onClick={props.onCompass}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M15.5 8.5l-2 5-5 2 2-5z" />
-          </svg>
-          Kompass und Peilung
-        </button>
-        <button type="button" className="pp-action is-emergency" onClick={props.onEmergency}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 3 2.5 20h19z" />
-            <path d="M12 9v5M12 17h.01" />
-          </svg>
-          Notfallblatt
         </button>
       </div>
 

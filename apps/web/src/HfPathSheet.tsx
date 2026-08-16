@@ -7,6 +7,12 @@ interface Props {
   loading: boolean;
   from: string;
   to: Coords;
+  /**
+   * Sichtverbindung zur Gegenstelle. Auf Kurzwelle trägt die Ionosphäre, auf
+   * UKW nur die Sichtlinie — wer eine Strecke bewertet, will beides wissen,
+   * und über kurze Entfernungen ist das Gelände die eigentliche Antwort.
+   */
+  onSight: () => void;
   onClose: () => void;
 }
 
@@ -34,6 +40,12 @@ export function HfPathSheet(props: Props) {
       meta={`von ${props.from} nach ${props.to.lat.toFixed(2)}, ${props.to.lon.toFixed(2)}`}
       onClose={props.onClose}
     >
+      <div className="tr-actions" style={{ marginBottom: 10 }}>
+        <button type="button" className="btn-quiet" onClick={props.onSight}>
+          Sichtverbindung über das Gelände prüfen
+        </button>
+      </div>
+
       {props.loading && <p className="muted">Ausbreitungsdaten werden geladen …</p>}
       {!props.loading && !f && (
         <p className="rp-hint err">
