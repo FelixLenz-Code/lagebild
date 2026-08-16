@@ -33,10 +33,10 @@ Kein Konto, keine Anmeldung, keine Tracker.
 
 ## Was drin ist
 
-- 🗺️ **29 Kartenebenen** — Unwetter- und Behördenwarnungen, Regenradar mit
-  Vorhersage bis +2 h, Wind, Pegel, Verkehr, Blitze, Lawinenlage, Flugzeuge,
-  Schiffe, Waldbrandgefahr, Polarlicht, Rettungspunkte, Blaulicht-Meldungen,
-  BOS-Luftfahrzeuge …
+- 🗺️ **37 Kartenebenen** — Unwetter- und Behördenwarnungen, Regenradar mit
+  Vorhersage bis +2 h, Wind, Pegel mit Einstufung, Verkehr, Blitze, Lawinenlage,
+  Flugzeuge, Schiffe, Waldbrandgefahr, Polarlicht, Rettungspunkte, Löschwasser,
+  Drohnen-Zonen, Blaulicht-Meldungen, BOS-Luftfahrzeuge …
 - 🧭 **Navigation komplett offline** — Auto, Rad, zu Fuß, mit Abbiegeverboten,
   deutschen Ansagen, bis zu drei Varianten, Zwischenzielen und Höhenprofil
 - 🔎 **Suche ohne Netz** — Adressen mit Hausnummer, Orte, Punkte („Apotheke"),
@@ -44,7 +44,16 @@ Kein Konto, keine Anmeldung, keine Tracker.
 - 🚆 **ÖPNV mit Gleisangabe** — Verbindungen von transitous.org, jede Fahrt mit
   Ein- und Ausstieg, Steig und kurzfristigem Gleiswechsel
 - 🆘 **Notfallblatt** — Nummern, die fünf W-Fragen, der eigene Standort in der
-  Schreibweise der Leitstelle, nächste Anlaufstellen. Ohne Netz, druckbar
+  Schreibweise der Leitstelle, nächste Anlaufstellen **nach Fahrzeit** statt
+  Luftlinie. Ohne Netz, druckbar
+- ⏱️ **Erreichbarkeit** — wie weit man in 15, 30 oder 60 Minuten kommt, aus dem
+  Routing-Paket im Gerät gerechnet; dazu **Schattenwurf** des Geländes zu jeder
+  Uhrzeit und ein **Wetterfenster-Finder** für die nächsten trockenen Stunden
+- ☣️ **Gefahrgut** — orangefarbene Tafel eintippen, Absperrradius und Fahne
+  stromab auf der Karte, **Betroffenenzahl** aus dem Zensus-Gitter und von dort
+  direkt in die Fluchtroute
+- 📓 **Einsatz-Logbuch** — nur während eines Einsatzes, ein Logbuch je Einsatz;
+  Ereignisse mit Uhrzeit, als Text oder GeoJSON weiterzugeben
 - ✏️ **Einzeichnen und Messen** — Punkte, Linien, Flächen, GPX/KML/GeoJSON
   einlesen, Spur aufzeichnen, Karte als Link teilen
 - 📻 **Funkwetter** — MUF-Karte, Bandampel für eine Strecke, APRS-Ziele
@@ -91,23 +100,33 @@ less install.sh
 bash install.sh
 ```
 
-Der Installer legt an: `/opt/lagebild` mit Quellcode und gebautem Bundle, einen
-Systemnutzer `lagebild` ohne Login, und den Dienst `lagebild.service` (Start
-beim Hochfahren, Neustart nach Absturz). Er fragt dabei die drei optionalen
-Schlüssel und das Passwort ab — vorhandene Werte zeigt er maskiert, Enter
-behält sie, ein `-` löscht sie. Voraussetzungen: Linux mit systemd, Node.js 20
-oder neuer, `git`, `curl` und `sudo`.
+Der Installer führt durch die ganze Einrichtung und legt an: `/opt/lagebild` mit
+Quellcode und gebautem Bundle, einen Systemnutzer `lagebild` ohne Login, und den
+Dienst `lagebild.service` (Start beim Hochfahren, Neustart nach Absturz). Er
+fragt dabei die drei optionalen Schlüssel und das Passwort ab — vorhandene Werte
+zeigt er maskiert, Enter behält sie, ein `-` löscht sie. Fehlt eine
+Voraussetzung (`git`, `curl`, `tar`, Node.js 20+, pnpm), bietet er an, sie zu
+installieren. Gebraucht werden Linux mit systemd und root oder `sudo`.
+
+Zum Schluss fragt er, **welche Offline-Pakete gebaut werden sollen** — Karte,
+Routing und Suche, Höhen, Einwohner, je Bundesland. Er zeigt vorher, was schon
+da ist, was es an Platz kostet und wie lange es dauert, prüft Platz und
+Arbeitsspeicher und baut Land für Land weiter, wenn eines scheitert. Danach
+läuft die App auch ohne Netz.
 
 **Beim zweiten Aufruf ist es ein Updater**: neuen Stand holen, bauen, Dienst
-durchstarten. Schlüssel, Passwort und heruntergeladene Offline-Pakete bleiben
-unangetastet, die Abfrage dient dann zum Ändern.
+durchstarten. Schlüssel, Passwort und fertige Offline-Pakete bleiben
+unangetastet, die Abfrage dient dann zum Ändern. Scheitert der Bau oder startet
+der Dienst nicht, bietet er den Rückweg auf den vorherigen Stand an.
 
 | | |
 | --- | --- |
 | Zustand | `systemctl status lagebild` |
 | Protokoll | `journalctl -u lagebild -f` |
 | Konfiguration | `/opt/lagebild/apps/api/.env` |
+| Nur Pakete bauen | `bash install.sh pakete` |
 | Anderes Ziel | `LAGEBILD_DIR=/srv/lagebild bash install.sh` |
+| Ohne Rückfragen | `LAGEBILD_LAENDER="04 11" LAGEBILD_PAKETE=alle bash install.sh` |
 
 TLS gehört davor in einen Reverse-Proxy — sonst geht `APP_PASSWORD` im Klartext
 über die Leitung.
@@ -132,26 +151,39 @@ pnpm check          # Prüfläufe ohne Daten und ohne Netz
 
 ## Offline-Pakete
 
-Die Offline-Fähigkeit hängt an drei Dateien je Bundesland, die der Browser über
-den „Offline"-Knopf in den OPFS lädt:
+Die Offline-Fähigkeit hängt an Dateien je Bundesland, die der Browser über den
+„Offline"-Knopf in den OPFS lädt:
 
 | Datei | Inhalt | Bremen | Hessen |
 | --- | --- | --- | --- |
 | `<code>.pmtiles` | Hintergrundkarte (Vektorkacheln) | 22 MB | — |
 | `<code>.route` | Routing-Graph mit Abbiegeverboten | 1,9 MB | 35 MB |
 | `<code>.search` | Suchindex: Orte, Straßen, POIs, Hausnummern | 1,6 MB | 18 MB |
+| `<code>.terrain` | Höhenraster für Profil und Höhenlinien | 0,2 MB | 4 MB |
+| `<code>.pop` | Einwohner im 100-m-Gitter | 0,1 MB | 0,8 MB |
+| `00.pmtiles` | grobe Weltkarte, füllt beim Herauszoomen | 15 MB | — |
+
+Auf einem Server nimmt einem das der Installer ab — er fragt Länder und
+Paketarten ab und baut sie:
+
+```bash
+bash install.sh pakete
+```
+
+Von Hand geht es genauso, ein Skript je Art:
 
 ```bash
 scripts/build-routing.mjs           # alle 16 Länder (lädt die OSM-Auszüge)
 scripts/build-routing.mjs 04 11     # nur einzelne (Ländercode)
-scripts/build-maps.sh 04 11         # Hintergrundkarten dazu
+scripts/build-maps.sh 00 04 11      # Hintergrundkarten dazu (00 = Weltkarte)
 scripts/build-terrain.mjs 04        # Höhendaten für Profil und Höhenlinien
+scripts/build-population.mjs 04     # Einwohner (braucht das Zensus-Gitter)
 ```
 
-Gebaut wird aus den Geofabrik-Auszügen; der API-Server liefert die fertigen
-Dateien unter `/api/maps` aus. Große Länder brauchen ein paar Minuten und
-mehrere GB Heap — das Skript startet sich dafür selbst neu. Die Dateien sind
-gitignored.
+Gebaut wird aus den Geofabrik-Auszügen und dem jüngsten Protomaps-Planetbau;
+der API-Server liefert die fertigen Dateien unter `/api/maps` aus. Große Länder
+brauchen beim Routing eine halbe Stunde und mehrere GB Heap — das Skript startet
+sich dafür selbst neu. Die Dateien sind gitignored.
 
 ## Datenquellen
 
@@ -163,7 +195,10 @@ gitignored.
 | Pegelstände | PEGELONLINE (WSV) | frei |
 | Verkehrsmeldungen, Rastplätze | Autobahn GmbH | frei |
 | Bahn / ÖPNV, Haltestellen, Fahrzeuge | transitous.org (MOTIS) | frei |
-| Karte, Routing, Suche, Rettungspunkte | OpenStreetMap (+ Overpass) | ODbL |
+| Karte, Routing, Suche, Rettungspunkte, Löschwasser | OpenStreetMap (+ Overpass) | ODbL |
+| Einwohner im 100-m-Gitter | Zensus 2022 (Destatis) | dl-de/by-2-0 |
+| Gefahrgut: Leitfäden und Abstände | ERG 2024 (US DOT) | gemeinfrei |
+| Drohnen-Zonen (§ 21h LuftVO) | dipul (DFS) | dl-de/by-2-0 |
 | Luftqualität, Wind | Open-Meteo | frei |
 | Strahlung (ODL) | Bundesamt für Strahlenschutz | frei |
 | Waldbrandgefahr, Pollen | DWD | frei |

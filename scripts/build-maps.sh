@@ -7,22 +7,35 @@
 # der benötigte Ausschnitt per HTTP-Range gestreamt — schnell und datensparsam.
 #
 # Nutzung:
-#   scripts/build-maps.sh                 # alle 16 Länder
+#   scripts/build-maps.sh                 # Weltkarte + alle 16 Länder
 #   scripts/build-maps.sh 04 10 11        # nur bestimmte (Code)
+#   scripts/build-maps.sh 00              # nur die grobe Weltkarte
+#
+# Der Code 00 ist kein Bundesland, sondern die **Weltkarte**: die ganze Erde,
+# aber nur bis Zoomstufe WORLD_MAXZOOM (Vorgabe 5). Sie füllt die Karte, wenn
+# man ohne Netz herauszoomt — ein Länderausschnitt endet an seiner Grenze.
 #
 # Konfiguration (Env):
-#   SOURCE      Planet-PMTiles (Default: öffentliche Protomaps-Planet-Datei;
-#               für Produktion ggf. eigene/gehostete Datei angeben)
+#   SOURCE      Planet-PMTiles (Default: der jüngste öffentliche Tagesbau von
+#               Protomaps; für Produktion ggf. eigene/gehostete Datei angeben)
 #   OUT_DIR     Zielordner (Default: apps/api/maps)
 #   MAXZOOM     max. Zoomstufe (Default: 14 — kleinere Dateien bei weniger)
 #   PMTILES_BIN Pfad zum pmtiles-CLI (wird sonst automatisch geladen)
 #
 set -euo pipefail
 
-SOURCE="${SOURCE:-https://demo-bucket.protomaps.com/v4.pmtiles}"
+HIER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Protomaps baut den Planeten täglich und hält die Bauten einige Wochen vor.
+# Ein fester Dateiname wäre nach dem nächsten Aufräumen tot — deshalb wird vom
+# heutigen Tag rückwärts gesucht.
+PLANET_BASE="${PLANET_BASE:-https://build.protomaps.com}"
+SOURCE="${SOURCE:-}"
 OUT_DIR="${OUT_DIR:-apps/api/maps}"
 MAXZOOM="${MAXZOOM:-14}"
+WORLD_MAXZOOM="${WORLD_MAXZOOM:-5}"
 PMTILES_BIN="${PMTILES_BIN:-}"
+# Zwischenlager für das CLI, damit nicht jeder Lauf es neu lädt.
+PMTILES_CACHE="${PMTILES_CACHE:-$HIER/../.cache/bin}"
 
 # code|Name|west,süd,ost,nord  — Bboxes müssen zu apps/web/src/stateBounds.ts passen.
 STATES=(
@@ -48,21 +61,46 @@ STATES=(
 ensure_pmtiles() {
   if [ -n "$PMTILES_BIN" ] && command -v "$PMTILES_BIN" >/dev/null 2>&1; then return; fi
   if command -v pmtiles >/dev/null 2>&1; then PMTILES_BIN="pmtiles"; return; fi
+  if [ -x "$PMTILES_CACHE/pmtiles" ]; then PMTILES_BIN="$PMTILES_CACHE/pmtiles"; return; fi
 
   local os arch ver asset tmp
   case "$(uname -s)" in Linux) os="Linux" ;; Darwin) os="Darwin" ;; *) echo "Unbekanntes OS — bitte pmtiles-CLI manuell installieren."; exit 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) arch="x86_64" ;; aarch64|arm64) arch="arm64" ;; *) echo "Unbekannte Architektur."; exit 1 ;; esac
   echo "→ Lade pmtiles-CLI ($os/$arch) …"
   ver="$(curl -fsSL https://api.github.com/repos/protomaps/go-pmtiles/releases/latest | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"v\{0,1\}\([^"]*\)"/\1/')"
+  [ -n "$ver" ] || { echo "Konnte die neueste pmtiles-Fassung nicht ermitteln (kein Netz?)."; exit 1; }
   asset="https://github.com/protomaps/go-pmtiles/releases/download/v${ver}/go-pmtiles_${ver}_${os}_${arch}.tar.gz"
   tmp="$(mktemp -d)"
-  curl -fsSL "$asset" -o "$tmp/p.tar.gz"
+  curl -fsSL "$asset" -o "$tmp/p.tar.gz" || { echo "Download fehlgeschlagen: $asset"; exit 1; }
   tar xzf "$tmp/p.tar.gz" -C "$tmp" pmtiles
-  PMTILES_BIN="$tmp/pmtiles"
+  if mkdir -p "$PMTILES_CACHE" 2>/dev/null && mv "$tmp/pmtiles" "$PMTILES_CACHE/pmtiles" 2>/dev/null; then
+    PMTILES_BIN="$PMTILES_CACHE/pmtiles"
+  else
+    PMTILES_BIN="$tmp/pmtiles"
+  fi
+  rm -rf "$tmp"
   echo "  pmtiles $("$PMTILES_BIN" version 2>/dev/null | head -1)"
 }
 
+# --- Planetdatei finden ---
+ensure_source() {
+  [ -z "$SOURCE" ] || return 0
+  local tag i
+  echo "→ Suche den jüngsten Planet-Bau auf $PLANET_BASE …"
+  for i in $(seq 0 20); do
+    tag="$(date -u -d "-$i day" +%Y%m%d 2>/dev/null || date -u -v-"${i}"d +%Y%m%d)"
+    if curl -fsI --max-time 20 "$PLANET_BASE/$tag.pmtiles" >/dev/null 2>&1; then
+      SOURCE="$PLANET_BASE/$tag.pmtiles"
+      return 0
+    fi
+  done
+  echo "Kein Planet-Bau der letzten 20 Tage erreichbar."
+  echo "Eigene Datei angeben:  SOURCE=… scripts/build-maps.sh …"
+  exit 1
+}
+
 ensure_pmtiles
+ensure_source
 mkdir -p "$OUT_DIR"
 
 # Auswahl: Argumente = Codes, sonst alle
@@ -73,14 +111,44 @@ echo "Quelle:  $SOURCE"
 echo "Ziel:    $OUT_DIR   (maxzoom $MAXZOOM)"
 echo
 
+fehlend=()
+
+# Ein Ausschnitt. Schlägt er fehl, ist das keine Sache für „set -e": die
+# anderen Länder sollen trotzdem entstehen. Die Ausgabe des CLI wird
+# aufgehoben und nur im Fehlerfall gezeigt — sie ist sonst sehr geschwätzig.
+extract() {
+  local code="$1"; shift
+  local ziel="$OUT_DIR/$code.pmtiles" log
+  log="$(mktemp)"
+  if "$PMTILES_BIN" extract "$SOURCE" "$ziel" "$@" >"$log" 2>&1 && [ -s "$ziel" ]; then
+    printf '   fertig: %s (%s)\n' "$ziel" "$(du -h "$ziel" | cut -f1)"
+    rm -f "$log"
+    return 0
+  fi
+  echo "   fehlgeschlagen:"
+  sed 's/^/     /' "$log" | tail -10
+  rm -f "$log" "$ziel"
+  fehlend+=("$code")
+  return 1
+}
+
+# --- Weltkarte (Code 00) ---
+if selected "00"; then
+  echo "→ 00  Weltkarte (bis Zoom $WORLD_MAXZOOM)"
+  extract 00 --maxzoom="$WORLD_MAXZOOM" || true
+fi
+
 for entry in "${STATES[@]}"; do
   IFS='|' read -r code name bbox <<< "$entry"
   selected "$code" || continue
   echo "→ $code  $name"
-  "$PMTILES_BIN" extract "$SOURCE" "$OUT_DIR/$code.pmtiles" --bbox="$bbox" --maxzoom="$MAXZOOM" >/dev/null 2>&1
-  printf '   fertig: %s (%s)\n' "$OUT_DIR/$code.pmtiles" "$(du -h "$OUT_DIR/$code.pmtiles" | cut -f1)"
+  extract "$code" --bbox="$bbox" --maxzoom="$MAXZOOM" || true
 done
 
 echo
+if [ ${#fehlend[@]} -gt 0 ]; then
+  echo "Nicht erzeugt: ${fehlend[*]}"
+  exit 1
+fi
 echo "Alle gewünschten Regionen erzeugt in $OUT_DIR/"
 echo "Der API-Server liefert sie automatisch unter /api/maps aus."
