@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl, {
   type Map as MlMap,
+  type StyleSpecification,
   type Marker,
   type Popup as MlPopup,
   type FilterSpecification,
@@ -56,7 +57,7 @@ import {
   fetchRadiationHistory,
   type Bbox,
 } from './api.js';
-import { registerPmtiles, buildStyle, addLocalPmtiles, ONLINE_PMTILES_URL } from './mapStyle.js';
+import { registerPmtiles, buildStyle, addLocalPmtiles } from './mapStyle.js';
 import { WORLD_CODE, getOfflineFile } from './offlineMaps.js';
 import { DrawList } from './DrawList.js';
 import { NamePrompt } from './NamePrompt.js';
@@ -972,8 +973,14 @@ interface Props {
   aprsAvailable: boolean;
   /** true, sobald der Server Blitze empfängt. */
   lightningAvailable: boolean;
-  /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt online. */
+  /** Wenn gesetzt: Basiskarte aus dieser Offline-Region (OPFS) statt aus dem Netz. */
   offlineCode: string | null;
+  /**
+   * Basiskarte aus dem Netz — die PMTiles-Datei, die der eigene Server für die
+   * Gegend ausliefert (oder die feste Vorgabe VITE_MAP_PMTILES_URL). `null`,
+   * solange die Regionenliste unterwegs ist oder der Server nichts hat.
+   */
+  baseUrl: string | null;
   /** Berechnete Route (offline) — Linie, Start- und Zielmarke. */
   route: RouteResult | null;
   /** Gewählte ÖPNV-Verbindung (Fußwege gestrichelt, Fahrten in Linienfarbe). */
@@ -1069,6 +1076,8 @@ interface Props {
    * ist.
    */
   worldOffline: boolean;
+  /** Sonst dieselbe Weltkarte vom Server, per HTTP-Range gelesen. */
+  worldServerUrl: string | null;
   /**
    * Dunkles Thema? Kommt vom Rahmen, damit Oberfläche und Karte dieselbe
    * Antwort benutzen — vorher fragte jede Ebene für sich das Betriebssystem.
@@ -1364,6 +1373,7 @@ export function LageMap({
   aprsAvailable,
   lightningAvailable,
   offlineCode,
+  baseUrl,
   route,
   itinerary,
   muf,
@@ -1395,6 +1405,7 @@ export function LageMap({
   onShadowMinutes,
   shadowAltitude,
   worldOffline,
+  worldServerUrl,
   dark,
   satellites,
   satTracks,
@@ -1478,13 +1489,33 @@ export function LageMap({
   } | null>(null);
   const warnPopup = useRef<MlPopup | null>(null);
   const warnById = useRef<Map<string, WarningFeature>>(new Map());
-  const currentBase = useRef<string>('online');
+  /** Woher die Basiskarte zuletzt kam — Regionscode oder URL; '' = noch nichts. */
+  const currentBase = useRef<string>('');
   /** Quelle des zuletzt gesetzten Stils — für den Wechsel hell/dunkel. */
-  const styleUrl = useRef<string>(ONLINE_PMTILES_URL);
-  /** Schlüssel der registrierten Weltkarte, sobald sie gelesen wurde. */
-  const worldUrl = useRef<string | null>(null);
-  const [worldReady, setWorldReady] = useState(false);
+  const styleUrl = useRef<string | null>(null);
+  /** Schlüssel der im Gerät liegenden Weltkarte, sobald sie gelesen wurde. */
+  const worldLocalKey = useRef<string | null>(null);
+  /**
+   * Weltkarte, die gerade unter der ausführlichen Karte liegt: der Schlüssel
+   * der OPFS-Datei oder die URL beim Server. Als Zustand, nicht als Ref —
+   * wechselt sie, muss der Stil neu gebaut werden.
+   */
+  const [worldSource, setWorldSource] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  /**
+   * Stil wechseln — und dabei `ready` zurücknehmen.
+   *
+   * Solange MapLibre den neuen Stil lädt, nimmt es keine Quellen an. Ein
+   * `addSource` aus einem Ebenen-Effekt fliegt dann mit „Style is not done
+   * loading", und weil das eine unbehandelte Ausnahme im Rendern ist, nimmt
+   * sie die ganze Anwendung mit: leere Seite statt fehlender Karte. Alle
+   * Ebenen-Effekte hängen an `ready`; steht es auf false, halten sie still,
+   * bis `style.load` sie zusammen mit `styleEpoch` wieder anwirft.
+   */
+  const applyStyle = useCallback((map: MlMap, style: StyleSpecification) => {
+    setReady(false);
+    map.setStyle(style, { diff: false });
+  }, []);
   const [styleEpoch, setStyleEpoch] = useState(0);
   const [activeSev, setActiveSev] = useState<Set<Severity>>(() => new Set(ALL_SEVERITIES));
   // Alle Fachebenen starten aus — der Nutzer schaltet gezielt zu.
@@ -1660,7 +1691,7 @@ export function LageMap({
     registerPmtiles();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: buildStyle(ONLINE_PMTILES_URL, dark),
+      style: buildStyle(baseUrl, dark),
       center: [coords.lon, coords.lat],
       zoom: 11,
       attributionControl: { compact: true },
@@ -1669,7 +1700,31 @@ export function LageMap({
       // einzige Möglichkeit, ein Bild der Karte zu bekommen.
       preserveDrawingBuffer: true,
     });
+    currentBase.current = baseUrl ?? '';
+    styleUrl.current = baseUrl;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+    /*
+     * Der Herkunftsnachweis startet bei MapLibre **ausgeklappt**, auch in der
+     * kompakten Fassung. Auf einem Handy sind das gut 200 px quer über die
+     * untere Kante: Er deckt die Legenden und den Standort-Knopf zu. Auf
+     * schmalen Geräten wird er deshalb **einmal** eingeklappt — das „i" bleibt,
+     * ein Tipp darauf zeigt ihn wieder, und ein späterer Stilwechsel klappt
+     * ihn dem Leser nicht wieder vor der Nase zu.
+     *
+     * Nicht hier und jetzt: Das Bedienelement entsteht erst, wenn MapLibre
+     * seine Quellenangaben zusammengetragen hat. Deshalb hängt es unten am
+     * ersten „style.load".
+     */
+    let attributionEingeklappt = !window.matchMedia('(max-width: 899.98px)').matches;
+    const attributionEinklappen = () => {
+      if (attributionEingeklappt) return;
+      const box = map.getContainer().querySelector('.maplibregl-ctrl-attrib');
+      if (!box?.classList.contains('maplibregl-compact-show')) return;
+      box.classList.remove('maplibregl-compact-show');
+      box.removeAttribute('open');
+      attributionEingeklappt = true;
+    };
 
     // Warn-Popup + Klick/Hover einmalig registrieren (überlebt Style-Wechsel).
     warnPopup.current = new maplibregl.Popup({ maxWidth: '300px' });
@@ -1758,7 +1813,14 @@ export function LageMap({
       });
     }
     // Nach jedem (Neu-)Laden des Styles die Overlays neu auflegen.
-    map.on('style.load', () => setStyleEpoch((n) => n + 1));
+    map.on('style.load', () => {
+      setStyleEpoch((n) => n + 1);
+      attributionEinklappen();
+    });
+    // MapLibre baut das Bedienelement erst auf, wenn die erste Quelle ihre
+    // Angabe gemeldet hat — das kann nach „style.load" liegen. Sobald es
+    // einmal eingeklappt ist, rührt der Aufruf es nicht mehr an.
+    map.on('idle', attributionEinklappen);
 
     // Sichtbaren Ausschnitt melden (entprellt), damit die Daten dem Zoom folgen.
     const emit = () => {
@@ -1808,56 +1870,34 @@ export function LageMap({
     userMarker.current.setLngLat([coords.lon, coords.lat]).addTo(map);
   }, [coords, ready]);
 
-  // Weltkarte einmalig aus dem Gerät holen und beim Protokoll anmelden.
+  /**
+   * Weltkarte bestimmen: die heruntergeladene aus dem Gerät, sonst die des
+   * Servers. Die Datei aus dem Gerät wird einmalig beim Protokoll angemeldet.
+   */
   useEffect(() => {
     if (!worldOffline) {
-      worldUrl.current = null;
-      setWorldReady(false);
+      setWorldSource(worldServerUrl);
       return;
     }
-    if (worldUrl.current) return;
+    if (worldLocalKey.current) {
+      setWorldSource(worldLocalKey.current);
+      return;
+    }
     let cancelled = false;
     void getOfflineFile(WORLD_CODE)
       .then((file) => {
         if (cancelled) return;
-        worldUrl.current = addLocalPmtiles(file);
-        setWorldReady(true);
+        worldLocalKey.current = addLocalPmtiles(file);
+        setWorldSource(worldLocalKey.current);
       })
       .catch(() => {
-        /* nicht vorhanden — dann eben ohne */
+        // Nicht lesbar — dann eben die vom Server, wenn er eine hat.
+        if (!cancelled) setWorldSource(worldServerUrl);
       });
     return () => {
       cancelled = true;
     };
-  }, [worldOffline]);
-
-  // Basiskarte online ↔ offline (OPFS-PMTiles) umschalten
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    const desired = offlineCode ?? 'online';
-    if (desired === currentBase.current) return;
-    if (offlineCode) {
-      let cancelled = false;
-      getOfflineFile(offlineCode)
-        .then((file) => {
-          if (cancelled || mapRef.current !== map) return;
-          const key = addLocalPmtiles(file);
-          currentBase.current = offlineCode;
-          styleUrl.current = key;
-          // buildStyle setzt das pmtiles://-Präfix selbst — der Schlüssel ist
-          // der Dateiname, unter dem das Protokoll die OPFS-Datei kennt.
-          map.setStyle(buildStyle(key, dark, worldUrl.current), { diff: false });
-        })
-        .catch(() => {});
-      return () => {
-        cancelled = true;
-      };
-    }
-    currentBase.current = 'online';
-    styleUrl.current = ONLINE_PMTILES_URL;
-    map.setStyle(buildStyle(ONLINE_PMTILES_URL, dark, worldUrl.current), { diff: false });
-  }, [offlineCode, ready, dark, worldReady]);
+  }, [worldOffline, worldServerUrl]);
 
   // Warn-Polygone: Quelle + Layer einmalig anlegen
   useEffect(() => {
@@ -4077,31 +4117,6 @@ export function LageMap({
     );
   }, [auroraUrl, ready, styleEpoch]);
 
-  /**
-   * Stilwechsel — anderes Thema oder die Weltkarte ist dazugekommen. Die Ebenen
-   * darüber bauen sich danach von selbst neu auf; sie hängen alle an
-   * `styleEpoch`, das beim Laden des neuen Stils hochzählt.
-   *
-   * Dieser Effekt steht **absichtlich hinter allen Ebenen-Effekten**: React
-   * führt sie in der Reihenfolge ihrer Deklaration aus, und ein `setStyle`
-   * mitten in dieser Reihe zieht den nachfolgenden Ebenen den Stil unter den
-   * Füßen weg — sie bekämen „Style is not done loading" um die Ohren.
-   */
-  const lastDark = useRef(dark);
-  const lastWorld = useRef(worldReady);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    if (lastDark.current === dark && lastWorld.current === worldReady) return;
-    lastDark.current = dark;
-    lastWorld.current = worldReady;
-    // Ohne Umschweife umstellen: Auf „idle" zu warten wäre falsch — solange
-    // eine Quelle nicht lädt (kein Netz), wird die Karte nie ruhig, und der
-    // Wechsel bliebe für immer aus. `setStyle` bricht einen laufenden Ladevorgang
-    // von sich aus ab.
-    map.setStyle(buildStyle(styleUrl.current, dark, worldUrl.current), { diff: false });
-  }, [dark, worldReady, ready]);
-
   // Zugriff für „Ansicht teilen" — einmal melden, sobald die Karte steht.
   useEffect(() => {
     const map = mapRef.current;
@@ -4712,10 +4727,112 @@ export function LageMap({
       : {}),
   }));
 
+  /* ---------- Stil der Basiskarte ---------- */
+
+  /**
+   * Quelle der Basiskarte wählen: die heruntergeladene Region aus dem Gerät
+   * (OPFS) hat Vorrang, sonst die Datei beim Server. Lässt sich die Datei im
+   * Gerät nicht lesen, fällt die Karte auf den Server zurück, statt leer zu
+   * bleiben.
+   *
+   * Steht — wie der Stilwechsel darunter — **hinter allen Ebenen-Effekten**:
+   * Ein `setStyle` mitten in der Reihe zieht den nachfolgenden Ebenen den Stil
+   * unter den Füßen weg, ihr `addSource` fliegt mit „Style is not done
+   * loading" auf, und mit der unbehandelten Ausnahme geht die ganze Anwendung
+   * unter — leere Seite statt fehlender Karte.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const fromServer = () => {
+      currentBase.current = baseUrl ?? '';
+      styleUrl.current = baseUrl;
+      applyStyle(map, buildStyle(baseUrl, dark, worldSource));
+    };
+    const desired = offlineCode ?? baseUrl ?? '';
+    if (desired === currentBase.current) return;
+    if (offlineCode) {
+      let cancelled = false;
+      getOfflineFile(offlineCode)
+        .then((file) => {
+          if (cancelled || mapRef.current !== map) return;
+          const key = addLocalPmtiles(file);
+          currentBase.current = offlineCode;
+          styleUrl.current = key;
+          // buildStyle setzt das pmtiles://-Präfix selbst — der Schlüssel ist
+          // der Dateiname, unter dem das Protokoll die OPFS-Datei kennt.
+          applyStyle(map, buildStyle(key, dark, worldSource));
+        })
+        .catch(() => {
+          if (!cancelled && mapRef.current === map) fromServer();
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    fromServer();
+  }, [offlineCode, baseUrl, ready, dark, worldSource, applyStyle]);
+
+  /**
+   * Stilwechsel — anderes Thema oder die Weltkarte ist dazugekommen. Die Ebenen
+   * darüber bauen sich danach von selbst neu auf; sie hängen alle an
+   * `styleEpoch`, das beim Laden des neuen Stils hochzählt.
+   *
+   * Dieser Effekt steht **absichtlich hinter allen Ebenen-Effekten**: React
+   * führt sie in der Reihenfolge ihrer Deklaration aus, und ein `setStyle`
+   * mitten in dieser Reihe zieht den nachfolgenden Ebenen den Stil unter den
+   * Füßen weg — sie bekämen „Style is not done loading" um die Ohren.
+   */
+  const lastDark = useRef(dark);
+  const lastWorld = useRef(worldSource);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (lastDark.current === dark && lastWorld.current === worldSource) return;
+    lastDark.current = dark;
+    lastWorld.current = worldSource;
+    // Ohne Umschweife umstellen: Auf „idle" zu warten wäre falsch — solange
+    // eine Quelle nicht lädt (kein Netz), wird die Karte nie ruhig, und der
+    // Wechsel bliebe für immer aus. `setStyle` bricht einen laufenden Ladevorgang
+    // von sich aus ab.
+    applyStyle(map, buildStyle(styleUrl.current, dark, worldSource));
+  }, [dark, worldSource, ready, applyStyle]);
+
+  /**
+   * Weder eine Region im Gerät noch eine Datei beim Server: Dann bleibt die
+   * Fläche leer. `baseUrl` ist am Anfang auch dann null, wenn die Liste des
+   * Servers noch unterwegs ist — der Hinweis wartet deshalb, bis die Karte
+   * überhaupt steht.
+   */
+  const noBasemap = ready && !offlineCode && !baseUrl;
+
+  /**
+   * Größe der Kartenfläche — nur dafür, in welche Richtung das Punktmenü
+   * aufklappt. Beim Rendern abgelesen statt im Zustand geführt: Das Menü
+   * entsteht ohnehin erst nach einem Tippen auf die fertige Karte, und ein
+   * eigener Zustand müsste bei jeder Größenänderung nachgeführt werden.
+   */
+  const mapSize = {
+    w: containerRef.current?.clientWidth ?? 0,
+    h: containerRef.current?.clientHeight ?? 0,
+  };
+
   return (
     <>
       <div className="mapwrap">
         <div ref={containerRef} className="lagemap" />
+        {noBasemap && (
+          // Die Fachebenen erscheinen auch ohne Basiskarte — ohne diesen Satz
+          // stünde da nur eine leere Fläche, und niemand käme darauf, dass
+          // schlicht die Kartenpakete auf dem Server fehlen.
+          <div className="nomap" role="status">
+            <b>Keine Kartendaten für diese Gegend.</b>
+            <span>
+              Auf dem Server die Pakete bauen (<code>bash install.sh pakete</code>) oder unter
+              „Offline" eine Region ins Gerät laden.
+            </span>
+          </div>
+        )}
         <div className="mapcontrols">
         {vehicleTrip && (
           // Solange ein Fahrtweg auf der Karte liegt, muss er auch wieder
@@ -4734,7 +4851,12 @@ export function LageMap({
           <LayerMenu
             options={layerOptions}
             open={menuOpen}
-            onOpenChange={setMenuOpen}
+            // Zwei offene Menüs nebeneinander gehen sich auf schmalen Geräten
+            // gegenseitig ins Bild — es ist immer nur eines offen.
+            onOpenChange={(o) => {
+              setMenuOpen(o);
+              if (o) setDrawBarOpen(false);
+            }}
             onToggle={(id) =>
               id === 'wind-labels' ? setWindLabels((v) => !v) : toggleLayer(id as LayerId)
             }
@@ -4770,13 +4892,19 @@ export function LageMap({
             // Kartenklick schließt es ohnehin (Klick daneben), und das
             // Werkzeug soll dabei scharf bleiben. Beendet wird über die
             // Arbeitsleiste.
-            onOpenChange={setDrawBarOpen}
+            onOpenChange={(o) => {
+              setDrawBarOpen(o);
+              if (o) setMenuOpen(false);
+            }}
             tool={drawMode}
             onTool={(tool) => {
               setDrawMode(tool);
               setAreaVertices([]);
               // Wer zeichnet, will das Ergebnis auch sehen.
               if (tool !== 'off') setOn((prev) => ({ ...prev, draw: true }));
+              // Und er will die Arbeitsleiste sehen: Sie erscheint unter den
+              // Knöpfen — genau dort, wo das offene Menü stünde.
+              if (tool !== 'off') setDrawBarOpen(false);
             }}
             counts={drawCount.current}
             onOpenList={() => setListOpen(true)}
@@ -4897,7 +5025,19 @@ export function LageMap({
         </button>
 
         {pointMenu && (
-          <div className="pointmenu" style={{ left: pointMenu.x, top: pointMenu.y }} role="menu">
+          /*
+           * Das Menü klappt vom angetippten Punkt auf — aber immer in die
+           * Richtung, in der noch Platz ist. Ohne das steht es beim Tippen in
+           * der unteren Bildhälfte fast vollständig unter dem Bildschirmrand
+           * und der Tab-Leiste; auf dem Handy trifft das die halbe Karte.
+           */
+          <div
+            className={`pointmenu${mapSize.w > 0 && pointMenu.x > mapSize.w * 0.55 ? ' pm-links' : ''}${
+              mapSize.h > 0 && pointMenu.y > mapSize.h * 0.5 ? ' pm-hoch' : ''
+            }`}
+            style={{ left: pointMenu.x, top: pointMenu.y }}
+            role="menu"
+          >
             {pointMenu.label && <div className="pm-title">{pointMenu.label}</div>}
             {pointMenu.note && <div className="pm-note">{pointMenu.note}</div>}
             {/* Ganz oben, weil es die Frage ist, die man beim langen Antippen

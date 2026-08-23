@@ -12,7 +12,9 @@
  * gezielt aus der Datei lesen.
  */
 
+import type { Coords } from '@lagebild/shared';
 import { reportUnauthorized } from './auth.js';
+import { STATE_BOUNDS } from './stateBounds.js';
 
 /** Basis-URL der herunterladbaren Pakete (Prod: eigener VPS-Host). */
 export const MAPS_BASE: string = import.meta.env.VITE_MAPS_BASE ?? '/api/maps';
@@ -84,6 +86,35 @@ export async function listOffline(): Promise<Record<string, RegionFiles>> {
     (out[m[1]!] ??= {})[kind] = file.size;
   }
   return out;
+}
+
+/**
+ * Die Region aus `files`, die den Punkt enthält und den Bestandteil `kind`
+ * mitbringt. Die Rechtecke der Länder überlappen sich stark (das
+ * rheinland-pfälzische reicht weit nach Hessen hinein) — es gewinnt das, in
+ * dem der Punkt am weitesten vom Rand entfernt liegt.
+ *
+ * Dieselbe Wahl trifft die App zweimal: unter den **heruntergeladenen**
+ * Paketen (OPFS) und unter denen, die der **Server** anbietet.
+ */
+export function regionAt(
+  files: Record<string, RegionFiles>,
+  point: Coords,
+  kind: PackageKind,
+): string | null {
+  let best: string | null = null;
+  let bestMargin = -1;
+  for (const code of Object.keys(files)) {
+    const b = STATE_BOUNDS[code];
+    if (!files[code]?.[kind] || !b) continue;
+    if (point.lon < b[0] || point.lon > b[2] || point.lat < b[1] || point.lat > b[3]) continue;
+    const margin = Math.min(point.lon - b[0], b[2] - point.lon, point.lat - b[1], b[3] - point.lat);
+    if (margin > bestMargin) {
+      bestMargin = margin;
+      best = code;
+    }
+  }
+  return best;
 }
 
 /** Reine Größe eines Bestandteils, oder 0. */

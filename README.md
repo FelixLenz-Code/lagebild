@@ -114,6 +114,13 @@ da ist, was es an Platz kostet und wie lange es dauert, prüft Platz und
 Arbeitsspeicher und baut Land für Land weiter, wenn eines scheitert. Danach
 läuft die App auch ohne Netz.
 
+Die **Kartenpakete sind keine reine Offline-Zugabe**: Die Basiskarte kommt
+grundsätzlich vom eigenen Server. Ist eine Region im Gerät, liest die App sie
+von dort; sonst holt sie sich aus derselben Datei auf dem Server per HTTP-Range
+nur die Kacheln, die der Ausschnitt braucht. Liegt für die Gegend gar kein
+Paket, bleibt die grobe Weltkarte (`00`) — und ohne jedes Paket bleibt die
+Fläche leer, während die Fachebenen darüber weiter erscheinen.
+
 **Beim zweiten Aufruf ist es ein Updater**: neuen Stand holen, bauen, Dienst
 durchstarten. Schlüssel, Passwort und fertige Offline-Pakete bleiben
 unangetastet, die Abfrage dient dann zum Ändern. Scheitert der Bau oder startet
@@ -262,7 +269,7 @@ Alles über `apps/api/.env` (Vorlage: `.env.example`):
 | `TRUST_PROXY` | `1` nur, wenn ein Reverse-Proxy davorsteht, der `X-Forwarded-For` selbst setzt. Sonst könnte jeder die Bremse gegen Durchprobieren aushebeln. |
 | `CORS_ORIGINS` | Fremde Herkünfte für den Browser-Zugriff, Komma-Liste. Leer = keine (richtig, solange die Oberfläche vom selben Server kommt). |
 | `TOMTOM_KEY`, `AISSTREAM_KEY`, `APRSFI_KEY` | Schalten die jeweilige Ebene frei. |
-| `VITE_MAP_PMTILES_URL` | Online-Basiskarte (Bauzeit). Für den Betrieb auf eine eigene PMTiles zeigen. |
+| `VITE_MAP_PMTILES_URL` | Feste Basiskarte (Bauzeit), etwa eine eigene Deutschland-PMTiles. Ohne die Angabe nimmt die App die Dateien aus `MAPS_DIR` — die zum Standort passende, per HTTP-Range gelesen. |
 
 Das Passwort sperrt **nur den Server**, nie das Gerät: Ein Netzfehler ändert
 nichts, entsperrt bleibt entsperrt — sonst stünde man ohne Empfang vor einem

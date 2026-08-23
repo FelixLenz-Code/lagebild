@@ -269,7 +269,11 @@ export function SearchSheet(props: Props) {
           type="search"
           value={q}
           autoFocus
-          placeholder={'Adresse, Ort, „Tankstelle", Rettungspunkt oder Koordinaten …'}
+          /* Kurz genug, dass er auf einem Handy ganz im Feld steht: Vorher
+             brach er mitten im Wort ab, und gerade die hinteren Beispiele —
+             die weniger bekannten — bekam dort niemand zu sehen. Rettungs-
+             und Notfallpunkte haben im Blatt ohnehin eigene Abschnitte. */
+          placeholder={'Adresse, Ort, „Tankstelle", Koordinaten'}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Ziel suchen"
         />

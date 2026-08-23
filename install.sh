@@ -1108,7 +1108,7 @@ abschluss() {
 
   [ -d "$ZIEL/apps/web/dist/basemaps/fonts" ] || fehlt="${fehlt}  • Kartenschriften (pnpm assets:karte, dann neu bauen)\n"
   [ -f "$ZIEL/apps/web/dist/hazmat.json" ]    || fehlt="${fehlt}  • hazmat.json für die Gefahrgut-Ebene (scripts/build-hazmat.mjs)\n"
-  ls "$MAPS_DIR"/*.pmtiles >/dev/null 2>&1    || fehlt="${fehlt}  • Offline-Karten (bash install.sh pakete)\n"
+  ls "$MAPS_DIR"/*.pmtiles >/dev/null 2>&1    || fehlt="${fehlt}  • Kartendaten — ohne sie bleibt die Karte leer (bash install.sh pakete)\n"
   ls "$MAPS_DIR"/*.route   >/dev/null 2>&1    || fehlt="${fehlt}  • Routing und Suche ohne Netz (bash install.sh pakete)\n"
 
   printf '\n%s%sFertig.%s\n\n' "$GRUEN" "$FETT" "$AUS"
@@ -1132,7 +1132,11 @@ ENDE
 
   printf '\n%sNicht vergessen:%s\n' "$FETT" "$AUS"
   printf '  • TLS davorschalten (Reverse-Proxy). Ohne HTTPS geht das Passwort\n'
-  printf '    im Klartext über die Leitung.\n'
+  printf '    im Klartext über die Leitung — und der Browser verweigert über eine\n'
+  printf '    nackte IP-Adresse den eigenen Speicher: Ohne HTTPS lassen sich weder\n'
+  printf '    Regionen ins Gerät laden noch die App installieren.\n'
+  printf '  • Die Karte selbst kommt ohne all das aus: Der Server liefert die\n'
+  printf '    Kacheln aus %s aus, sobald dort Pakete liegen.\n' "$MAPS_DIR"
   printf '  • In der App unter „Offline" die gewünschten Regionen ins Gerät laden —\n'
   printf '    auf dem Server liegen sie, im Browser brauchen sie einen Klick.\n\n'
 }

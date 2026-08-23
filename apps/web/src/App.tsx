@@ -57,7 +57,8 @@ import {
   type SlideshowSettings,
 } from './mapPresets.js';
 import type { LayerRowId } from './layerCatalog.js';
-import { WORLD_CODE, opfsSupported, listOffline, type PackageKind, type RegionFiles } from './offlineMaps.js';
+import { WORLD_CODE, opfsSupported, listOffline, regionAt, type PackageKind, type RegionFiles } from './offlineMaps.js';
+import { PMTILES_OVERRIDE, serverPmtilesUrl } from './mapStyle.js';
 import { contoursOffline, elevationOffline, poisOffline, reachOffline, routeOffline, shadowOffline, stopsOffline, terrainImageOffline, trailsOffline } from './offline/client.js';
 import type { TrailFeature } from './offline/trails.js';
 import { imageFromRgba } from './gridImage.js';
@@ -72,7 +73,7 @@ import type { ReachResult } from './offline/router.js';
 const REACH_BUDGET_S = 3600;
 import { routeFromLine, viaPointsFromLine } from './offline/router.js';
 import { useNavigation } from './navigation.js';
-import { STATE_BOUNDS, inStateBounds, statesContaining, statesForCorridor } from './stateBounds.js';
+import { statesContaining, statesForCorridor } from './stateBounds.js';
 import {
   loadFavorites,
   saveFavorites,
@@ -765,38 +766,42 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     refreshOffline();
   }, [refreshOffline]);
 
-  /**
-   * Heruntergeladene Region, die einen Punkt enthält und den Teil `kind` hat.
-   * Die Rechtecke der Länder überlappen sich stark — es gewinnt das, in dem
-   * der Punkt am weitesten vom Rand entfernt liegt.
-   */
+  /** Heruntergeladene Region, die einen Punkt enthält und den Teil `kind` hat. */
   const regionFor = useCallback(
-    (point: Coords, kind: PackageKind): string | null => {
-      let best: string | null = null;
-      let bestMargin = -1;
-      for (const code of Object.keys(offlineFiles)) {
-        if (!offlineFiles[code]?.[kind] || !inStateBounds(point, code)) continue;
-        const b = STATE_BOUNDS[code]!;
-        const margin = Math.min(
-          point.lon - b[0],
-          b[2] - point.lon,
-          point.lat - b[1],
-          b[3] - point.lat,
-        );
-        if (margin > bestMargin) {
-          bestMargin = margin;
-          best = code;
-        }
-      }
-      return best;
-    },
+    (point: Coords, kind: PackageKind): string | null => regionAt(offlineFiles, point, kind),
     [offlineFiles],
   );
 
-  // Offline (kein Netz) + heruntergeladene Region am Standort → Offline-Basiskarte.
-  const offlineCode = useMemo(
-    () => (online ? null : regionFor(coords, 'map')),
-    [online, regionFor, coords],
+  /**
+   * Basiskarte: liegt die Region am Standort im Gerät, wird sie genommen —
+   * auch mit Netz, denn aus dem OPFS kommt sie schneller und ohne Verkehr.
+   */
+  const offlineCode = useMemo(() => regionFor(coords, 'map'), [regionFor, coords]);
+
+  /**
+   * Sonst die Datei, die der **Server** für diese Gegend hat: PMTiles liest
+   * daraus per HTTP-Range nur die gebrauchten Kacheln, ein Download ist dafür
+   * nicht nötig. So hat eine frisch eingerichtete Installation vom ersten
+   * Aufruf an eine Karte — vorher hing die Basiskarte an einer fremden
+   * Demo-Datei, die der Browser gar nicht laden durfte.
+   */
+  const serverMapUrl = useMemo(() => {
+    if (PMTILES_OVERRIDE) return PMTILES_OVERRIDE;
+    const code = regionAt(availableMap, coords, 'map');
+    return code ? serverPmtilesUrl(code) : null;
+    // availableMap wird bei jedem Lauf neu gebaut; der Inhalt zählt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maps.data, coords]);
+
+  /**
+   * Die grobe Weltkarte des Servers als Untergrund, solange keine im Gerät
+   * liegt: Ein Bundesland-Ausschnitt endet an seiner Grenze, und wer
+   * herauszoomt, säße sonst vor einer leeren Fläche.
+   */
+  const worldServerUrl = useMemo(
+    () => (availableMap[WORLD_CODE]?.map ? serverPmtilesUrl(WORLD_CODE) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [maps.data],
   );
   const searchCode = useMemo(() => regionFor(coords, 'search'), [regionFor, coords]);
 
@@ -1902,6 +1907,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             aisAvailable={aisAvailable}
             aprsAvailable={aprsAvailable}
             offlineCode={offlineCode}
+            baseUrl={serverMapUrl}
             route={route}
             itinerary={profile === 'transit' ? (itineraries[itineraryIndex] ?? null) : null}
             muf={mufGrid}
@@ -1976,6 +1982,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             shadowAltitude={shadowSun.altitude}
             dark={dark}
             worldOffline={!!offlineFiles[WORLD_CODE]?.map}
+            worldServerUrl={worldServerUrl}
             satellites={satPositions}
             satTracks={satTracks}
             onSatelliteSetup={() => setSatOpen(true)}

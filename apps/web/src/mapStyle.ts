@@ -1,14 +1,32 @@
 import maplibregl, { type StyleSpecification } from 'maplibre-gl';
 import { Protocol, PMTiles, FileSource } from 'pmtiles';
 import { layers, GRAYSCALE, DARK, type Flavor } from '@protomaps/basemaps';
+import { MAPS_BASE } from './offlineMaps.js';
 
 /**
- * Online-Standardquelle der Vektor-Basiskarte (Protomaps-PMTiles, per
- * HTTP-Range gelesen). In der Produktion über VITE_MAP_PMTILES_URL auf die
- * eigene, gehostete Deutschland-PMTiles zeigen; im Dev die Protomaps-Demo.
+ * Feste Vorgabe für die Basiskarte (VITE_MAP_PMTILES_URL) — etwa eine eigene,
+ * gehostete Deutschland- oder Planet-Datei. Ohne diese Angabe nimmt die App
+ * die PMTiles, die der eigene Server unter /api/maps ausliefert; welche, das
+ * entscheidet der Standort.
+ *
+ * Hier stand einmal die Protomaps-Demodatei. Als Vorgabe taugt sie nicht: Sie
+ * beantwortet den CORS-Vorabruf des Browsers mit 403 (und den Bau
+ * `v4.pmtiles` gibt es dort inzwischen gar nicht mehr). Die Karte blieb damit
+ * leer, während alle Fachebenen darüber ordentlich erschienen — ein Bild, das
+ * schwer zu deuten ist.
  */
-export const ONLINE_PMTILES_URL: string =
-  import.meta.env.VITE_MAP_PMTILES_URL ?? 'https://demo-bucket.protomaps.com/v4.pmtiles';
+export const PMTILES_OVERRIDE: string | null =
+  import.meta.env.VITE_MAP_PMTILES_URL ?? null;
+
+/**
+ * URL einer Region, die der eigene Server ausliefert. PMTiles holt daraus per
+ * HTTP-Range nur die Kacheln, die gerade gebraucht werden — die Datei muss
+ * also **nicht** erst heruntergeladen werden. Absolut, weil MapLibre die
+ * Adresse hinter `pmtiles://` unverändert weiterreicht.
+ */
+export function serverPmtilesUrl(code: string): string {
+  return new URL(`${MAPS_BASE}/${code}.pmtiles`, location.href).toString();
+}
 
 /**
  * Schriften und Symbole der Basiskarte.
@@ -69,18 +87,35 @@ export const WORLD_SPLIT_ZOOM = 6;
 /**
  * Baut einen MapLibre-Style über einer PMTiles-Quelle (URL oder pmtiles-Handle).
  *
- * Liegt zusätzlich eine **Weltkarte** im Gerät, entsteht ein Stil mit zwei
+ * Liegt zusätzlich eine **Weltkarte** vor, entsteht ein Stil mit zwei
  * Quellen: unten herum die grobe Welt, ab Zoomstufe sechs die ausführliche
- * Karte. Ohne Netz bleibt so auch weit draußen etwas zu sehen — ein
- * Bundesland-Ausschnitt endet an seiner Grenze, und die halbe Erdkugel wäre
- * sonst schwarz.
+ * Karte. So bleibt auch weit draußen etwas zu sehen — ein Bundesland-Ausschnitt
+ * endet an seiner Grenze, und die halbe Erdkugel wäre sonst schwarz.
+ *
+ * Ohne jede Quelle (`pmtilesUrl` = null, etwa solange die Regionenliste des
+ * Servers noch unterwegs ist) kommt ein Stil mit reinem Hintergrund heraus.
+ * Er muss **gültig** sein, denn die Fachebenen werden darauf gelegt: ein
+ * abgewiesener Stil nähme auch sie mit.
  */
 export function buildStyle(
-  pmtilesUrl: string,
+  pmtilesUrl: string | null,
   dark: boolean,
   worldUrl?: string | null,
 ): StyleSpecification {
   const flavor: Flavor = dark ? DARK : GRAYSCALE;
+  const empty = {
+    version: 8 as const,
+    glyphs: glyphs(),
+    sprite: sprite(dark),
+    sources: {},
+    layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': flavor.background } }],
+  };
+  // Nur die Welt, keine ausführliche Karte? Dann ist die Welt die Karte.
+  if (!pmtilesUrl) {
+    if (!worldUrl) return empty;
+    pmtilesUrl = worldUrl;
+    worldUrl = null;
+  }
   const detail = layers('protomaps', flavor, { lang: 'de' });
   const sources: StyleSpecification['sources'] = {
     protomaps: {
@@ -89,7 +124,9 @@ export function buildStyle(
       attribution: '© OpenStreetMap-Mitwirkende',
     },
   };
-  if (!worldUrl) return { version: 8, glyphs: glyphs(), sprite: sprite(dark), sources, layers: detail };
+  // Dieselbe Datei zweimal einzuhängen brächte nichts als doppelte Abrufe.
+  if (!worldUrl || worldUrl === pmtilesUrl)
+    return { version: 8, glyphs: glyphs(), sprite: sprite(dark), sources, layers: detail };
 
   sources.welt = {
     type: 'vector',
