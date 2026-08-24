@@ -365,7 +365,33 @@ nutzer_anlegen() {
 
 # ------------------------------------------------------------------ Quellcode
 
-VORHER=''   # Stand vor der Aktualisierung, für den Rückweg
+VORHER=''        # Stand vor der Aktualisierung, für den Rückweg
+VORHER_TEXT=''   # derselbe Stand lesbar, für die Anzeige
+JETZT_TEXT=''    # Stand nach der Aktualisierung
+
+# Ein Stand in einer Zeile: Kennung, Datum, Betreff. Das Datum ist die Zahl,
+# an der man sich festhält — eine Kennung wie „f79cec3" sagt niemandem, ob sie
+# von gestern oder vom letzten Jahr ist.
+stand_text() {
+  # stand_text <commit-ish>
+  local wo="${1:-HEAD}" kennung datum betreff marke
+  kennung="$(als_nutzer git -C "$ZIEL" rev-parse --short=7 "$wo" 2>/dev/null || true)"
+  [ -n "$kennung" ] || { printf 'unbekannt'; return 0; }
+  # Eine Marke, falls es eine gibt — sonst bleibt es bei der Kennung.
+  marke="$(als_nutzer git -C "$ZIEL" describe --tags --exact-match "$wo" 2>/dev/null || true)"
+  datum="$(als_nutzer git -C "$ZIEL" log -1 --format=%cs "$wo" 2>/dev/null || true)"
+  betreff="$(als_nutzer git -C "$ZIEL" log -1 --format=%s "$wo" 2>/dev/null || true)"
+  # Lange Betreffs umbrechen die Zeile und machen die Gegenüberstellung
+  # unlesbar — hier wird gekürzt, nicht umgebrochen.
+  [ "${#betreff}" -gt 52 ] && betreff="${betreff:0:51}…"
+  printf '%-9s %-10s %s' "${marke:-$kennung}" "${datum:-—}" "$betreff"
+}
+
+# Version aus der package.json (die Zahl, die im Projekt selbst steht).
+paket_version() {
+  als_nutzer sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$ZIEL/package.json" 2>/dev/null | head -1
+}
 
 quellcode() {
   schritt "Quellcode holen"
@@ -385,14 +411,34 @@ quellcode() {
       fi
     fi
     VORHER="$(als_nutzer git -C "$ZIEL" rev-parse HEAD 2>/dev/null || true)"
+    # Beschreibung **vor** dem Holen sichern: Danach zeigt HEAD woanders hin.
+    VORHER_TEXT="$(stand_text HEAD)"
+    local version_vorher version_jetzt
+    version_vorher="$(paket_version)"
+
     als_nutzer git -C "$ZIEL" fetch --depth 1 origin "$ZWEIG"
     als_nutzer git -C "$ZIEL" checkout -q -B "$ZWEIG" "origin/$ZWEIG"
+
+    JETZT_TEXT="$(stand_text HEAD)"
+    version_jetzt="$(paket_version)"
     local jetzt
-    jetzt="$(als_nutzer git -C "$ZIEL" rev-parse --short HEAD)"
-    if [ -n "$VORHER" ] && [ "${VORHER:0:${#jetzt}}" = "$jetzt" ]; then
-      info "schon auf dem neuesten Stand ($jetzt)"
+    jetzt="$(als_nutzer git -C "$ZIEL" rev-parse HEAD)"
+
+    if [ -n "$VORHER" ] && [ "$VORHER" = "$jetzt" ]; then
+      printf '    %sschon auf dem neuesten Stand%s\n' "$FETT" "$AUS"
+      printf '            %s%s%s\n' "$GRAU" "$JETZT_TEXT" "$AUS"
     else
-      info "aktualisiert auf $jetzt"
+      # Die eigentliche Antwort auf „was ändert sich hier gerade": zwei Zeilen
+      # untereinander, gleich ausgerichtet, damit der Unterschied ins Auge
+      # springt statt gesucht werden zu müssen.
+      printf '    %sAktualisierung%s\n' "$FETT" "$AUS"
+      printf '      von   %s%s%s\n' "$GRAU" "$VORHER_TEXT" "$AUS"
+      printf '      auf   %s%s%s\n' "$FETT" "$JETZT_TEXT" "$AUS"
+      if [ -n "$version_vorher" ] && [ "$version_vorher" != "$version_jetzt" ]; then
+        printf '      Version %s → %s%s%s\n' "$version_vorher" "$FETT" "$version_jetzt" "$AUS"
+      fi
+      # Wie viele Änderungen dazwischen liegen, weiß ein flacher Klon nicht —
+      # lieber nichts sagen als eine erfundene Zahl.
     fi
   else
     # Ein nicht leeres Verzeichnis ohne .git ist nichts, worin man klonen will.
@@ -400,7 +446,9 @@ quellcode() {
       fehler "$ZIEL ist nicht leer, enthält aber kein Git-Verzeichnis. Bitte prüfen und leeren."
     fi
     als_nutzer git clone --depth 1 --branch "$ZWEIG" "$REPO" "$ZIEL"
+    JETZT_TEXT="$(stand_text HEAD)"
     info "geklont nach $ZIEL"
+    printf '      Stand %s%s%s\n' "$FETT" "$JETZT_TEXT" "$AUS"
   fi
 }
 
@@ -496,6 +544,38 @@ passwort_abfragen() {
   done
 }
 
+proxy_abfragen() {
+  # Steht ein Reverse-Proxy davor? Dann muss der Server wissen, von welcher
+  # Adresse er kommt — sonst sieht er für jeden Nutzer dieselbe.
+  local alt neu
+  alt="$(env_lesen TRUST_PROXY)"
+  printf '\n  %sReverse-Proxy davor%s\n' "$FETT" "$AUS"
+  printf '    Adresse des Proxys (IP oder CIDR, mehrere mit Komma).\n'
+  printf '    Ohne Angabe sehen alle Nutzer für den Server gleich aus: Ein Fremder\n'
+  printf '    sperrt dann mit fünf falschen Passwörtern jeden aus, und das\n'
+  printf '    Anmelde-Cookie bekommt kein „Secure".\n'
+  printf '    Kein Proxy? Leer lassen.\n'
+  case "$alt" in
+    '')      printf '    aktuell: (keiner)\n' ;;
+    1|all)   printf '    aktuell: %sjeder Verbindung%s — riskant, solange Port %s offen erreichbar ist\n' "$GELB" "$AUS" "$PORT" ;;
+    *)       printf '    aktuell: %s\n' "$alt" ;;
+  esac
+  if [ "$INTERAKTIV" -eq 0 ]; then
+    printf '    (kein Terminal — bleibt unverändert)\n'
+    return 0
+  fi
+  neu="$(frage "    neu [Enter behält, „-\" löscht]: ")"
+  case "$neu" in
+    '')  printf '    unverändert\n' ;;
+    '-') env_setzen TRUST_PROXY ''; printf '    gelöscht — keine Kopfzeile wird geglaubt\n' ;;
+    *)   env_setzen TRUST_PROXY "$neu"; printf '    gesetzt\n'
+         printf '    %sDer Proxy muss beide Kopfzeilen selbst setzen:%s\n' "$FETT" "$AUS"
+         printf '      proxy_set_header X-Forwarded-For   $remote_addr;\n'
+         printf '      proxy_set_header X-Forwarded-Proto $scheme;\n'
+         ;;
+  esac
+}
+
 konfiguration() {
   schritt "Schlüssel und Passwort"
 
@@ -521,6 +601,7 @@ konfiguration() {
   abfragen AISSTREAM_KEY  "Schiffsverkehr (aisstream.io)" "kostenlos nach Anmeldung"
   abfragen APRSFI_KEY     "Amateurfunk (aprs.fi)"         "eigener Schlüssel je Nutzer"
   passwort_abfragen
+  proxy_abfragen
 
   # Pfade fest eintragen: Der Dienst startet in apps/api, das gebaute Bundle
   # liegt aber in apps/web/dist. Ohne diese beiden Zeilen liefert der Server nur
@@ -574,7 +655,7 @@ bauen_mit_rueckweg() {
   fi
 
   warnung "Der Bau ist fehlgeschlagen."
-  if [ -n "$VORHER" ] && ja_nein "Auf den vorherigen Stand ($(printf '%.7s' "$VORHER")) zurück und diesen bauen?" j; then
+  if [ -n "$VORHER" ] && ja_nein "Zurück auf: ${VORHER_TEXT:-$(printf '%.7s' "$VORHER")} — und diesen bauen?" j; then
     als_nutzer git -C "$ZIEL" checkout -q --detach "$VORHER" || fehler "Auch der Rückweg ist fehlgeschlagen. $ZIEL von Hand prüfen."
     if bauen; then
       warnung "Zurück auf dem alten Stand — der neue Stand baut hier nicht."
@@ -684,7 +765,7 @@ probe() {
   printf '\n%s' "$GRAU"
   $SUDO journalctl -u "$DIENST" -n 25 --no-pager 2>/dev/null || true
   printf '%s\n' "$AUS"
-  if [ -n "$VORHER" ] && ja_nein "Auf den vorherigen Stand zurück und neu starten?" j; then
+  if [ -n "$VORHER" ] && ja_nein "Zurück auf: ${VORHER_TEXT:-$(printf '%.7s' "$VORHER")} — und neu starten?" j; then
     als_nutzer git -C "$ZIEL" checkout -q --detach "$VORHER" && bauen && $SUDO systemctl restart "$DIENST" \
       || fehler "Der Rückweg ist fehlgeschlagen. $ZIEL von Hand prüfen."
     warnung "Zurück auf dem alten Stand."
@@ -1103,8 +1184,10 @@ lan_adresse() {
 }
 
 abschluss() {
-  local ip fehlt=''
+  local ip fehlt='' stand
   ip="$(lan_adresse)"
+  # Nach dem Lauf soll schwarz auf weiß dastehen, was jetzt läuft.
+  stand="${JETZT_TEXT:-$(stand_text HEAD 2>/dev/null || true)}"
 
   [ -d "$ZIEL/apps/web/dist/basemaps/fonts" ] || fehlt="${fehlt}  • Kartenschriften (pnpm assets:karte, dann neu bauen)\n"
   [ -f "$ZIEL/apps/web/dist/hazmat.json" ]    || fehlt="${fehlt}  • hazmat.json für die Gefahrgut-Ebene (scripts/build-hazmat.mjs)\n"
@@ -1125,6 +1208,10 @@ abschluss() {
   Nur Pakete      bash install.sh pakete
 ENDE
 
+  if [ -n "$stand" ]; then
+    printf '\n%sLäuft jetzt:%s  %s\n' "$FETT" "$AUS" "$stand"
+  fi
+
   if [ -n "$fehlt" ]; then
     printf '\n%sNoch offen:%s\n' "$FETT" "$AUS"
     printf '%b' "$fehlt"
@@ -1135,6 +1222,17 @@ ENDE
   printf '    im Klartext über die Leitung — und der Browser verweigert über eine\n'
   printf '    nackte IP-Adresse den eigenen Speicher: Ohne HTTPS lassen sich weder\n'
   printf '    Regionen ins Gerät laden noch die App installieren.\n'
+  if [ -z "$(env_lesen TRUST_PROXY 2>/dev/null)" ]; then
+    printf '  • %sSteht schon ein Proxy davor?%s Dann gehört seine Adresse in\n' "$FETT" "$AUS"
+    printf '    TRUST_PROXY (%s). Ohne sie sieht der Server für jeden Nutzer\n' "$ENV_DATEI"
+    printf '    dieselbe Absenderadresse: Ein Fremder sperrt mit fünf falschen\n'
+    printf '    Passwörtern jeden aus, und das Anmelde-Cookie bekommt kein „Secure".\n'
+  fi
+  if [ "$HOST" = "0.0.0.0" ]; then
+    printf '  • Port %s ist auf allen Schnittstellen offen — also auch am Proxy\n' "$PORT"
+    printf '    vorbei. Wenn das nicht gewollt ist, in der Firewall nur den Proxy\n'
+    printf '    zulassen (oder HOST=127.0.0.1, falls der Proxy hier mitläuft).\n'
+  fi
   printf '  • Die Karte selbst kommt ohne all das aus: Der Server liefert die\n'
   printf '    Kacheln aus %s aus, sobald dort Pakete liegen.\n' "$MAPS_DIR"
   printf '  • In der App unter „Offline" die gewünschten Regionen ins Gerät laden —\n'

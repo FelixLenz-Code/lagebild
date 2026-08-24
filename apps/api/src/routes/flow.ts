@@ -13,6 +13,7 @@ export async function flowUsable(): Promise<boolean> {
   try {
     const res = await fetch(
       `https://api.tomtom.com/traffic/map/4/tile/flow/relative/1/1/1.png?key=${config.tomtomKey}`,
+      { signal: AbortSignal.timeout(8000) },
     );
     return c.set(res.ok);
   } catch {
@@ -37,7 +38,14 @@ flowRoute.get('/:z/:x/:y', async (c) => {
   if (!/^\d+$/.test(z) || !/^\d+$/.test(x) || !/^\d+$/.test(y)) return c.body(null, 400);
 
   const url = `https://api.tomtom.com/traffic/map/4/tile/flow/relative/${z}/${x}/${y}.png?key=${config.tomtomKey}`;
-  const res = await fetch(url);
+  // Mit Abbruch: Eine Karte zieht Kacheln zu Dutzenden, und ohne Frist hielte
+  // jede hängende Verbindung nach TomTom eine Anfrage hier offen.
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  } catch {
+    return c.body(null, 504);
+  }
   if (!res.ok) return c.body(null, 502);
 
   const buf = await res.arrayBuffer();

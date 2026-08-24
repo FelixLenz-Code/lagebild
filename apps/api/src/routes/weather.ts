@@ -63,10 +63,16 @@ weatherRoute.get('/', async (c) => {
   if (cache.hit) return c.json({ ...toEnvelope(cache.hit), stale: false });
 
   const url = `${BRIGHT_SKY}/current_weather?lat=${coords.lat}&lon=${coords.lon}`;
-  const res = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!res.ok) return c.json({ error: `Bright Sky ${res.status}` }, 502);
-
-  const body = (await res.json()) as BrightSkyCurrent;
+  // Über `fetchJson` wie alle anderen Routen: mit Abbruch nach acht Sekunden.
+  // Das nackte `fetch` hier hatte keinen — hing Bright Sky, hing die
+  // wichtigste Route der App unbegrenzt mit, und ein Netzfehler kam als 500
+  // heraus statt als sauberes 502.
+  let body: BrightSkyCurrent;
+  try {
+    body = await fetchJson<BrightSkyCurrent>(url);
+  } catch {
+    return c.json({ error: 'Bright Sky nicht erreichbar' }, 502);
+  }
   const w = body.weather ?? {};
   const now: WeatherNow = {
     tempC: w.temperature ?? null,

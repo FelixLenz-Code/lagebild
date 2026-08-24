@@ -56,11 +56,27 @@ const ENTITIES: Record<string, string> = {
   nbsp: ' ',
 };
 
+/**
+ * Ein Zeichen aus einer numerischen Entität — oder die Entität selbst zurück.
+ *
+ * `String.fromCodePoint` **wirft** bei allem über U+10FFFF. Ungeprüft nahm ein
+ * einziges `&#1114112;` in einer Meldung den ganzen Feed mit: Der Fehler flog
+ * bis `loadFeed`, und die leere Liste wurde dort auch noch gecacht. Auf
+ * presseportal.de veröffentlichen Dritte selbst — auf sauberes Eingabematerial
+ * ist hier kein Verlass.
+ */
+function zeichen(code: number, roh: string): string {
+  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return roh;
+  // Ersatzzeichen-Hälften sind allein kein gültiger Codepoint.
+  if (code >= 0xd800 && code <= 0xdfff) return roh;
+  return String.fromCodePoint(code);
+}
+
 /** XML-Entitäten auflösen, auch die numerischen („&#8211;" = Gedankenstrich). */
 function decode(s: string): string {
   return s
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(Number(dec)))
+    .replace(/&#x([0-9a-f]+);/gi, (all, hex: string) => zeichen(parseInt(hex, 16), all))
+    .replace(/&#(\d+);/g, (all, dec: string) => zeichen(Number(dec), all))
     .replace(/&([a-z]+);/gi, (all, name: string) => ENTITIES[name.toLowerCase()] ?? all)
     .trim();
 }

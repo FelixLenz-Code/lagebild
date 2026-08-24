@@ -11,7 +11,7 @@
  * Projektion, die die Karte selbst liefert. Es wird nichts nachgeladen.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { Coords, RescuePoint } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
 import type { MapApi } from './LageMap.js';
@@ -19,8 +19,33 @@ import { formatDecimal, formatUtm, fromUtm, toMgrs, toUtm } from './coords.js';
 import { distanceM } from './offline/graph.js';
 import { formatLength } from './geo.js';
 
-/** Breite des gedruckten Kartenbilds — dieselbe Zahl steht im Druck-CSS. */
-const PRINT_WIDTH_MM = 180;
+/** Größte Breite des gedruckten Kartenbilds. */
+const PRINT_MAX_W_MM = 180;
+/**
+ * Größte Höhe — ein Fangnetz.
+ *
+ * Die Karte liefert das Bild seit dem Umbau im festen Querformat (√2), bei
+ * 180 mm Breite also rund 127 mm hoch; diese Grenze greift dann gar nicht.
+ * Sie bleibt trotzdem stehen, weil sie einen echten Ausfall abfängt: Früher
+ * erbte das Bild die Form der Kartenfläche, und ein hochkantes Handybild wurde
+ * bei 180 mm Breite über 300 mm hoch — mehr als eine A4-Seite hergibt. Das
+ * Blatt lief unten aus der Seite heraus, und Legende, Ecken und Notrufnummern
+ * fielen ersatzlos weg. Passt die Höhe nicht, wird die Breite kleiner, und der
+ * Maßstab rechnet mit der Breite, die wirklich gedruckt wird.
+ */
+const PRINT_MAX_H_MM = 195;
+
+/** Tatsächliche Größe des Kartenbilds auf dem Papier (mm). */
+function printSize(frame: Frame): { w: number; h: number } {
+  const verhaeltnis = frame.height / Math.max(1, frame.width);
+  let w = PRINT_MAX_W_MM;
+  let h = w * verhaeltnis;
+  if (h > PRINT_MAX_H_MM) {
+    h = PRINT_MAX_H_MM;
+    w = h / Math.max(0.0001, verhaeltnis);
+  }
+  return { w, h };
+}
 
 type Frame = NonNullable<Awaited<ReturnType<MapApi['sheet']>>>;
 
@@ -33,9 +58,9 @@ function gridStep(metersPerPixel: number, widthPx: number): number {
 }
 
 /** Maßstabszahl für den Ausdruck: Boden zu Papier. */
-function scaleDenominator(frame: Frame): number {
+function scaleDenominator(frame: Frame, breiteMm: number): number {
   const groundWidthM = frame.metersPerPixel * frame.width;
-  return Math.round(groundWidthM / (PRINT_WIDTH_MM / 1000));
+  return Math.round(groundWidthM / (breiteMm / 1000));
 }
 
 /**
@@ -126,7 +151,8 @@ export function MapSheet(props: Props) {
     return { lines, step, zone };
   }, [frame, withGrid]);
 
-  const scale = frame ? scaleDenominator(frame) : null;
+  const blatt = frame ? printSize(frame) : null;
+  const scale = frame && blatt ? scaleDenominator(frame, blatt.w) : null;
   const conv = frame ? convergence(frame.center) : null;
   const corners = frame
     ? {
@@ -171,7 +197,11 @@ export function MapSheet(props: Props) {
           </div>
 
           {/* Ab hier ist alles das gedruckte Blatt. */}
-          <div className="mapsheet" id="mapsheet">
+          <div
+            className="mapsheet"
+            id="mapsheet"
+            style={{ '--sheet-w': `${blatt ? blatt.w.toFixed(1) : PRINT_MAX_W_MM}mm` } as CSSProperties}
+          >
             <div className="ms-head">
               <div>
                 <b>{props.place}</b>
@@ -179,40 +209,77 @@ export function MapSheet(props: Props) {
               </div>
               <div className="ms-scale">
                 <b>1 : {scale?.toLocaleString('de-DE')}</b>
-                <span>bei {PRINT_WIDTH_MM} mm Blattbreite</span>
+                <span>bei {blatt ? Math.round(blatt.w) : PRINT_MAX_W_MM} mm Blattbreite</span>
               </div>
             </div>
 
+            {/*
+              * Karte, Gitter und Maßstabsleiste stecken in **einem** SVG.
+              *
+              * Vorher war das Bild ein `<img>` im Fluss und das Gitter ein
+              * absolut darübergelegtes SVG. Beim Drucken paginiert der Browser
+              * beide getrennt: Das eine geht mit dem Umbruch mit, das andere
+              * nicht — am Rechner fehlte das Gitter, auf dem Handy die Karte.
+              * Als ein Element können sie sich nicht mehr verlieren, und die
+              * Größe des einen ist immer die Größe des anderen.
+              */}
             <div className="ms-map">
-              <img src={frame.url} alt="Kartenausschnitt" />
-              {grid && (
-                <svg viewBox={`0 0 ${frame.width} ${frame.height}`} preserveAspectRatio="none" className="ms-grid">
-                  {grid.lines.map((l, i) => (
-                    <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
-                  ))}
-                  {grid.lines
-                    .filter((l) => l.vertical)
-                    .map((l, i) => (
-                      <text key={`t${i}`} x={l.x1 + 4} y={18} className="ms-grid-label">
-                        {l.label}
+              <svg viewBox={`0 0 ${frame.width} ${frame.height}`} className="ms-sheet-svg" role="img" aria-label="Kartenausschnitt">
+                <image href={frame.url} x={0} y={0} width={frame.width} height={frame.height} preserveAspectRatio="none" />
+                {grid && (() => {
+                  /*
+                   * Strichstärke und Schriftgröße hängen an der Bildbreite, nicht
+                   * an festen Pixelwerten: Das Bild ist je nach Gerät zwischen 480
+                   * und 2000 Punkte breit, wird aber immer auf dieselben 180 mm
+                   * gedruckt. Feste Werte wären mal Balken, mal Haarlinien.
+                   */
+                  const strich = frame.width / 900;
+                  const schrift = frame.width / 45;
+                  return (
+                    <g className="ms-grid">
+                      {grid.lines.map((l, i) => (
+                        <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} style={{ strokeWidth: strich }} />
+                      ))}
+                      {grid.lines
+                        .filter((l) => l.vertical)
+                        .map((l, i) => (
+                          <text key={`t${i}`} x={l.x1 + schrift * 0.2} y={schrift * 1.1}
+                                className="ms-grid-label" style={{ fontSize: schrift, strokeWidth: schrift / 6 }}>
+                            {l.label}
+                          </text>
+                        ))}
+                      {grid.lines
+                        .filter((l) => !l.vertical)
+                        .map((l, i) => (
+                          <text key={`l${i}`} x={schrift * 0.2} y={l.y1 - schrift * 0.25}
+                                className="ms-grid-label" style={{ fontSize: schrift, strokeWidth: schrift / 6 }}>
+                            {l.label}
+                          </text>
+                        ))}
+                    </g>
+                  );
+                })()}
+                {/* Maßstabsleiste: eine Gitterweite lang, damit sie zum Bild passt. */}
+                {grid && (() => {
+                  const laenge = grid.step / frame.metersPerPixel;
+                  const hoehe = Math.max(10, frame.width / 60);
+                  const x = hoehe;
+                  const y = frame.height - hoehe * 2.6;
+                  const text = grid.step >= 1000 ? `${grid.step / 1000} km` : `${grid.step} m`;
+                  return (
+                    <g className="ms-barsvg">
+                      <rect x={x - 4} y={y - 4} width={laenge + hoehe * 4.5} height={hoehe + 8} className="ms-bar-bg" />
+                      {[0, 1, 2, 3].map((i) => (
+                        <rect key={i} x={x + (laenge / 4) * i} y={y} width={laenge / 4} height={hoehe}
+                              fill={i % 2 ? '#fff' : '#000'} stroke="#000" strokeWidth={1} />
+                      ))}
+                      <text x={x + laenge + 6} y={y + hoehe * 0.85} className="ms-bar-text" style={{ fontSize: hoehe * 1.05 }}>
+                        {text}
                       </text>
-                    ))}
-                  {grid.lines
-                    .filter((l) => !l.vertical)
-                    .map((l, i) => (
-                      <text key={`l${i}`} x={4} y={l.y1 - 4} className="ms-grid-label">
-                        {l.label}
-                      </text>
-                    ))}
-                </svg>
-              )}
-              {/* Maßstabsleiste: eine Gitterweite lang, damit sie zum Bild passt. */}
-              {grid && (
-                <div className="ms-bar">
-                  <i style={{ width: `${(grid.step / frame.metersPerPixel / frame.width) * 100}%` }} />
-                  <span>{grid.step >= 1000 ? `${grid.step / 1000} km` : `${grid.step} m`}</span>
-                </div>
-              )}
+                    </g>
+                  );
+                })()}
+              </svg>
             </div>
 
             <div className="ms-legend">

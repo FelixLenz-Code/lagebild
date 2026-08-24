@@ -1025,9 +1025,15 @@ svg { display: block; }
   .sheet { box-shadow: none !important; max-height: none !important; border: 0 !important; }
   .sheet .iconbtn.close, .em-print, .no-print { display: none !important; }
   .em-numbers { break-inside: avoid; }
-  /* Kartenblatt: feste Blattbreite — nur so stimmt die Maßstabszahl. */
-  .mapsheet .ms-map { width: 180mm; }
+  /*
+   * Kartenblatt: die Breite, mit der die Maßstabszahl gerechnet wurde. Sie
+   * kommt aus dem Blatt selbst (`--sheet-w`), weil ein hochkantes Bild sonst
+   * über die Seite hinausliefe — dann wird die Breite kleiner statt die Seite
+   * länger. Siehe `printSize` in MapSheet.tsx.
+   */
+  .mapsheet .ms-map { width: var(--sheet-w, 180mm); }
   .mapsheet .ms-legend { break-inside: avoid; }
+  .mapsheet .ms-head { break-after: avoid; }
   .mapsheet { color: #000; }
 }
 
@@ -1113,19 +1119,19 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
 .ms-head span { font-size: .7rem; color: var(--muted); }
 .ms-scale { margin-left: auto; text-align: right; }
 .ms-scale b { font-size: .9rem; font-variant-numeric: tabular-nums; }
-.ms-map { position: relative; width: 100%; border: 1px solid currentColor; }
-.ms-map img { display: block; width: 100%; height: auto; }
-.ms-grid { position: absolute; inset: 0; width: 100%; height: 100%; }
-.ms-grid line { stroke: rgba(0,0,0,.55); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.ms-grid-label { font-size: 22px; font-weight: 700; fill: rgba(0,0,0,.75); paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 4px; }
-.ms-bar {
-  position: absolute; left: 8px; bottom: 8px; display: flex; align-items: center; gap: 6px;
-  background: #fff; padding: 3px 7px; border: 1px solid #000; font-size: .68rem;
-  /* Feste Farben statt Variablen: Das Blatt ist immer hell — im dunklen Thema
-     wäre die Beschriftung sonst weiß auf weiß. */
-  color: #000; font-weight: 600;
-}
-.ms-bar i { display: block; height: 5px; background: repeating-linear-gradient(90deg, #000 0 50%, #fff 50% 100%); border: 1px solid #000; min-width: 24px; }
+/* Karte, Gitter und Leiste sind ein einziges SVG — siehe MapSheet.tsx. */
+.ms-map { width: 100%; border: 1px solid currentColor; break-inside: avoid; }
+.ms-sheet-svg { display: block; width: 100%; height: auto; }
+/* `vector-effect` bleibt bewusst weg: Die Linie soll mit dem Blatt skalieren,
+   sonst wird sie beim Verkleinern auf Seitenhöhe zum groben Balken. */
+/* Strichstärke und Schriftgröße kommen aus MapSheet.tsx — sie hängen an der
+   Bildbreite, weil die je nach Gerät stark schwankt. Hier nur die Farben. */
+.ms-grid line { stroke: rgba(0,0,0,.6); }
+.ms-grid-label { font-weight: 700; fill: rgba(0,0,0,.8); paint-order: stroke; stroke: rgba(255,255,255,.9); }
+/* Feste Farben statt Variablen: Das Blatt ist immer hell — im dunklen Thema
+   wäre die Beschriftung sonst weiß auf weiß. */
+.ms-bar-bg { fill: #fff; stroke: #000; stroke-width: 1; }
+.ms-bar-text { fill: #000; font-weight: 700; dominant-baseline: alphabetic; }
 .ms-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: start; }
 .ms-block { border: 1px solid var(--line-strong); padding: 6px 8px; }
 .ms-block.ms-wide { grid-column: 1 / -1; }
@@ -1264,6 +1270,13 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
 .rp-hint { font-size: .76rem; color: var(--muted); margin: 0; }
 .rp-hint.err { color: var(--sev2); }
 .btn-primary { flex: 1; min-height: 40px; border-radius: var(--r-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: .86rem; font-weight: 650; cursor: pointer; }
+/* Ein gesperrter Knopf muss gesperrt aussehen — sonst tippt man dagegen und
+   hält die App für kaputt. Galt bisher nur für `.iconbtn`. */
+.btn-primary:disabled { opacity: .45; cursor: default; }
+/* Themenneutral aufhellen statt eine feste zweite Farbe: `--accent-ink` ist im
+   hellen Thema dunkel und im dunklen hell — weiße Schrift darauf ginge nur in
+   einem von beiden gut. */
+.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
 .btn-quiet { background: transparent; border: none; color: var(--muted); font-size: .76rem; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; padding: 4px; }
 .btn-quiet:hover { color: var(--ink); }
 /* Der Fluchtknopf im Notfallblatt: dieselbe Form wie ein Hauptknopf, aber in
@@ -1448,10 +1461,30 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
 .nav-text b { font-size: 1.3rem; font-weight: 700; line-height: 1.1; letter-spacing: -.01em; }
 .nav-text span { font-size: .84rem; opacity: .92; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .navbar .iconbtn { border-color: rgba(255,255,255,.35); color: #fff; background: transparent; }
-.navbar .iconbtn.is-off { opacity: .55; }
+/*
+ * **Eigener Hover-Zustand für die Navigationsleiste.**
+ *
+ * Die allgemeine Regel färbt Symbol und Rahmen beim Überfahren auf
+ * `var(--accent)` — und genau das ist der Hintergrund dieser Leiste. Der
+ * Ansagen-Knopf wurde damit unsichtbar, sobald der Zeiger darauf lag:
+ * derselbe Farbwert vorn wie hinten, Kontrast 1:1. Hier bleibt er weiß, und
+ * hervorgehoben wird stattdessen die Fläche.
+ */
+.navbar .iconbtn:hover:not(:disabled) {
+  color: #fff;
+  border-color: #fff;
+  background: rgba(255,255,255,.18);
+}
+.navbar .iconbtn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Ausgeschaltet wird gedämpft gezeigt — aber nicht so weit, dass man den Knopf
+   suchen muss. Beim Überfahren steht er wieder voll da. */
+.navbar .iconbtn.is-off { opacity: .7; }
+.navbar .iconbtn.is-off:hover:not(:disabled) { opacity: 1; }
 .nav-foot { display: flex; align-items: center; gap: 14px; font-size: .78rem; opacity: .95; }
 .nav-foot b { font-weight: 650; }
 .nav-foot .btn-quiet { margin-left: auto; color: #fff; }
+/* Aus demselben Grund wie oben: `var(--ink)` ist auf dem Akzent kaum zu lesen. */
+.nav-foot .btn-quiet:hover { color: #fff; text-decoration-thickness: 2px; }
 .nav-warn { color: #ffd7a1; font-weight: 650; }
 
 /* ---------- Marken für Route, Ziel und Position ---------- */
@@ -1889,3 +1922,30 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
 /* Im Punktmenü steht sie unter dem Namen. */
 .pm-note { padding: 2px 12px 6px; font-size: .8rem; line-height: 1.35; color: var(--muted);
   white-space: pre-wrap; max-width: 260px; }
+
+/* ---------- Kompass kalibrieren ---------- */
+.cal-open { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 8px; }
+.cal-hint { font-size: .72rem; color: var(--sev2, var(--muted)); }
+.cal { border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 10px 12px; margin: 4px 0 10px; display: flex; flex-direction: column; gap: 10px; }
+.cal-head { display: flex; align-items: baseline; gap: 10px; }
+.cal-head h4 { margin: 0; font-size: .84rem; }
+.cal-head .btn-quiet { margin-left: auto; }
+.cal-step { display: flex; flex-direction: column; gap: 6px; }
+.cal-step > b { font-size: .76rem; }
+.cal-small { margin: 0; font-size: .72rem; line-height: 1.45; color: var(--muted); }
+.cal-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cal-row .btn-primary { flex: none; padding: 0 14px; }
+.cal-run { margin: 0; font-size: .82rem; font-weight: 650; color: var(--accent); font-variant-numeric: tabular-nums; }
+.cal-verdict { margin: 0; font-size: .78rem; font-weight: 600; }
+.cal-warn { margin: 0; font-size: .74rem; line-height: 1.45; color: var(--sev2, var(--muted)); }
+.cal-ok { margin: 0; font-size: .74rem; color: var(--ok); }
+.cal-foot { display: flex; align-items: center; gap: 10px; font-size: .74rem; border-top: 1px solid var(--line); padding-top: 8px; }
+.cal-foot .btn-quiet { margin-left: auto; }
+.is-gut { color: var(--ok); }
+.is-mittel { color: var(--sev2, var(--muted)); }
+.is-schlecht { color: var(--sev3); }
+/* Die sechzehn Richtungen als Ring aus Strichen — man sieht beim Schwenken,
+   was noch fehlt, statt nur einer Zahl zuzusehen. */
+.cal-sectors { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; }
+.cal-sectors i { display: block; height: 14px; border-radius: 2px; background: var(--surface-2); border: 1px solid var(--line); }
+.cal-sectors i.is-on { background: var(--ok); border-color: var(--ok); }

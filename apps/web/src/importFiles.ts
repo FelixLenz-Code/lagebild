@@ -50,7 +50,13 @@ function decodeEntities(s: string): string {
         body[1] === 'x' || body[1] === 'X'
           ? Number.parseInt(body.slice(2), 16)
           : Number.parseInt(body.slice(1), 10);
-      return Number.isFinite(code) && code > 0 ? String.fromCodePoint(code) : whole;
+      // Obergrenze nicht vergessen: `String.fromCodePoint` wirft bei allem
+      // über U+10FFFF, und `&#x200000;` in einer fremden GPX-Datei ließ damit
+      // den ganzen Import scheitern. Alleinstehende Ersatzzeichen-Hälften sind
+      // ebenfalls kein gültiger Codepoint.
+      const gueltig =
+        Number.isInteger(code) && code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff);
+      return gueltig ? String.fromCodePoint(code) : whole;
     }
     return ENTITIES[body.toLowerCase()] ?? whole;
   });

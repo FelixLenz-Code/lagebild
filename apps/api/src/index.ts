@@ -2,8 +2,11 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { existsSync } from 'node:fs';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
+import { requestIsSecure } from './lib/proxy.js';
 import { config } from './config.js';
 import { weatherRoute } from './routes/weather.js';
 import { alertsRoute } from './routes/alerts.js';
@@ -37,12 +40,70 @@ import { avalancheRoute } from './routes/avalanche.js';
 import { satRoute } from './routes/sat.js';
 import { dronesRoute } from './routes/drones.js';
 import { waterRoute } from './routes/water.js';
-import { authRoute, requireAuth } from './routes/auth.js';
+import { authRoute, isAuthed, requireAuth } from './routes/auth.js';
 import { authRequired } from './lib/auth.js';
 
 const app = new Hono();
 
-app.use('*', logger());
+/**
+ * Protokoll **ohne Query**.
+ *
+ * Honos Logger schreibt den Pfad samt Query. Genau darin stehen hier die
+ * Koordinaten des Nutzers (`?lat=52.51631&lon=13.37770`) und jeder getippte
+ * Suchbegriff — beides landete damit dauerhaft im Journal. Für „läuft der
+ * Server, wie schnell antwortet er" genügt der Pfad, und die App verspricht
+ * ausdrücklich, niemandem nachzulaufen.
+ */
+app.use('*', logger((nachricht, ...rest) => {
+  console.log(nachricht.replace(/(\s\/\S*?)\?\S*/, '$1'), ...rest);
+}));
+
+/**
+ * Kopfzeilen zur Absicherung.
+ *
+ * Die Fachdaten kommen aus rund zwanzig fremden Quellen und werden in den
+ * Kartenblasen zu HTML zusammengesetzt. Dort wird jeder fremde Text kodiert —
+ * die Richtlinie ist die zweite Reihe dahinter: Sie verbietet eingebettete
+ * Skripte und `javascript:`-Adressen, sodass ein vergessenes `esc()` nicht
+ * gleich fremden Code im Ursprung dieser App ausführt.
+ *
+ * `img-src`/`connect-src` bleiben bei `https:` statt einer Aufzählung: Die
+ * Kachelserver stehen nicht fest — RainViewer nennt seinen Host erst in der
+ * Antwort, und die Kartenschriften kommen je nach Bauzustand vom eigenen Server
+ * oder von Protomaps. Eine zu enge Regel bräche die Karte, und eine schwarze
+ * Karte hilft niemandem. `http:` bleibt trotzdem draußen.
+ */
+app.use('*', secureHeaders({
+  contentSecurityPolicy: {
+    defaultSrc: ["'self'"],
+    baseUri: ["'self'"],
+    objectSrc: ["'none'"],
+    frameAncestors: ["'none'"],
+    formAction: ["'self'"],
+    // MapLibre baut seine Arbeiter über blob:-Adressen.
+    scriptSrc: ["'self'", 'blob:'],
+    workerSrc: ["'self'", 'blob:'],
+    // React und MapLibre setzen Stile am Element (`style="…"`).
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+    connectSrc: ["'self'", 'data:', 'blob:', 'https:'],
+    fontSrc: ["'self'", 'data:'],
+    manifestSrc: ["'self'"],
+  },
+  // Setzt Hono sonst selbst; beides brauchen wir hier nicht.
+  crossOriginEmbedderPolicy: false,
+  xFrameOptions: 'DENY',
+  // Nur über HTTPS ansagen. Über HTTP überginge der Browser die Zeile ohnehin,
+  // aber so steht auch nichts Irreführendes in der Antwort.
+  strictTransportSecurity: false,
+}));
+
+app.use('*', async (c, next) => {
+  await next();
+  if (requestIsSecure(c)) {
+    c.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  }
+});
 
 /**
  * CORS ist **standardmäßig aus**.
@@ -70,22 +131,44 @@ if (config.corsOrigins.length > 0) {
 
 // Anmeldung selbst und die Erreichbarkeitsprüfung bleiben offen — sonst käme
 // niemand mehr an das Passwortfeld heran.
+/*
+ * Rumpfgrenze für den einzigen Weg, der ohne Anmeldung offen steht. Ohne sie
+ * nimmt der Server jeden Rumpf an und packt ihn vollständig in den Speicher,
+ * ehe er ihn als JSON liest — ein Passwort braucht dafür keine zwei Kilobyte.
+ */
+app.use('/api/auth/login', bodyLimit({ maxSize: 2 * 1024, onError: (c) => c.json({ ok: false, error: 'Rumpf zu groß' }, 413) }));
 app.route('/api/auth', authRoute);
 // Alles andere hinter dem gemeinsamen Passwort. Das statische PWA-Bundle
 // bleibt bewusst frei: Sonst könnte sich die App weder installieren noch
 // aktualisieren, und ein gesperrtes Gerät bekäme eine leere Seite statt des
 // Passwortfelds.
 app.use('/api/*', async (c, next) => {
-  if (c.req.path === '/api/health' || c.req.path.startsWith('/api/auth')) return next();
+  // Genauer Vergleich: `startsWith('/api/auth')` ließe auch `/api/authfoo`
+  // durch. Heute liegt dort nichts, aber die Ausnahme soll genau das treffen,
+  // was sie meint.
+  const pfad = c.req.path;
+  if (pfad === '/api/health' || pfad === '/api/auth' || pfad.startsWith('/api/auth/')) return next();
   return requireAuth(c, next);
 });
 
 // --- API ---
-app.get('/api/health', async (c) =>
-  c.json({
-    ok: true,
-    service: 'lagebild-api',
-    ts: new Date().toISOString(),
+/**
+ * Erreichbarkeitsprüfung.
+ *
+ * Bleibt **offen**, weil Proxy, Installer und jede Überwachung sie brauchen —
+ * aber sie erzählt Fremden nur, dass der Dienst lebt. Vorher stand hier
+ * ungeschützt, ob überhaupt ein Passwort gesetzt ist und welche kostenpflichtigen
+ * Schlüssel der Betreiber hält (`flow: true` heißt: gültiger TomTom-Key). Das
+ * ist kostenlose Aufklärung für jeden, der die Adresse kennt.
+ *
+ * Die Ebenen-Merkmale bekommt nur, wer angemeldet ist — dort braucht die App
+ * sie auch, denn vor dem Entsperren wird sie gar nicht erst aufgebaut.
+ */
+app.get('/api/health', async (c) => {
+  const basis = { ok: true, service: 'lagebild-api', ts: new Date().toISOString() };
+  if (!isAuthed(c)) return c.json(basis);
+  return c.json({
+    ...basis,
     auth: authRequired(),
     features: {
       flow: await flowUsable(),
@@ -93,8 +176,8 @@ app.get('/api/health', async (c) =>
       aprs: aprsUsable(),
       lightning: lightningUsable(),
     },
-  }),
-);
+  });
+});
 app.route('/api/weather', weatherRoute);
 app.route('/api/alerts', alertsRoute);
 app.route('/api/warnings', warningsRoute);
@@ -132,6 +215,14 @@ app.use(
   '/api/maps/*',
   serveStatic({ root: config.mapsDir, rewriteRequestPath: (p) => p.replace(/^\/api\/maps\//, '/') }),
 );
+
+/*
+ * Unbekannte Schnittstellenpfade sind ein Fehler, keine Oberfläche. Ohne diese
+ * Zeile fiele `/api/tippfehler` durch bis zum SPA-Rückfall und käme als
+ * `index.html` mit 200 zurück — was jeden Abruf, der sich verschreibt, als
+ * Erfolg aussehen lässt.
+ */
+app.all('/api/*', (c) => c.json({ error: 'Unbekannter Pfad' }, 404));
 
 // --- statisches PWA-Bundle (nur wenn gebaut vorhanden) ---
 if (existsSync(config.webRoot)) {

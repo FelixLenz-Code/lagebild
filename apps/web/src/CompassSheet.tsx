@@ -11,6 +11,7 @@ import {
   useCompass,
   type Sighting,
 } from './compass.js';
+import { CompassCalibration } from './CompassCalibration.js';
 import { formatDegMin } from './coords.js';
 import { formatLength } from './geo.js';
 import { distanceM } from './offline/graph.js';
@@ -43,6 +44,7 @@ const CENTER = 110;
  */
 export function CompassSheet(props: Props) {
   const compass = useCompass(true);
+  const [calOpen, setCalOpen] = useState(false);
   /** Wegpunkt-Projektion: Peilung und Entfernung als Text, damit auch „240,5" geht. */
   /** Kreuzpeilung: zwei gemerkte Peilungen. */
   const [sightings, setSightings] = useState<(Sighting | null)[]>([null, null]);
@@ -113,6 +115,35 @@ export function CompassSheet(props: Props) {
         </div>
       )}
       {compass.error && <p className="err">{compass.error}</p>}
+
+      {/*
+        * Der Weg zur Kalibrierung gehört hierher und nicht in die
+        * Einstellungen: Wer merkt, dass die Richtung nicht stimmt, steht in
+        * diesem Moment vor der Rose.
+        */}
+      {compass.needsCalibration && !calOpen && (
+        <p className="cal-warn">Das Gerät meldet, dass der Kompass kalibriert werden muss.</p>
+      )}
+      {!calOpen && (
+        <div className="cal-open">
+          <button type="button" className="btn-quiet" onClick={() => setCalOpen(true)}>
+            Kompass kalibrieren
+          </button>
+          {compass.jitterDeg != null && compass.jitterDeg >= 4 && (
+            <span className="cal-hint">Die Anzeige schwankt um {compass.jitterDeg.toFixed(0)}°.</span>
+          )}
+        </div>
+      )}
+      {calOpen && (
+        <CompassCalibration
+          rawHeadingDeg={compass.rawHeadingDeg}
+          jitterDeg={compass.jitterDeg}
+          accuracyDeg={compass.accuracyDeg}
+          absolute={compass.absolute}
+          at={props.from}
+          onClose={() => setCalOpen(false)}
+        />
+      )}
 
       <div className="cp-wrap">
         <svg viewBox="0 0 220 220" className="cp-rose" role="img" aria-label="Kompassrose">

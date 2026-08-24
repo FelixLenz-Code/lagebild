@@ -18,11 +18,68 @@ import type { Coords } from '@lagebild/shared';
 export interface CompassState {
   /** Blickrichtung des Geräts in Grad (0 = Norden), null solange nichts kommt. */
   headingDeg: number | null;
+  /** Dieselbe Richtung **ohne** die gespeicherte Korrektur — Grundlage der Kalibrierung. */
+  rawHeadingDeg: number | null;
   /** true, wenn die Richtung geographisch (rechtweisend) ist. */
   absolute: boolean;
   /** Muss der Nutzer die Erlaubnis noch erteilen? (iOS) */
   needsPermission: boolean;
+  /**
+   * Selbst gemeldete Ungenauigkeit in Grad, falls das Gerät sie kennt (Safari:
+   * `webkitCompassAccuracy`). `null` heißt: keine Angabe, nicht „genau".
+   */
+  accuracyDeg: number | null;
+  /**
+   * Unruhe der Anzeige in Grad: der mittlere Sprung zwischen zwei Messungen der
+   * letzten Sekunden. Beim ruhig gehaltenen Gerät sollte er klein sein — springt
+   * er, steht der Kompass unter dem Einfluss von Metall oder ist unkalibriert.
+   */
+  jitterDeg: number | null;
+  /** Das Gerät verlangt selbst nach einer Kalibrierung (kennen nicht alle Browser). */
+  needsCalibration: boolean;
   error: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Korrektur von Hand
+ * ------------------------------------------------------------------ */
+
+const OFFSET_KEY = 'lagebild.compassOffset';
+
+/**
+ * Gespeicherte Korrektur in Grad, die auf jede Messung addiert wird.
+ *
+ * Wozu: Manche Geräte liefern über `deviceorientation` nur eine **relative**
+ * Ausrichtung, andere sind schlicht schief. Mit einer bekannten Richtung — der
+ * Sonne — lässt sich die Abweichung einmal bestimmen und danach abziehen. Sie
+ * bleibt im Gerät, weil sie zum Gerät gehört und nicht zum Nutzer.
+ */
+export function loadCompassOffset(): number {
+  try {
+    const raw = Number(localStorage.getItem(OFFSET_KEY));
+    return Number.isFinite(raw) ? ((raw % 360) + 360) % 360 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function saveCompassOffset(deg: number): void {
+  const norm = ((deg % 360) + 360) % 360;
+  try {
+    if (norm === 0) localStorage.removeItem(OFFSET_KEY);
+    else localStorage.setItem(OFFSET_KEY, String(norm));
+  } catch {
+    /* Kein Speicher — dann gilt die Korrektur eben nur für diese Sitzung. */
+  }
+  for (const hoeren of offsetListeners) hoeren(norm);
+}
+
+const offsetListeners = new Set<(deg: number) => void>();
+
+/** Auf Änderungen der Korrektur hören (die Kalibrierung setzt sie). */
+export function onCompassOffset(fn: (deg: number) => void): () => void {
+  offsetListeners.add(fn);
+  return () => offsetListeners.delete(fn);
 }
 
 /** Kleinster Winkelunterschied in Grad, Vorzeichen: + = nach rechts drehen. */
@@ -76,13 +133,23 @@ const wantsPermission = (): boolean =>
 export function useCompass(active: boolean): CompassState & { request: () => void } {
   const [state, setState] = useState<CompassState>({
     headingDeg: null,
+    rawHeadingDeg: null,
     absolute: false,
     needsPermission: false,
+    accuracyDeg: null,
+    jitterDeg: null,
+    needsCalibration: false,
     error: null,
   });
   const [granted, setGranted] = useState(false);
   /** Geglättete Richtung — rohe Werte zappeln um mehrere Grad. */
   const smooth = useRef<number | null>(null);
+  /** Gespeicherte Korrektur, live nachgeführt (die Kalibrierung ändert sie). */
+  const offset = useRef(loadCompassOffset());
+  useEffect(() => onCompassOffset((deg) => { offset.current = deg; }), []);
+  /** Letzte rohe Messungen für die Unruhe-Zahl: Zeitpunkt und Sprung in Grad. */
+  const spruenge = useRef<{ t: number; d: number }[]>([]);
+  const letzteRoh = useRef<number | null>(null);
 
   const request = () => {
     const ask = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> })
@@ -120,9 +187,14 @@ export function useCompass(active: boolean): CompassState & { request: () => voi
       // Safari liefert die Kompassrichtung direkt und rechtweisend.
       let heading: number | null = null;
       let absolute = false;
+      let accuracy: number | null = null;
       if (typeof e.webkitCompassHeading === 'number' && !Number.isNaN(e.webkitCompassHeading)) {
         heading = e.webkitCompassHeading;
         absolute = true;
+        // Safari meldet -1, solange nichts Verlässliches vorliegt.
+        if (typeof e.webkitCompassAccuracy === 'number' && e.webkitCompassAccuracy >= 0) {
+          accuracy = e.webkitCompassAccuracy;
+        }
       } else if (typeof e.alpha === 'number') {
         // alpha zählt gegen den Uhrzeigersinn ab Norden.
         heading = (360 - e.alpha) % 360;
@@ -131,14 +203,45 @@ export function useCompass(active: boolean): CompassState & { request: () => voi
       if (heading == null || Number.isNaN(heading)) return;
       gotSomething = true;
 
+      /*
+       * Unruhe messen: der Sprung zur vorigen **rohen** Messung. Beim ruhig
+       * gehaltenen Gerät ist er klein; ein unkalibrierter oder von Metall
+       * gestörter Sensor springt um zweistellige Beträge. Gemittelt wird über
+       * die letzten drei Sekunden, damit einzelne Ausreißer nichts entscheiden.
+       */
+      const jetzt = Date.now();
+      if (letzteRoh.current != null) {
+        spruenge.current.push({ t: jetzt, d: Math.abs(turnTo(letzteRoh.current, heading)) });
+      }
+      letzteRoh.current = heading;
+      spruenge.current = spruenge.current.filter((x) => jetzt - x.t < 3000).slice(-90);
+      const jitter =
+        spruenge.current.length >= 4
+          ? spruenge.current.reduce((a, x) => a + x.d, 0) / spruenge.current.length
+          : null;
+
       // Über den Nullpunkt hinweg mitteln: 359° und 1° liegen zwei Grad
       // auseinander, im Mittel aber nicht bei 180°.
       const previous = smooth.current;
       const next =
         previous == null ? heading : previous + turnTo(previous, heading) * 0.25;
       smooth.current = (next + 360) % 360;
-      setState((s) => ({ ...s, headingDeg: smooth.current, absolute, error: null }));
+      const roh = smooth.current;
+      setState((s) => ({
+        ...s,
+        rawHeadingDeg: roh,
+        headingDeg: (roh + offset.current + 360) % 360,
+        absolute,
+        accuracyDeg: accuracy,
+        jitterDeg: jitter,
+        error: null,
+      }));
     };
+
+    // Alter, aber noch gebräuchlicher Weg, auf dem manche Browser selbst um
+    // eine Kalibrierung bitten.
+    const braucht = () => setState((s) => ({ ...s, needsCalibration: true }));
+    window.addEventListener('compassneedscalibration', braucht);
 
     window.addEventListener('deviceorientationabsolute', handle, true);
     window.addEventListener('deviceorientation', handle, true);
@@ -155,6 +258,7 @@ export function useCompass(active: boolean): CompassState & { request: () => voi
     return () => {
       window.removeEventListener('deviceorientationabsolute', handle, true);
       window.removeEventListener('deviceorientation', handle, true);
+      window.removeEventListener('compassneedscalibration', braucht);
       window.clearTimeout(timer);
     };
   }, [active, granted]);

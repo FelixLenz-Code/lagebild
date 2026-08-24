@@ -9,6 +9,14 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      /*
+       * Als **eigene Datei** statt eingebettet. In der Voreinstellung schreibt
+       * das Plugin die Registrierung als `<script>` mitten in die index.html —
+       * und genau das verbietet die Inhaltsrichtlinie des Servers
+       * (`script-src 'self'`). Ohne diese Zeile bliebe die App ohne Service
+       * Worker, also ohne Offline-Betrieb.
+       */
+      injectRegister: 'script-defer',
       workbox: {
         /*
          * Schriften und Symbole der Karte liegen unter `public/basemaps` und

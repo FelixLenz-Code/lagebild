@@ -198,6 +198,32 @@ function drawToGeoJson(
   return { type: 'FeatureCollection', features: out };
 }
 
+/** Ein abgebrochener Abruf — kein Fehler, sondern das erwartete Ende. */
+function istAbbruch(fehler: { name?: string; message?: string } | undefined): boolean {
+  return fehler?.name === 'AbortError' || /signal is aborted/i.test(fehler?.message ?? '');
+}
+
+/**
+ * Den Stil, der gleich abgelöst wird, zum Schweigen bringen.
+ *
+ * `setStyle` bricht die noch laufenden Abrufe des alten Stils ab — Absicht, und
+ * genau dafür ist die Methode da. MapLibre meldet den Abbruch trotzdem als
+ * Fehler, und zwar auf dem **Stil-Objekt**, nicht auf der Karte: Beim Ablösen
+ * hängt dort kein Hörer mehr, also schreibt MapLibre selbst in die Konsole.
+ * Ein `map.on('error', …)` greift deshalb nicht — das war geprüft, es wird nie
+ * aufgerufen. Ein Hörer direkt am scheidenden Stil greift.
+ *
+ * Nur der Abbruch wird geschluckt; echte Fehler des alten Stils erscheinen
+ * weiterhin.
+ */
+function stilAbloesen(map: MlMap): void {
+  const stil = (map as unknown as { style?: { on?: (t: string, f: (e: { error?: { name?: string; message?: string } }) => void) => void } }).style;
+  stil?.on?.('error', (e) => {
+    if (istAbbruch(e?.error)) return;
+    console.error(e?.error ?? e);
+  });
+}
+
 /** Kachel-URL eines RainViewer-Radar-Frames (Farbschema 4, geglättet). */
 function radarTileUrl(host: string, path: string): string {
   return `${host}${path}/256/{z}/{x}/{y}/4/1_1.png`;
@@ -1512,8 +1538,24 @@ export function LageMap({
    * Ebenen-Effekte hängen an `ready`; steht es auf false, halten sie still,
    * bis `style.load` sie zusammen mit `styleEpoch` wieder anwirft.
    */
+  /**
+   * **Synchroner** Merker: Zwischen `setStyle` und dem nächsten `style.load`
+   * nimmt MapLibre keine Quellen an.
+   *
+   * `ready` allein genügt dafür nicht. Es ist Zustand, also wirkt es erst mit
+   * dem nächsten Rendern — `setStyle` dagegen wirkt sofort. In der Lücke
+   * dazwischen läuft ein Ebenen-Effekt noch mit dem alten `ready === true`,
+   * sein `addSource` fliegt mit „Style is not done loading" auf, und weil das
+   * eine unbehandelte Ausnahme im Effekt ist, räumt React den ganzen Baum ab:
+   * schwarze Seite statt fehlender Ebene. Auf schmalen Geräten ließ sich das
+   * zuverlässig auslösen. Ein Ref wirkt sofort und schließt die Lücke.
+   */
+  const styleLaedt = useRef(false);
+
   const applyStyle = useCallback((map: MlMap, style: StyleSpecification) => {
     setReady(false);
+    styleLaedt.current = true;
+    stilAbloesen(map);
     map.setStyle(style, { diff: false });
   }, []);
   const [styleEpoch, setStyleEpoch] = useState(0);
@@ -1700,6 +1742,30 @@ export function LageMap({
       // einzige Möglichkeit, ein Bild der Karte zu bekommen.
       preserveDrawingBuffer: true,
     });
+    /*
+     * Ebenen-Aufrufe, die während eines Stilwechsels still bleiben.
+     *
+     * Vierzig Effekte rufen `addSource`/`addLayer`; jeden einzeln zu sichern
+     * hieße, den Schutz vierzigmal richtig hinschreiben zu müssen — einer wäre
+     * vergessen. Hier steht er **einmal**, an der Stelle, an der die Aufrufe
+     * ohnehin alle vorbeikommen. Übersprungene Aufrufe gehen nicht verloren:
+     * `style.load` zählt `styleEpoch` hoch, daran hängen alle Ebenen-Effekte,
+     * und sie bauen sich unmittelbar danach neu auf — genau der Weg, den die
+     * Karte nach jedem Stilwechsel ohnehin geht.
+     */
+    for (const name of ['addSource', 'addLayer', 'removeLayer', 'removeSource', 'setLayoutProperty', 'setFilter'] as const) {
+      const original = map[name].bind(map) as (...a: unknown[]) => unknown;
+      (map as unknown as Record<string, unknown>)[name] = (...args: unknown[]) =>
+        styleLaedt.current ? map : original(...args);
+    }
+
+    // Fehler der Karte selbst: alles außer dem erwarteten Abbruch (siehe
+    // `stilAbloesen`) soll weiterhin auffallen.
+    map.on('error', (e: { error?: { name?: string; message?: string } }) => {
+      if (istAbbruch(e?.error)) return;
+      console.error(e?.error ?? e);
+    });
+
     currentBase.current = baseUrl ?? '';
     styleUrl.current = baseUrl;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -1814,6 +1880,9 @@ export function LageMap({
     }
     // Nach jedem (Neu-)Laden des Styles die Overlays neu auflegen.
     map.on('style.load', () => {
+      // Zuerst der Merker, dann die Zustände: Ab hier nimmt MapLibre wieder
+      // Quellen an, und die Effekte hinter `styleEpoch` dürfen loslegen.
+      styleLaedt.current = false;
       setStyleEpoch((n) => n + 1);
       attributionEinklappen();
     });
@@ -1852,6 +1921,7 @@ export function LageMap({
     mapRef.current = map;
     return () => {
       clearTimeout(debounce);
+      stilAbloesen(map);
       map.remove();
       mapRef.current = null;
       setReady(false);
@@ -4046,11 +4116,14 @@ export function LageMap({
       const s = index != null ? satellites[index] : undefined;
       if (!s) return;
       const line = (label: string, value: string) =>
-        `<div class="wp-row"><span>${label}</span><b>${value}</b></div>`;
+        `<div class="wp-row"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+      // `s.name` ist der rohe Satellitenname aus dem TLE-Text von Celestrak.
+      // Es war die einzige Kartenblase ohne `esc()` — fremder Text ging hier
+      // unkodiert in `setHTML`.
       warnPopup.current!
         .setLngLat(e.lngLat)
         .setHTML(
-          `<div class="warnpop"><h4>${s.name}</h4>` +
+          `<div class="warnpop"><h4>${esc(s.name)}</h4>` +
             line('Höhe', `${s.altitudeKm} km`) +
             line('Entfernung', `${s.rangeKm} km`) +
             line(
@@ -4160,48 +4233,219 @@ export function LageMap({
         return out.toDataURL('image/png');
       },
       sheet: async () => {
-        // Für das Papier auf den hellen Stil wechseln und danach zurück. Ein
-        // Filter über dem dunklen Bild wäre billiger, gibt aber nur graue Soße:
-        // Beschriftungen kippen ins Negative, Wald wird rosa.
-        const restoreDark = dark;
-        if (dark) {
-          await new Promise<void>((resolve) => {
-            const done = () => {
-              map.off('idle', done);
-              resolve();
-            };
-            map.on('idle', done);
-            map.setStyle(buildStyle(styleUrl.current, false), { diff: false });
-            // Nicht ewig warten: ohne Netz lädt der Stil vielleicht nie fertig.
-            window.setTimeout(done, 4000);
-          });
-        }
-        const canvas = map.getCanvas();
-        map.triggerRepaint();
-        const url = canvas.toDataURL('image/png');
-        if (restoreDark) map.setStyle(buildStyle(styleUrl.current, true), { diff: false });
-        // Das Bild hat Geräte-Bildpunkte, die Projektion der Karte rechnet in
-        // CSS-Punkten — der Faktor dazwischen ist genau dieses Verhältnis.
-        const ratio = canvas.width / Math.max(1, map.getContainer().clientWidth);
-        const c = map.getCenter();
-        return {
-          url,
-          width: canvas.width,
-          height: canvas.height,
-          center: { lat: c.lat, lon: c.lng },
-          zoom: map.getZoom(),
-          bearing: map.getBearing(),
-          project: (lat: number, lon: number) => {
-            const p = map.project([lon, lat]);
-            return { x: p.x * ratio, y: p.y * ratio };
-          },
-          unproject: (x: number, y: number) => {
-            const g = map.unproject([x / ratio, y / ratio]);
-            return { lat: g.lat, lon: g.lng };
-          },
-          metersPerPixel:
-            (156543.03392 * Math.cos((c.lat * Math.PI) / 180)) / 2 ** map.getZoom() / ratio,
+        /*
+         * Ein Blatt im **festen Querformat**.
+         *
+         * Vorher erbte das Bild die Form der Kartenfläche. Am Rechner war das
+         * zufällig brauchbar, auf einem Handy kam ein hochkanter Streifen
+         * heraus, der auf A4 nur noch 103 mm breit war — halbes Blatt Papier
+         * für nichts. Ein gedrucktes Kartenblatt hat ein Format, und zwar
+         * unabhängig davon, womit es erzeugt wurde.
+         *
+         * Dafür wird die Kartenfläche **kurz** auf das Zielformat gebracht,
+         * abgelichtet und wieder zurückgestellt. Der Ausschnitt bleibt um die
+         * Mitte zentriert, Zoom und Drehung bleiben stehen; ein geneigter
+         * Blick (3D) wird flach gelegt, weil ein Gitter auf einer gekippten
+         * Ansicht nichts Sinnvolles ergibt.
+         */
+        const container = map.getContainer();
+        // Obergrenze fürs fertige Bild: 1800 Punkte auf 180 mm sind rund
+        // 250 dpi — mehr trägt kein Druck, weniger sieht man.
+        const ZIEL_PX = 1800;
+        const SEITE = Math.SQRT2; // dieselbe Form wie ein DIN-Blatt quer
+
+        /*
+         * Wie groß wird abgelichtet?
+         *
+         * Die **längere** Kante der Kartenfläche gibt die Breite vor. Damit
+         * bleibt der Maßstab so, wie der Nutzer ihn eingestellt hat — er hat
+         * den Zoom mit Absicht gewählt, und ein Blatt, das plötzlich die
+         * doppelte Gegend zeigt, ist nicht das, was er gesehen hat. Quer wird
+         * es trotzdem: Die Höhe folgt dem Seitenverhältnis, nicht dem Gerät.
+         */
+        const alteB = container.clientWidth || 900;
+        const alteH = container.clientHeight || 600;
+        const zielCssB = Math.round(Math.min(2000, Math.max(480, Math.max(alteB, alteH))));
+        const zielCssH = Math.round(zielCssB / SEITE);
+
+        // Alles merken, was gleich verstellt wird.
+        const alterStil = container.getAttribute('style') ?? '';
+        const alterPitch = map.getPitch();
+
+        container.style.position = 'fixed';
+        container.style.left = '0';
+        container.style.top = '0';
+        container.style.width = `${zielCssB}px`;
+        container.style.height = `${zielCssH}px`;
+        // Hinter der Oberfläche, aber nicht `display:none` — eine nicht
+        // dargestellte Fläche zeichnet WebGL nicht, und dann bliebe das Bild leer.
+        container.style.zIndex = '0';
+        if (alterPitch !== 0) map.setPitch(0);
+        map.resize();
+
+        const zurueck = () => {
+          container.setAttribute('style', alterStil);
+          if (alterPitch !== 0) map.setPitch(alterPitch);
+          map.resize();
         };
+
+        try {
+          // Für das Papier auf den hellen Stil wechseln; zurück geht es im
+          // `finally`. Ein Filter über dem dunklen Bild wäre billiger, gibt aber
+          // nur graue Soße: Beschriftungen kippen ins Negative, Wald wird rosa.
+          if (dark) {
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                map.off('idle', done);
+                resolve();
+              };
+              map.on('idle', done);
+              styleLaedt.current = true;
+              stilAbloesen(map);
+              map.setStyle(buildStyle(styleUrl.current, false), { diff: false });
+              // Nicht ewig warten: ohne Netz lädt der Stil vielleicht nie fertig.
+              // Acht statt vier Sekunden — auf einem langsamen Gerät sind die
+              // Schriften der Karte sonst noch unterwegs, und das Blatt kam ohne
+              // einen einzigen Ortsnamen heraus. Wer offline ist, wartet dafür
+              // einmalig etwas länger auf ein Blatt, das er sowieso ausdruckt.
+              window.setTimeout(done, 8000);
+            });
+          } else {
+            // Auch ohne Stilwechsel muss die neue Größe erst fertig gezeichnet
+            // sein — sonst zeigt das Blatt die halbe Karte.
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                map.off('idle', done);
+                resolve();
+              };
+              map.on('idle', done);
+              window.setTimeout(done, 8000);
+            });
+          }
+
+          const canvas = map.getCanvas();
+          /*
+           * Erst zeichnen lassen, dann lesen. `triggerRepaint` bestellt das Bild
+           * für den **nächsten** Durchgang; liest man sofort danach aus, bekommt
+           * man den Stand davor — nach einem Stilwechsel also unter Umständen
+           * eine halb aufgebaute Karte.
+           */
+          await new Promise<void>((resolve) => {
+            map.once('render', () => requestAnimationFrame(() => resolve()));
+            map.triggerRepaint();
+            window.setTimeout(resolve, 1500);
+          });
+
+          /*
+           * Fürs Papier verkleinern. Auf einem Handy hat die Leinwand bei
+           * dreifacher Punktdichte schnell mehrere Megabyte als Daten-URL, und
+           * genau daran scheiterte dort die Anzeige — das Blatt zeigte dann das
+           * Gitter, aber kein Kartenbild.
+           */
+          const faktor = Math.min(1, ZIEL_PX / Math.max(canvas.width, canvas.height));
+          let url: string;
+          if (faktor < 1) {
+            const klein = document.createElement('canvas');
+            klein.width = Math.round(canvas.width * faktor);
+            klein.height = Math.round(canvas.height * faktor);
+            const ctx = klein.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(canvas, 0, 0, klein.width, klein.height);
+              url = klein.toDataURL('image/png');
+            } else {
+              url = canvas.toDataURL('image/png');
+            }
+          } else {
+            url = canvas.toDataURL('image/png');
+          }
+
+          /*
+           * Die Abbildung Ort ↔ Bildpunkt wird **hier festgehalten**, nicht an
+           * die laufende Karte gehängt.
+           *
+           * Der Grund steht eine Zeile weiter unten: Gleich bekommt die Karte
+           * ihre alte Größe zurück. Ein `map.project` im fertigen Blatt würde
+           * dann gegen den wiederhergestellten Ausschnitt rechnen, und das
+           * Gitter läge quer über der Karte. Also wird der Zustand des Bildes
+           * eingefroren und die Umrechnung selbst gemacht — reine
+           * Mercator-Geometrie, wie MapLibre sie auch benutzt.
+           */
+          const mitte = map.getCenter();
+          const zoom = map.getZoom();
+          const drehung = map.getBearing();
+          const breitePx = canvas.width;
+          const hoehePx = canvas.height;
+          // Bildpunkte je CSS-Punkt: Das Bild ist in Gerätepunkten, die
+          // Mercator-Rechnung unten in CSS-Punkten.
+          const ratio = breitePx / Math.max(1, container.clientWidth);
+
+          const RAD = Math.PI / 180;
+          /** Weltbreite in CSS-Punkten. MapLibre rechnet mit **512er**-Kacheln. */
+          const weltPx = 512 * 2 ** zoom;
+          const weltX = (lon: number) => ((lon + 180) / 360) * weltPx;
+          const weltY = (lat: number) => {
+            const s = Math.sin(Math.max(-85.051129, Math.min(85.051129, lat)) * RAD);
+            return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * weltPx;
+          };
+          const mx = weltX(mitte.lng);
+          const my = weltY(mitte.lat);
+          const b = drehung * RAD;
+          const cosB = Math.cos(b);
+          const sinB = Math.sin(b);
+          const halbB = breitePx / 2;
+          const halbH = hoehePx / 2;
+
+          const project = (lat: number, lon: number) => {
+            const dx = weltX(lon) - mx;
+            const dy = weltY(lat) - my;
+            return {
+              x: (dx * cosB + dy * sinB) * ratio + halbB,
+              y: (-dx * sinB + dy * cosB) * ratio + halbH,
+            };
+          };
+          const unproject = (x: number, y: number) => {
+            const sx = (x - halbB) / ratio;
+            const sy = (y - halbH) / ratio;
+            const dx = sx * cosB - sy * sinB;
+            const dy = sx * sinB + sy * cosB;
+            const lon = ((mx + dx) / weltPx) * 360 - 180;
+            const n = Math.PI - (2 * Math.PI * (my + dy)) / weltPx;
+            return { lat: (180 / Math.PI) * Math.atan(Math.sinh(n)), lon };
+          };
+
+          /*
+           * Meter je Bildpunkt.
+           *
+           * **Achtung, hier steckte ein Fehler um Faktor zwei:** Die verbreitete
+           * Konstante 156543,034 gilt für 256er-Kacheln, MapLibre rechnet aber
+           * mit 512ern. Der aufgedruckte Maßstab war dadurch doppelt so groß
+           * angegeben wie er ist, und die Maßstabsleiste halb so lang gezeichnet
+           * wie ein Gitterfeld. Auf einem Blatt, an dem jemand Entfernungen
+           * abgreift, ist das kein Schönheitsfehler.
+           */
+          const metersPerPixel =
+            (40075016.686 * Math.cos(mitte.lat * RAD)) / weltPx / ratio;
+
+          return {
+            url,
+            width: breitePx,
+            height: hoehePx,
+            center: { lat: mitte.lat, lon: mitte.lng },
+            zoom,
+            bearing: drehung,
+            project,
+            unproject,
+            metersPerPixel,
+          };
+        } finally {
+          // Was auch schiefgeht: Die Karte bekommt ihre Form zurück.
+          zurueck();
+          if (dark) {
+            styleLaedt.current = true;
+            stilAbloesen(map);
+            map.setStyle(buildStyle(styleUrl.current, true), { diff: false });
+          }
+        }
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

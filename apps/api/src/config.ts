@@ -35,6 +35,24 @@ function parseBbox(raw: string | undefined): [[number, number], [number, number]
   ];
 }
 
+/**
+ * `TRUST_PROXY` lesen. Siehe `trustedProxies` unten für die Formen.
+ * Unbrauchbare Einträge fliegen still heraus — ein Tippfehler darf den Start
+ * nicht verhindern, aber er darf auch kein Vertrauen erschleichen.
+ */
+export type TrustedProxies = { mode: 'none' } | { mode: 'all' } | { mode: 'list'; entries: string[] };
+
+function parseTrustedProxies(raw: string | undefined): TrustedProxies {
+  const value = (raw ?? '').trim();
+  if (!value || value === '0') return { mode: 'none' };
+  if (value === '1' || value.toLowerCase() === 'all') return { mode: 'all' };
+  const entries = value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return entries.length ? { mode: 'list', entries } : { mode: 'none' };
+}
+
 /** Laufzeit-Konfiguration aus Umgebungsvariablen (siehe .env.example). */
 export const config = {
   port: Number(process.env.PORT ?? 8787),
@@ -49,14 +67,23 @@ export const config = {
    */
   password: process.env.APP_PASSWORD ?? '',
   /**
-   * Steht ein Reverse-Proxy davor, dem man glauben darf?
+   * Wem darf man `X-Forwarded-For` und `X-Forwarded-Proto` glauben?
    *
-   * **Nur dann** werden `X-Forwarded-For` und `X-Forwarded-Proto` ausgewertet.
-   * Ohne diesen Schalter setzt sie jeder Anfragende selbst — und könnte damit
-   * die Bremse gegen Durchprobieren aushebeln, indem er zu jedem Versuch eine
-   * andere Absenderkennung erfindet. Vorgabe: nicht glauben.
+   * Drei Formen:
+   *   leer / `0`            niemandem (Vorgabe)
+   *   Liste aus IP/CIDR     nur Verbindungen von dort
+   *   `1` / `all`           jeder Verbindung
+   *
+   * **Die Liste ist die richtige Antwort, wenn der Server selbst erreichbar
+   * ist.** Bei `HOST=0.0.0.0` — etwa weil der Proxy auf einem anderen Rechner
+   * steht — kommt man auch an ihm vorbei an den Port. Mit `1` würde dann jeder
+   * seine Absenderkennung selbst bestimmen und könnte die Bremse gegen
+   * Durchprobieren aushebeln, indem er zu jedem Versuch eine andere erfindet.
+   * Trägt man die Adresse des Proxys ein, zählt die Kopfzeile nur auf dem Weg,
+   * der wirklich durch ihn führt; ein direkter Aufruf fällt auf die
+   * Verbindungsadresse zurück.
    */
-  trustProxy: (process.env.TRUST_PROXY ?? '') === '1',
+  trustedProxies: parseTrustedProxies(process.env.TRUST_PROXY),
   /**
    * Fremde Herkünfte, die den Server im Browser ansprechen dürfen (Komma-Liste).
    * **Leer heißt: keine** — Oberfläche und Schnittstelle kommen vom selben

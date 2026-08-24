@@ -156,6 +156,9 @@ async function stationValue(s: Station): Promise<number | null> {
   try {
     const res = await fetch(url, {
       headers: { 'user-agent': 'lagebild/0.1 (+https://github.com/FelixLenz-Code/lagebild)' },
+      // Ohne Frist könnte eine einzige hängende Station den ganzen Abruf
+      // aufhalten — und der läuft über viele Stationen parallel.
+      signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return null;
     const buf = new Uint8Array(await res.arrayBuffer());
