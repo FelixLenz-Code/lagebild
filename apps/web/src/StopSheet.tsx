@@ -15,6 +15,8 @@ interface Props {
   onClose: () => void;
   /** Fahrtweg einer Abfahrt auf die Karte legen. */
   onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
+  /** Eine Abfahrt dauerhaft verfolgen. */
+  onTrack?: (tripId: string) => void;
 }
 
 const KIND_DE: Record<string, string> = {
@@ -55,6 +57,7 @@ export function StopSheet(props: Props) {
           departures={props.departures}
           stopName={stop.name}
           onShowRoute={props.onShowRoute}
+          onTrack={props.onTrack}
         />
       )}
       <p className="sr-hint" style={{ marginTop: 12 }}>

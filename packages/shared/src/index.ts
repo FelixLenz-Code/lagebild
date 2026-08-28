@@ -247,6 +247,13 @@ export interface TransitTripStop {
   cancelled: boolean;
   /** Gleis bzw. Steig, soweit die Fahrplandaten es hergeben. */
   track: string | null;
+  /**
+   * An- und Abfahrt getrennt — nur bei einer verfolgten Fahrt gesetzt. Bei
+   * längeren Aufenthalten sind das zwei verschiedene Zeiten, und genau die
+   * braucht, wer am Bahnsteig auf den Zug wartet.
+   */
+  arrival?: string | null;
+  plannedArrival?: string | null;
 }
 
 /** Der Laufweg einer Fahrt: alle Halte von Start bis Ziel. */
@@ -677,6 +684,87 @@ export interface TransitVehicle {
   towards: string;
   delayMin: number | null;
   realTime: boolean;
+}
+
+/**
+ * Ein Treffer der Fahrtensuche — eine bestimmte Fahrt, die zur Eingabe passt.
+ *
+ * Zwei Herkünfte, die sich für den Suchenden deutlich unterscheiden:
+ * `live` heißt „fährt gerade und steht mit Position auf der Karte",
+ * `stop` heißt „ist an dem genannten Halt für später angekündigt".
+ */
+export interface TransitFind {
+  /** Kennung der Fahrt — damit wird sie verfolgt. */
+  tripId: string;
+  line: string;
+  mode: string;
+  product: string | null;
+  /** Zielbeschilderung bzw. Endhalt der Fahrt. */
+  towards: string;
+  /** Startort der Fahrt, soweit bekannt. */
+  origin: string | null;
+  via: 'live' | 'stop';
+  /** Aktuelle Position (nur bei `via: 'live'`). */
+  lat: number | null;
+  lon: number | null;
+  /** Zuletzt bedienter und nächster Halt (nur bei `via: 'live'`). */
+  lastStop: string | null;
+  nextStop: string | null;
+  /** Halt, an dem der Treffer gefunden wurde (nur bei `via: 'stop'`). */
+  stopName: string | null;
+  /** Abfahrt an diesem Halt (nur bei `via: 'stop'`). */
+  when: string | null;
+  track: string | null;
+  delayMin: number | null;
+  realTime: boolean;
+  cancelled: boolean;
+  /** Entfernung zum Bezugspunkt in Metern (Fahrzeug bzw. Halt). */
+  distanceM: number | null;
+}
+
+/** Wo eine Fahrt im Ablauf steht. */
+export type TransitJourneyState = 'planned' | 'running' | 'done';
+
+/**
+ * Eine verfolgte Fahrt: der ganze Laufweg samt gerechneter Position. Alles,
+ * was die Fahrplandaten zu dieser einen Fahrt hergeben.
+ */
+export interface TransitJourney {
+  tripId: string;
+  line: string;
+  mode: string;
+  product: string | null;
+  /** Zielbeschilderung. */
+  towards: string;
+  origin: string;
+  destination: string;
+  /** Verkehrsunternehmen. */
+  operator: string | null;
+  /** Fahrradmitnahme / Barrierefreiheit, soweit gemeldet (sonst null). */
+  bikes: boolean | null;
+  wheelchair: boolean | null;
+  cancelled: boolean;
+  /** true, wenn zu dieser Fahrt Echtzeitmeldungen vorliegen. */
+  realTime: boolean;
+  /** Verspätung am nächsten Halt (Minuten). */
+  delayMin: number | null;
+  state: TransitJourneyState;
+  /** Gerechnete Position; null, wenn kein Linienzug vorliegt. */
+  position: { lat: number; lon: number; bearing: number } | null;
+  /** Index des nächsten Halts in `stops` (null, wenn die Fahrt durch ist). */
+  nextStopIndex: number | null;
+  /** true, wenn die Fahrt gerade an einem Halt steht. */
+  atStop: boolean;
+  /** Zurückgelegter Anteil der Strecke (0–1). */
+  progress: number;
+  /** Planmäßige Abfahrt am Start und Ankunft am Ziel. */
+  startTime: string | null;
+  endTime: string | null;
+  stops: TransitTripStop[];
+  /** Linienzug [lon, lat] der ganzen Fahrt. */
+  geometry: [number, number][];
+  /** Zeitpunkt, für den die Position gerechnet wurde. */
+  at: string;
 }
 
 /** Eine Blitzentladung (Blitzortung.org). */

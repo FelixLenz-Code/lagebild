@@ -16,6 +16,8 @@ export function DepartureBoard(props: {
   stopName?: string;
   /** Fahrtweg dieser Fahrt auf die Karte legen (schließt das Blatt). */
   onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
+  /** Diese Fahrt dauerhaft verfolgen. */
+  onTrack?: (tripId: string) => void;
 }) {
   const [open, setOpen] = useState<TransitDeparture | null>(null);
   const [trip, setTrip] = useState<TransitTrip | null>(null);
@@ -51,6 +53,7 @@ export function DepartureBoard(props: {
         stopName={props.stopName}
         onBack={() => setOpen(null)}
         onShowRoute={props.onShowRoute}
+        onTrack={props.onTrack}
       />
     );
   }
@@ -103,6 +106,7 @@ function TripView(props: {
   stopName?: string;
   onBack: () => void;
   onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
+  onTrack?: (tripId: string) => void;
 }) {
   const { departure, trip } = props;
   const kind = kindOfProduct(departure.product);
@@ -134,15 +138,24 @@ function TripView(props: {
         <span className="trip-dir">→ {departure.direction}</span>
       </div>
 
-      {!!trip?.geometry.length && props.onShowRoute && (
+      {(!!trip?.geometry.length || departure.tripId) && (
         <div className="rp-actions" style={{ marginBottom: 12 }}>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => props.onShowRoute!(departure, trip)}
-          >
-            Fahrtweg auf der Karte
-          </button>
+          {!!trip?.geometry.length && props.onShowRoute && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => props.onShowRoute!(departure, trip)}
+            >
+              Fahrtweg auf der Karte
+            </button>
+          )}
+          {/* Verfolgen ist mehr als anzeigen: Die Fahrt bleibt danach mit
+              Position und Verspätung im Blick, auch wenn dieses Blatt zu ist. */}
+          {departure.tripId && props.onTrack && (
+            <button type="button" className="btn-quiet" onClick={() => props.onTrack!(departure.tripId!)}>
+              Fahrt verfolgen
+            </button>
+          )}
         </div>
       )}
 

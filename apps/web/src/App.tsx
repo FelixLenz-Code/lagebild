@@ -13,7 +13,7 @@ import type {
   WarningFeature,
 } from '@lagebild/shared';
 import { FEDERAL_STATES } from '@lagebild/shared';
-import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchBlaulicht, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchBosAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchFireWater, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, fetchAvalanche, fetchAvalancheRegions, type Bbox } from './api.js';
+import { DEFAULT_COORDS, fetchWeather, fetchForecast, fetchWarnings, fetchTraffic, fetchPegel, fetchNews, fetchBlaulicht, fetchAir, fetchRadar, fetchRadarForecast, fetchAircraft, fetchBosAircraft, fetchVessels, fetchAprs, fetchWind, fetchTransit, fetchStops, fetchStopDepartures, fetchTrip, fetchPlan, fetchHfSpace, fetchHfMuf, fetchVehicles, fetchJourney, fetchLightning, fetchNina, fetchFires, fetchRadiation, fetchRest, fetchWebcams, fetchRescue, fetchFireWater, fetchPollen, fetchQuakes, fetchAurora, fetchFireDanger, fetchHealth, fetchMaps, fetchAvalanche, fetchAvalancheRegions, type Bbox } from './api.js';
 import { useApi } from './useApi.js';
 import { withCache } from './cache.js';
 import { LageMap, type ActiveLayers, type MapApi } from './LageMap.js';
@@ -41,6 +41,7 @@ import { EMERGENCY_CATEGORIES } from './rescueSearch.js';
 import { LocationSheet } from './LocationSheet.js';
 import { StopSheet } from './StopSheet.js';
 import { VehicleSheet } from './VehicleSheet.js';
+import { TrackSheet } from './TrackSheet.js';
 import { HfBands, HfDetail } from './HfPanel.js';
 import { BlaulichtIcon, NewsIcon } from './NewsIcon.js';
 import { HfPathSheet } from './HfPathSheet.js';
@@ -161,6 +162,7 @@ const MORE_TOOLS: { key: string; label: string; hint: string; path: string }[] =
   { key: 'kompass', label: 'Kompass und Peilung', hint: 'Richtung halten, Kreuzpeilung', path: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M15 9l-2 5-5 2 2-5z' },
   { key: 'gefahrgut', label: 'Gefahrgut nachschlagen', hint: 'orangefarbene Tafel: Abstände, Betroffene, Fluchtweg', path: 'M12 3 2 20h20zM12 9v5M12 17.2v.2' },
   { key: 'logbuch', label: 'Einsatz-Logbuch', hint: 'nur während eines Einsatzes — Ereignisse mit Uhrzeit', path: 'M6 3h11a2 2 0 0 1 2 2v16H8a2 2 0 0 1-2-2zM6 7h13M10 11h6M10 15h4' },
+  { key: 'verfolgen', label: 'Fahrt verfolgen', hint: 'Bus, Tram oder Zug suchen und live mitfahren', path: 'M8 3h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2M6 9h12M9 21l-2-3M15 21l2-3M9.5 14.5h.2M14.3 14.5h.2' },
   { key: 'spur', label: 'Spur aufzeichnen', hint: 'Weg mitschreiben, als GPX sichern', path: 'M5 19c4 0 3-7 7-7s3-7 7-7' },
   { key: 'teilen', label: 'Karte teilen', hint: 'Ausschnitt und Ebenen als Link', path: 'M6 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M18 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M18 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M8 10.5l8-4M8 13.5l8 4' },
   { key: 'offline', label: 'Offline-Regionen', hint: 'Karte, Routing und Suche ins Gerät laden', path: 'M12 3v11M12 14l-4-4M12 14l4-4M5 20h14' },
@@ -900,6 +902,51 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     () => (vehicle ? (vehicles.data?.data.find((v) => v.id === vehicle.id) ?? vehicle) : null),
     [vehicle, vehicles.data],
   );
+
+  /* ---------- Eine bestimmte Fahrt verfolgen ---------- */
+
+  /**
+   * Anders als beim angetippten Fahrzeug hängt die verfolgte Fahrt **nicht am
+   * Kartenausschnitt**: Ihre Position wird aus ihrem eigenen Fahrplan
+   * gerechnet. Sie bleibt damit auch dann richtig, wenn die Ebene aus ist oder
+   * der Zug längst aus dem Bild gefahren ist — genau darum geht es beim
+   * Verfolgen.
+   */
+  const [journeyOpen, setJourneyOpen] = useState(false);
+  const [trackId, setTrackId] = useState<string | null>(null);
+  /** Soll die Karte der Fahrt nachziehen? */
+  const [trackFollow, setTrackFollow] = useState(false);
+  const journeyState = useApi(
+    `journey:${trackId ?? ''}`,
+    () => (trackId ? fetchJourney(trackId).then((r) => r.data) : Promise.resolve(null)),
+    [trackId],
+    { enabled: !!trackId, refreshMs: 15000, cache: false },
+  );
+  const journey = journeyState.data;
+
+  /** Eine Fahrt in Verfolgung nehmen — von der Suche oder aus einem Blatt. */
+  const startTracking = useCallback((tripId: string) => {
+    setTrackId(tripId);
+    setJourneyOpen(true);
+    // Zwei Fahrtwege gleichzeitig wären auf der Karte nicht zu unterscheiden.
+    setVehicle(null);
+    setStopTrip(null);
+    setTripFit((n) => n + 1);
+  }, []);
+  const stopTracking = useCallback(() => {
+    setTrackId(null);
+    setTrackFollow(false);
+  }, []);
+
+  // Karte nachziehen, solange „folgen" eingeschaltet ist. Abhängig nur von den
+  // Koordinaten: Jede Auffrischung liefert ein neues Objekt, aber nicht
+  // zwangsläufig eine neue Stelle — sonst ruckelte die Karte ohne Anlass.
+  const followLat = trackFollow ? (journey?.position?.lat ?? null) : null;
+  const followLon = trackFollow ? (journey?.position?.lon ?? null) : null;
+  useEffect(() => {
+    if (followLat == null || followLon == null) return;
+    setFlyTo({ lat: followLat, lon: followLon, zoom: 13, key: Date.now() });
+  }, [followLat, followLon]);
 
   /* ---------- Routenplanung (rein lokal) ---------- */
   const [destination, setDestination] = useState<(Place & { category?: string }) | null>(null);
@@ -1759,6 +1806,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     kompass: () => setCompassOpen(true),
     logbuch: () => setMissionOpen(true),
     gefahrgut: () => setHazmatAt({ point: coords, label: 'Mein Standort' }),
+    verfolgen: () => setJourneyOpen(true),
     spur: () => setTrackOpen(true),
     teilen: () => setShareOpen(true),
     offline: () => setRegionsOpen(true),
@@ -1919,23 +1967,48 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             stops={stopPoints}
             vehicles={vehicles.data?.data ?? []}
             onVehicleClick={selectVehicle}
-            onTripOpen={() => (vehicle ? setVehicleSheet(true) : setTripFit((n) => n + 1))}
+            onTripOpen={() =>
+              trackId
+                ? setJourneyOpen(true)
+                : vehicle
+                  ? setVehicleSheet(true)
+                  : setTripFit((n) => n + 1)
+            }
             onTripClear={() => {
               setVehicle(null);
               setStopTrip(null);
+              stopTracking();
             }}
             vehicleTrip={
-              vehicleNow && vehicleTripState.data?.geometry.length
+              // Die verfolgte Fahrt hat Vorrang: Sie ist die eine, die im Blick
+              // bleiben soll — auch bei ausgeschalteter Fahrzeugebene.
+              journey?.geometry.length
                 ? {
-                    geometry: vehicleTripState.data.geometry,
-                    at: { lat: vehicleNow.lat, lon: vehicleNow.lon },
-                    color: STOP_COLOR[kindOfProduct(vehicleNow.product)] ?? '#1d4e73',
-                    label: vehicleNow.line,
+                    geometry: journey.geometry,
+                    at: journey.position,
+                    color: STOP_COLOR[kindOfProduct(journey.product)] ?? '#1d4e73',
+                    label: journey.line,
                     fitKey: tripFit,
+                    tracking: true,
+                    marker: journey.position
+                      ? {
+                          kind: kindOfProduct(journey.product),
+                          bearing: journey.position.bearing,
+                          line: journey.line,
+                        }
+                      : null,
                   }
-                : stopTrip
-                  ? { ...stopTrip, fitKey: tripFit }
-                  : null
+                : vehicleNow && vehicleTripState.data?.geometry.length
+                  ? {
+                      geometry: vehicleTripState.data.geometry,
+                      at: { lat: vehicleNow.lat, lon: vehicleNow.lon },
+                      color: STOP_COLOR[kindOfProduct(vehicleNow.product)] ?? '#1d4e73',
+                      label: vehicleNow.line,
+                      fitKey: tripFit,
+                    }
+                  : stopTrip
+                    ? { ...stopTrip, fitKey: tripFit }
+                    : null
             }
             emergency={layers.emergency ? (emergencyState.data ?? []) : []}
             quakes={quakes.data?.data ?? []}
@@ -2427,6 +2500,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             </div>
             <TransitDetail
               onShowRoute={showTripOnMap}
+              onTrack={startTracking}
               stops={transitStops}
               onRoute={(name, lat, lon) => startRouteTo({ name, lat, lon })}
             />
@@ -2888,6 +2962,30 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
         />
       )}
 
+      {journeyOpen && (
+        <TrackSheet
+          coords={coords}
+          viewport={viewport}
+          online={online}
+          journey={journey}
+          tracking={trackId}
+          loading={journeyState.loading}
+          follow={trackFollow}
+          onTrack={startTracking}
+          onStopTracking={stopTracking}
+          onFollowChange={setTrackFollow}
+          onShowOnMap={() => {
+            setJourneyOpen(false);
+            setTripFit((n) => n + 1);
+          }}
+          onRouteToStop={(stop) => {
+            startRouteTo({ name: stop.name, lat: stop.lat, lon: stop.lon });
+            setJourneyOpen(false);
+          }}
+          onClose={() => setJourneyOpen(false)}
+        />
+      )}
+
       {vehicle && vehicleSheet && (
         <VehicleSheet
           vehicle={vehicleNow ?? vehicle}
@@ -2897,6 +2995,10 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           onShowOnMap={() => {
             setVehicleSheet(false);
             setTripFit((n) => n + 1);
+          }}
+          onTrack={(tripId) => {
+            setVehicleSheet(false);
+            startTracking(tripId);
           }}
           onRouteToStop={(stop) => {
             startRouteTo({ name: stop.name, lat: stop.lat, lon: stop.lon });
@@ -2922,6 +3024,10 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             setStopDetail(null);
           }}
           onShowRoute={showTripOnMap}
+          onTrack={(tripId) => {
+            setStopDetail(null);
+            startTracking(tripId);
+          }}
           onClose={() => setStopDetail(null)}
         />
       )}
@@ -2961,6 +3067,10 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           {detail === 'transit' && (
             <TransitDetail
               onShowRoute={showTripOnMap}
+              onTrack={(tripId) => {
+                setDetail(null);
+                startTracking(tripId);
+              }}
               stops={transitStops}
               onRoute={(name, lat, lon) => startRouteTo({ name, lat, lon })}
             />

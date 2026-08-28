@@ -1033,6 +1033,14 @@ interface Props {
     label: string;
     /** Zählt hoch, wenn der Rest der Fahrt ins Bild gerückt werden soll. */
     fitKey: number;
+    /**
+     * Wird die Fahrt verfolgt, steht sie mit eigener Marke auf der Karte —
+     * unabhängig davon, ob die Fahrzeugebene an ist und ob das Fahrzeug im
+     * Ausschnitt liegt.
+     */
+    marker?: { kind: string; bearing: number; line: string } | null;
+    /** true, wenn die Fahrt verfolgt wird (Band und Marke sagen es dann auch). */
+    tracking?: boolean;
   } | null;
   /** Fahrplan der gewählten Fahrt wieder öffnen. */
   onTripOpen: () => void;
@@ -3105,6 +3113,77 @@ export function LageMap({
     src.setData({ type: 'FeatureCollection', features });
   }, [vehicleTrip, ready, styleEpoch]);
 
+  /**
+   * Marke der verfolgten Fahrt. Bewusst eine eigene Ebene und nicht die
+   * Fahrzeugebene: Die verfolgte Fahrt muss sichtbar bleiben, auch wenn die
+   * Ebene aus ist oder das Fahrzeug gerade außerhalb des Ausschnitts fährt —
+   * und sie ist ab dem ersten Zoomschritt zu sehen, nicht erst ab Zoom 10.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!map.getSource('trackveh')) {
+      map.addSource('trackveh', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'trackveh-halo',
+        type: 'circle',
+        source: 'trackveh',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 9, 14, 17],
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.22,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': ['get', 'color'],
+        },
+      });
+      map.addLayer({
+        id: 'trackveh',
+        type: 'symbol',
+        source: 'trackveh',
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.4, 14, 0.7],
+          'icon-rotate': ['get', 'bearing'],
+          'icon-allow-overlap': true,
+          'icon-rotation-alignment': 'map',
+          'text-field': ['get', 'line'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': dark ? '#e7e7e9' : '#1f2933',
+          'text-halo-color': dark ? '#0f0f10' : '#ffffff',
+          'text-halo-width': 1.6,
+        },
+      });
+    }
+    const src = map.getSource('trackveh') as GeoJSONSource | undefined;
+    if (!src) return;
+    const marker = vehicleTrip?.marker;
+    const at = vehicleTrip?.at;
+    src.setData({
+      type: 'FeatureCollection',
+      features:
+        marker && at
+          ? [
+              {
+                type: 'Feature',
+                properties: {
+                  icon: `veh-${marker.kind}`,
+                  bearing: marker.bearing,
+                  line: marker.line,
+                  color: vehicleTrip!.color,
+                },
+                geometry: { type: 'Point', coordinates: [at.lon, at.lat] },
+              },
+            ]
+          : [],
+    });
+  }, [vehicleTrip, ready, styleEpoch]);
+
   // Den Rest der Fahrt auf Wunsch ins Bild rücken.
   const tripFitKey = vehicleTrip?.fitKey ?? 0;
   useEffect(() => {
@@ -5084,7 +5163,7 @@ export function LageMap({
           <div className="tripbar">
             <button type="button" className="tb-open" onClick={onTripOpen}>
               <span className="tb-dot" style={{ background: vehicleTrip.color }} />
-              Fahrtweg {vehicleTrip.label}
+              {vehicleTrip.tracking ? 'Verfolgt' : 'Fahrtweg'} {vehicleTrip.label}
             </button>
             <button type="button" className="tb-clear" onClick={onTripClear} aria-label="Fahrtweg ausblenden">
               ✕

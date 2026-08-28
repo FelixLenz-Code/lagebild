@@ -1949,3 +1949,48 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
 .cal-sectors { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; }
 .cal-sectors i { display: block; height: 14px; border-radius: 2px; background: var(--surface-2); border: 1px solid var(--line); }
 .cal-sectors i.is-on { background: var(--ok); border-color: var(--ok); }
+
+/* ---------- Fahrt verfolgen ---------- */
+
+/* Der Kopf der verfolgten Fahrt: Linie und der nächste Halt in einer Zeile —
+   das ist die Angabe, für die man das Blatt überhaupt öffnet. */
+.tj-now { display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 10px; }
+.tj-next { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tj-next b { font-size: .92rem; }
+.tj-next span { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Fortschrittsbalken der Fahrt. */
+.tj-bar { height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.tj-bar i { display: block; height: 100%; background: var(--accent); }
+.tj-ends { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; font-size: .72rem; color: var(--muted); }
+.tj-ends span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tj-ends span:last-child { text-align: right; }
+
+/* Stammdaten der Fahrt als Beschreibungsliste — zwei Spalten, damit die
+   Bezeichnungen untereinander stehen und der Blick nicht springt. */
+.tj-data { margin: 0 0 14px; display: flex; flex-direction: column; }
+.tj-data > div { display: flex; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); font-size: .82rem; }
+.tj-data > div:first-child { border-top: none; }
+.tj-data dt { flex: none; width: 104px; color: var(--muted); font-size: .78rem; }
+.tj-data dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* Abzeichen „Wonach kann ich suchen?" samt aufgeklappter Erklärung. */
+.tj-helprow { display: flex; margin: -4px 0 12px; }
+.tj-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; font-size: .72rem; font-weight: 600; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 999px; cursor: pointer; }
+.tj-badge svg { width: 14px; height: 14px; flex: none; }
+.tj-badge:hover { color: var(--ink); }
+.tj-badge.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tj-help { margin: 0 0 14px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); display: flex; flex-direction: column; gap: 8px; }
+.tj-help > div { display: flex; flex-direction: column; gap: 2px; }
+.tj-help dt { margin: 0; }
+.tj-help dd { margin: 0; font-size: .74rem; line-height: 1.45; color: var(--muted); }
+/* Das Beispiel ist antippbar — es landet dann im Suchfeld. */
+.tj-example { font: inherit; font-size: .78rem; font-weight: 650; font-family: var(--mono, ui-monospace, monospace); color: var(--accent); background: transparent; border: none; padding: 0; cursor: pointer; text-align: left; }
+.tj-example::before { content: '„'; }
+.tj-example::after { content: '"'; }
+.tj-example:hover { text-decoration: underline; }
+
+/* Eingeschaltetes „Karte folgt". */
+.btn-quiet.is-on { color: var(--accent); text-decoration-thickness: 2px; }
+/* Ausfall in einer Trefferzeile. */
+.sr-tag.alarm { color: var(--sev3); border-color: color-mix(in srgb, var(--sev3) 45%, transparent); margin-left: 0; margin-right: 6px; }

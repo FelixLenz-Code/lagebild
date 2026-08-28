@@ -33,6 +33,8 @@ import type {
   TransitStopPoint,
   TransitDeparture,
   TransitTrip,
+  TransitFind,
+  TransitJourney,
   TransitItinerary,
   Aircraft,
   AircraftDetails,
@@ -130,6 +132,21 @@ export const fetchRadarForecast = (c: Coords, distanceM = 150000): Promise<ApiEn
 /** Fahrzeuge des öffentlichen Verkehrs im Ausschnitt (Position geschätzt). */
 export const fetchVehicles = (b: Bbox): Promise<ApiEnvelope<TransitVehicle[]>> =>
   getJson(`/api/vehicles?${bboxQ(b)}`);
+
+/**
+ * Eine bestimmte Linie suchen — „RE 1", „25 ab Bremen Hbf", „ICE 1044".
+ * Der Ausschnitt bestimmt, wie weit im Umkreis nach Bussen gesucht wird.
+ */
+export const fetchFindVehicle = (
+  query: string,
+  c: Coords,
+  b?: Bbox | null,
+): Promise<ApiEnvelope<TransitFind[]>> =>
+  getJson(`/api/vehicles/find?q=${encodeURIComponent(query)}&${q(c)}${b ? `&${bboxQ(b)}` : ''}`);
+
+/** Eine Fahrt mit allen Daten und gerechneter Position. */
+export const fetchJourney = (tripId: string): Promise<ApiEnvelope<TransitJourney | null>> =>
+  getJson(`/api/vehicles/journey?id=${encodeURIComponent(tripId)}`);
 
 /** Behördenwarnungen (BBK/NINA), die den Ausschnitt berühren. */
 export const fetchNina = (b: Bbox): Promise<ApiEnvelope<CivilWarning[]>> =>

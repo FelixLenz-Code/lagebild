@@ -10,6 +10,8 @@ interface Props {
   onClose: () => void;
   /** Blatt schließen, Fahrtweg aber auf der Karte lassen und einpassen. */
   onShowOnMap: () => void;
+  /** Diese Fahrt dauerhaft verfolgen (mit allen Daten und Position). */
+  onTrack: (tripId: string) => void;
   /** Einen Halt der Fahrt ansteuern. */
   onRouteToStop: (stop: { name: string; lat: number; lon: number }) => void;
 }
@@ -53,13 +55,18 @@ export function VehicleSheet(props: Props) {
         {trip?.direction && <span className="trip-dir">→ {trip.direction}</span>}
       </div>
 
-      {!!trip?.geometry.length && (
-        <div className="rp-actions" style={{ marginBottom: 14 }}>
-          <button type="button" className="btn-primary" onClick={props.onShowOnMap}>
+      <div className="rp-actions" style={{ marginBottom: 14 }}>
+        {/* Verfolgen löst die Fahrt vom Kartenausschnitt: Sie bleibt danach
+            im Blick, auch wenn sie aus dem Bild fährt. */}
+        <button type="button" className="btn-primary" onClick={() => props.onTrack(v.id)}>
+          Diese Fahrt verfolgen
+        </button>
+        {!!trip?.geometry.length && (
+          <button type="button" className="btn-quiet" onClick={props.onShowOnMap}>
             Fahrtweg auf der Karte
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {props.loading && <p className="muted">Fahrplan wird geladen …</p>}
       {props.failed && <p className="muted">Zu dieser Fahrt liegt kein Fahrplan vor.</p>}

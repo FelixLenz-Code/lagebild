@@ -29,6 +29,21 @@ export const MODE_DE: Record<string, string> = {
   OTHER: 'Sonstige',
 };
 
+/**
+ * Bezeichnung des Verkehrsmittels — mit einer Korrektur am Linienkürzel.
+ *
+ * Die Fahrplandaten führen S-Bahnen vielerorts als `METRO`; „S 1" als U-Bahn
+ * zu bezeichnen wäre für jeden Ortskundigen falsch. Verrät das Kürzel die
+ * S-Bahn, hat es Vorrang vor der groben Einstufung der Quelle.
+ */
+export function productOf(mode: string | undefined, line: string | undefined): string | null {
+  const base = MODE_DE[mode ?? ''] ?? null;
+  if ((mode === 'METRO' || mode === 'SUBWAY') && /^R?S\s?\d/i.test((line ?? '').trim())) {
+    return 'S-Bahn';
+  }
+  return base;
+}
+
 /** Grobe Einteilung fürs Kartensymbol. */
 export function stopKind(modes: string[] | undefined): 'bus' | 'tram' | 'rail' | 'ferry' | 'other' {
   const set = new Set(modes ?? []);
@@ -44,6 +59,7 @@ export function stopKind(modes: string[] | undefined): 'bus' | 'tram' | 'rail' |
 
 export interface MotisStopTime {
   place?: {
+    name?: string;
     departure?: string;
     scheduledDeparture?: string;
     track?: string;
@@ -139,4 +155,86 @@ export function decodePolyline(encoded: string, precision = 7): [number, number]
     out.push([lon / factor, lat / factor]);
   }
   return out;
+}
+
+/* ---------- Rechnen auf dem Linienzug ---------- */
+
+/** Kurs von `a` nach `b` in Grad (0 = Nord). */
+export function bearingDeg(a: [number, number], b: [number, number]): number {
+  const RAD = Math.PI / 180;
+  const φ1 = a[1] * RAD;
+  const φ2 = b[1] * RAD;
+  const Δλ = (b[0] - a[0]) * RAD;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Ebener Abstand zweier Punkte in Grad-Einheiten, mit Breitenkorrektur.
+ *
+ * Für die Frage „welcher Anteil der Strecke ist zurückgelegt" genügt ein
+ * ebenes Maß. Ohne den Faktor cos(Breite) wären Ost-West-Abschnitte in
+ * Deutschland aber um rund 40 % zu lang gewichtet — der Zug stünde dann
+ * regelmäßig am falschen Ort.
+ */
+function flatDist(a: [number, number], b: [number, number]): number {
+  const dx = (b[0] - a[0]) * Math.cos((((a[1] + b[1]) / 2) * Math.PI) / 180);
+  const dy = b[1] - a[1];
+  return Math.hypot(dx, dy);
+}
+
+/** Aufsummierte Länge bis zu jedem Stützpunkt (Index 0 = 0). */
+export function cumulativeLengths(line: [number, number][]): number[] {
+  const steps: number[] = [0];
+  for (let i = 1; i < line.length; i++) {
+    steps.push(steps[i - 1]! + flatDist(line[i - 1]!, line[i]!));
+  }
+  return steps;
+}
+
+/** Punkt auf dem Linienzug bei Länge `target` — samt Kurs an dieser Stelle. */
+export function pointAtLength(
+  line: [number, number][],
+  steps: number[],
+  target: number,
+): { lat: number; lon: number; bearing: number } {
+  const clamped = Math.max(0, Math.min(steps[steps.length - 1] ?? 0, target));
+  let idx = 1;
+  while (idx < steps.length - 1 && steps[idx]! < clamped) idx++;
+  const a = line[idx - 1]!;
+  const b = line[idx]!;
+  const span = steps[idx]! - steps[idx - 1]!;
+  const t = span > 0 ? (clamped - steps[idx - 1]!) / span : 0;
+  return {
+    lon: a[0] + (b[0] - a[0]) * t,
+    lat: a[1] + (b[1] - a[1]) * t,
+    bearing: Math.round(bearingDeg(a, b)),
+  };
+}
+
+/**
+ * Wo liegt ein Halt auf dem Linienzug? Gesucht wird der nächstgelegene
+ * Stützpunkt; zurück kommt dessen aufsummierte Länge.
+ *
+ * `from` begrenzt die Suche nach vorn: Ein Linienzug kann dieselbe Stelle
+ * zweimal berühren (Schleifen, Kopfbahnhöfe), und ohne diese Schranke
+ * spränge die Position dort zurück.
+ */
+export function projectOnLine(
+  line: [number, number][],
+  steps: number[],
+  point: [number, number],
+  from = 0,
+): { index: number; length: number } {
+  let best = Infinity;
+  let bestIdx = from;
+  for (let i = from; i < line.length; i++) {
+    const d = flatDist(line[i]!, point);
+    if (d < best) {
+      best = d;
+      bestIdx = i;
+    }
+  }
+  return { index: bestIdx, length: steps[bestIdx] ?? 0 };
 }

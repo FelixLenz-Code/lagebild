@@ -685,12 +685,14 @@ export function TransitDetail({
   stops,
   onRoute,
   onShowRoute,
+  onTrack,
 }: {
   stops: TransitStop[];
   /** Halt anfahren (Routenplanung übernimmt ihn als Ziel). */
   onRoute?: (name: string, lat: number, lon: number) => void;
   /** Fahrtweg einer Abfahrt auf die Karte legen. */
   onShowRoute?: (departure: TransitDeparture, trip: TransitTrip) => void;
+  onTrack?: (tripId: string) => void;
 }) {
   const withData = stops.filter((s) => s.departures.length > 0);
   if (withData.length === 0)
@@ -718,7 +720,12 @@ export function TransitDetail({
               </button>
             )}
           </div>
-          <DepartureBoard departures={s.departures} stopName={s.name} onShowRoute={onShowRoute} />
+          <DepartureBoard
+            departures={s.departures}
+            stopName={s.name}
+            onShowRoute={onShowRoute}
+            onTrack={onTrack}
+          />
         </div>
       ))}
     </div>

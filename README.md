@@ -43,6 +43,10 @@ Kein Konto, keine Anmeldung, keine Tracker.
   Koordinaten in fünf Schreibweisen, dazu **Rettungs- und Notfallpunkte**
 - 🚆 **ÖPNV mit Gleisangabe** — Verbindungen von transitous.org, jede Fahrt mit
   Ein- und Ausstieg, Steig und kurzfristigem Gleiswechsel
+- 🎯 **Eine bestimmte Fahrt verfolgen** — „RE 1", „25 ab Domsheide" oder
+  „ICE 611" eingeben; die Suche geht je nach Kürzel im Umkreis, in der Region
+  oder bundesweit. Die gewählte Fahrt bleibt danach mit Position, Verspätung,
+  nächstem Halt und ganzem Laufweg auf der Karte — auf Wunsch folgt die Karte
 - 🆘 **Notfallblatt** — Nummern, die fünf W-Fragen, der eigene Standort in der
   Schreibweise der Leitstelle, nächste Anlaufstellen **nach Fahrzeit** statt
   Luftlinie. Ohne Netz, druckbar
