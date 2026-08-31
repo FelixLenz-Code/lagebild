@@ -922,7 +922,13 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     [trackId],
     { enabled: !!trackId, refreshMs: 15000, cache: false },
   );
-  const journey = journeyState.data;
+  // `useApi` behält seine Daten, wenn es abgeschaltet wird — gewollt, damit
+  // eine Auffrischung nicht flackert. Beim Beenden der Verfolgung hieße das
+  // aber: Fahrtweg und Marke blieben auf der Karte stehen, und das ✕ am Band
+  // ginge ins Leere. Deshalb zählt hier nur, was zur verfolgten Fahrt gehört —
+  // das deckt zugleich den Wechsel auf eine andere Fahrt ab, deren Daten noch
+  // unterwegs sind.
+  const journey = trackId && journeyState.data?.tripId === trackId ? journeyState.data : null;
 
   /** Eine Fahrt in Verfolgung nehmen — von der Suche oder aus einem Blatt. */
   const startTracking = useCallback((tripId: string) => {
