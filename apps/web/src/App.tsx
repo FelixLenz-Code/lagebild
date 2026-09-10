@@ -1069,6 +1069,22 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const routeCodesKey = routeCodes.join(',');
 
   /**
+   * Dasselbe für den Fluchtweg — der aber **kein Ziel** hat.
+   *
+   * `routeCodes` gibt ohne Ziel eine leere Liste zurück, und das Fluchtblatt
+   * verstand die leere Liste als „keine Region geladen": Es meldete auf jedem
+   * Gerät „kein Routing-Paket gespeichert", auch wenn eines dalag und das
+   * normale Navigieren damit rechnete. Gesucht wird hier stattdessen um die
+   * Gefahrenstelle und den eigenen Standort herum — wohin es geht, entscheidet
+   * erst der Router.
+   */
+  const escapeCodes = useMemo(() => {
+    if (!escapeFrom) return [] as string[];
+    return statesForCorridor(coords, escapeFrom.danger).filter((code) => offlineFiles[code]?.route);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [escapeFrom?.danger.lat, escapeFrom?.danger.lon, coords.lat, coords.lon, offlineFiles]);
+
+  /**
    * Welche Region könnte für einen Punkt fehlen? Nur ein Hinweis für die
    * Fehlermeldung — die Rechtecke der Bundesländer überlappen sich.
    */
@@ -2945,7 +2961,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           danger={escapeFrom.danger}
           label={escapeFrom.label}
           from={coords}
-          codes={routeCodes}
+          codes={escapeCodes}
           initialDistanceM={escapeFrom.minDistanceM}
           windFromDeg={w?.windDirDeg ?? null}
           windKmh={w?.windGustKmh ?? w?.windKmh ?? null}

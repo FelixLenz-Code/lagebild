@@ -20,13 +20,29 @@ export const weatherRoute = new Hono();
 
 const BRIGHT_SKY = 'https://api.brightsky.dev';
 
+/**
+ * `/current_weather` meldet den Wind **nicht** als einen Wert, sondern als
+ * drei: gemittelt über die letzten 10, 30 und 60 Minuten. Die Felder
+ * `wind_speed`, `wind_gust_speed` und `wind_direction` ohne Zusatz gibt es nur
+ * in `/weather` (Vorhersage und Messreihen) — hier waren sie immer `undefined`,
+ * und Geschwindigkeit, Bö und Richtung kamen samt und sonders als `null` in der
+ * App an. Sichtbar wurde das an zwei Stellen: Das Fluchtblatt meldete „keine
+ * Winddaten", und die Gefahrgut-Fahne wurde nie gezeichnet, weil ohne Richtung
+ * keine Fahne zu rechnen ist.
+ */
 interface BrightSkyCurrent {
   weather?: {
     timestamp?: string;
     temperature?: number | null;
-    wind_speed?: number | null;
-    wind_gust_speed?: number | null;
-    wind_direction?: number | null;
+    wind_speed_10?: number | null;
+    wind_speed_30?: number | null;
+    wind_speed_60?: number | null;
+    wind_gust_speed_10?: number | null;
+    wind_gust_speed_30?: number | null;
+    wind_gust_speed_60?: number | null;
+    wind_direction_10?: number | null;
+    wind_direction_30?: number | null;
+    wind_direction_60?: number | null;
     relative_humidity?: number | null;
     precipitation_10?: number | null;
     pressure_msl?: number | null;
@@ -34,6 +50,16 @@ interface BrightSkyCurrent {
     icon?: string | null;
   };
 }
+
+/**
+ * Der erste Wert, den die Station gemeldet hat — 10 Minuten vor 30 vor 60.
+ *
+ * Das kürzeste Fenster ist das aktuellste und damit das, was für eine Absperrung
+ * oder einen Fluchtweg zählt. Fällt es aus (einzelne Stationen melden nur
+ * stündlich), ist ein Wert von vor einer Stunde immer noch besser als keiner.
+ */
+const freshest = (...values: (number | null | undefined)[]): number | null =>
+  values.find((v) => v != null) ?? null;
 
 function toEnvelope(now: WeatherNow): ApiEnvelope<WeatherNow> {
   return { data: now, source: 'Bright Sky (DWD)', fetchedAt: new Date().toISOString() };
@@ -74,14 +100,15 @@ weatherRoute.get('/', async (c) => {
     return c.json({ error: 'Bright Sky nicht erreichbar' }, 502);
   }
   const w = body.weather ?? {};
+  const windKmh = freshest(w.wind_speed_10, w.wind_speed_30, w.wind_speed_60);
   const now: WeatherNow = {
     tempC: w.temperature ?? null,
-    feelsLikeC: apparentTempC(w.temperature, w.relative_humidity, w.wind_speed),
+    feelsLikeC: apparentTempC(w.temperature, w.relative_humidity, windKmh),
     condition: (w.condition as WeatherCondition) ?? null,
     icon: w.icon ?? null,
-    windKmh: w.wind_speed ?? null,
-    windGustKmh: w.wind_gust_speed ?? null,
-    windDirDeg: w.wind_direction ?? null,
+    windKmh,
+    windGustKmh: freshest(w.wind_gust_speed_10, w.wind_gust_speed_30, w.wind_gust_speed_60),
+    windDirDeg: freshest(w.wind_direction_10, w.wind_direction_30, w.wind_direction_60),
     humidityPct: w.relative_humidity ?? null,
     precipitationMm: w.precipitation_10 ?? null,
     pressureHpa: w.pressure_msl ?? null,
