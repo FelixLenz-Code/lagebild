@@ -33,8 +33,17 @@ const WMS = process.env.DIPUL_WMS ?? 'https://uas-betrieb.de/geoservices/dipul/w
 
 /**
  * Die Gebietsarten, die auf die Karte kommen — in der Reihenfolge, in der sie
- * gezeichnet werden. Bewusst ohne `inaktive_temporaere_betriebseinschraenkungen`
- * (abgelaufen) und ohne `haengegleiter` (Hinweis, kein Gebiet).
+ * gezeichnet werden.
+ *
+ * Ausgelassen, und zwar jeweils mit Grund:
+ * `inaktive_temporaere_betriebseinschraenkungen` (abgelaufen),
+ * `haengegleiter` und `modellflugplaetze` (Hinweise auf erlaubten Betrieb, keine
+ * Einschränkung) und die Sammelebenen auf `_zone` (fassen zusammen, was hier
+ * ohnehin einzeln steht).
+ *
+ * Alles andere gehört hinein. `wohngrundstuecke` hatte gefehlt — ausgerechnet
+ * die Gebietsart, die in einer Wohngegend fast das ganze Bild ausmacht und der
+ * häufigste Grund ist, warum ein Start nicht geht.
  */
 const LAYERS = [
   'flugbeschraenkungsgebiete',
@@ -47,6 +56,10 @@ const LAYERS = [
   'naturschutzgebiete',
   'vogelschutzgebiete',
   'ffh-gebiete',
+  // Wohngrundstücke: die größte Fläche im Bild und der Grund, aus dem über der
+  // eigenen Straße nichts geht. Gezeichnet vor den Verkehrswegen und den
+  // punktförmigen Anlagen, damit die weiterhin obenauf liegen.
+  'wohngrundstuecke',
   'bundesautobahnen',
   'bundesstrassen',
   'bahnanlagen',
@@ -62,7 +75,6 @@ const LAYERS = [
   'sicherheitsbehoerden',
   'polizei',
   'justizvollzugsanstalten',
-  'militaerische_anlagen',
   'krankenhaeuser',
   'labore',
   'diplomatische_vertretungen',
@@ -82,6 +94,7 @@ const ART: Record<string, string> = {
   naturschutzgebiete: 'Naturschutzgebiet',
   vogelschutzgebiete: 'Vogelschutzgebiet',
   'ffh-gebiete': 'FFH-Gebiet',
+  wohngrundstuecke: 'Wohngrundstück',
   bundesautobahnen: 'Bundesautobahn',
   bundesstrassen: 'Bundesstraße',
   bahnanlagen: 'Bahnanlage',
@@ -121,6 +134,7 @@ const GRUND: Record<string, string> = {
   naturschutzgebiete: 'Aufstieg und Überflug in der Regel untersagt',
   vogelschutzgebiete: 'Aufstieg und Überflug in der Regel untersagt',
   'ffh-gebiete': 'Aufstieg und Überflug in der Regel untersagt',
+  wohngrundstuecke: 'Überflug nur mit Zustimmung der Bewohner',
   bundesautobahnen: 'Seitlicher Abstand einzuhalten',
   bundesstrassen: 'Seitlicher Abstand einzuhalten',
   bahnanlagen: 'Seitlicher Abstand einzuhalten',
