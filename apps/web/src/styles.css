@@ -57,6 +57,15 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  /*
+   * Kein Doppeltipp-Zoom auf die Seite: In einer Karten-App ist der Doppeltipp
+   * eine Kartengeste, und MapLibre wertet ihn selbst aus. `manipulation`
+   * erlaubt Wischen und Kneifen weiter — den Seitenzoom halten die Kopfzeile
+   * des Dokuments und src/pageZoom.ts auf.
+   */
+  touch-action: manipulation;
+  /* Kein Gummiband am Rand, wenn eine Liste zu Ende gescrollt ist. */
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--ink);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;

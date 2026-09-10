@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Root } from './Root.js';
 import { resolveMapAssets } from './mapStyle.js';
+import { lockPageZoom } from './pageZoom.js';
 import './styles.css';
 
 /*
@@ -20,4 +21,5 @@ const starten = () =>
     </StrictMode>,
   );
 
+lockPageZoom();
 void resolveMapAssets().then(starten, starten);
