@@ -110,10 +110,15 @@ function AreaPeople({ ring, codes }: { ring: [number, number][]; codes: string[]
   }, [codes.join(','), ring.length, ring[0]?.[0], ring[0]?.[1]]);
 
   if (state === 'fehlt') return null;
+  // Der Trenner gehört zur Zahl, nicht zur Zeile: Ohne Einwohnerpaket steht
+  // sonst ein „·" am Ende der Maßangabe, hinter dem nichts mehr kommt.
   return (
-    <span className="dl-people">
-      {state === 'laden' ? '… Einwohner' : `≈ ${(people ?? 0).toLocaleString('de-DE')} Einwohner`}
-    </span>
+    <>
+      {' · '}
+      <span className="dl-people">
+        {state === 'laden' ? '… Einwohner' : `≈ ${(people ?? 0).toLocaleString('de-DE')} Einwohner`}
+      </span>
+    </>
   );
 }
 
@@ -212,10 +217,7 @@ export function DrawList(props: Props) {
                     {KIND_LABEL[f.kind]}
                     {measureOf(f) ? ` · ${measureOf(f)}` : ''}
                     {f.geometry.type === 'Polygon' && (f.geometry.coordinates[0]?.length ?? 0) > 2 && (
-                      <>
-                        {' · '}
-                        <AreaPeople ring={f.geometry.coordinates[0]!} codes={props.popCodes} />
-                      </>
+                      <AreaPeople ring={f.geometry.coordinates[0]!} codes={props.popCodes} />
                     )}
                   </span>
                 </div>

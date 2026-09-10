@@ -14,6 +14,8 @@ import {
   type KemlerReading,
 } from './hazmat.js';
 import { compassPoint } from './compass.js';
+import { circleRing, sectorRing } from './geo.js';
+import { newId, type DrawFeature } from './drawStore.js';
 import { sunAltitude } from './sun.js';
 
 /**
@@ -35,8 +37,8 @@ interface Props {
   /** Windrichtung (Grad, **aus** denen der Wind weht) und Stärke. */
   windFromDeg: number | null;
   windKmh: number | null;
-  /** Gefahrenbereich auf der Karte zeigen. */
-  onShowZone: (zone: HazmatZone | null) => void;
+  /** Gefahrenbereich als eigene Markierungen auf die Karte legen. */
+  onSaveZone: (zone: HazmatZone) => void;
   /** Fluchtrouting mit diesem Radius und dieser Windlage starten. */
   onEscape: (radiusM: number) => void;
   onClose: () => void;
@@ -56,6 +58,61 @@ export interface HazmatZone {
 
 /** Halber Öffnungswinkel der Fahne — wie im Fluchtrouting. */
 export const PLUME_HALF_ANGLE = 35;
+
+const fmtRadius = (m: number): string => (m >= 1000 ? `${(m / 1000).toLocaleString('de-DE', { maximumFractionDigits: 1 })} km` : `${Math.round(m)} m`);
+
+/**
+ * Der Gefahrenbereich als **eigene Markierungen**.
+ *
+ * Absperrkreis und Fahne werden getrennt abgelegt, nicht als ein Gebilde: Sie
+ * gelten verschieden lange (die Fahne dreht mit dem Wind, der Kreis nicht), und
+ * getrennt lässt sich die eine löschen und die andere behalten. Als Fläche
+ * bekommen beide nebenbei, was jede Markierung bekommt — Name, Notiz, Farbe,
+ * Ausblenden, Ausgabe als GPX oder GeoJSON und die Einwohnerschätzung in der
+ * Liste.
+ */
+/**
+ * Zoomstufe, auf der der ganze Bereich ins Bild passt.
+ *
+ * Ohne das landete man nach „Auf die Karte" auf der Übersicht, und ein
+ * Absperrkreis von 60 Metern war dort ein Punkt. Gerechnet über die
+ * Auflösung der Kachelpyramide: Der Durchmesser soll etwa zwei Drittel der
+ * kürzeren Bildschirmseite einnehmen.
+ */
+export function zoneZoom(zone: HazmatZone, viewportPx = 380): number {
+  const radiusM = Math.max(zone.isolationM, zone.downwindM);
+  if (!(radiusM > 0)) return 15;
+  const metersPerPixel = (2 * radiusM) / (viewportPx * 0.66);
+  const z = Math.log2((156543.03 * Math.cos((zone.center.lat * Math.PI) / 180)) / metersPerPixel);
+  return Math.max(10, Math.min(17, Math.round(z * 10) / 10));
+}
+
+export function zoneToDraw(zone: HazmatZone): DrawFeature[] {
+  const features: DrawFeature[] = [
+    {
+      id: newId(),
+      name: `${zone.label} · Absperrkreis ${fmtRadius(zone.isolationM)}`,
+      kind: 'area',
+      color: 'red',
+      geometry: { type: 'Polygon', coordinates: [circleRing(zone.center, zone.isolationM)] },
+      note: `Gefahrgut-Absperrung nach ERG 2024. Angelegt ${new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}.`,
+    },
+  ];
+  if (zone.downwindM > 0 && zone.towardDeg != null) {
+    features.push({
+      id: newId(),
+      name: `${zone.label} · Fahne ${fmtRadius(zone.downwindM)} stromab`,
+      kind: 'area',
+      color: 'orange',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [sectorRing(zone.center, zone.downwindM, zone.towardDeg, PLUME_HALF_ANGLE)],
+      },
+      note: `Windrichtung zum Zeitpunkt des Anlegens: nach ${Math.round(zone.towardDeg)}°. Dreht der Wind, stimmt die Fahne nicht mehr.`,
+    });
+  }
+  return features;
+}
 
 const fmtKm = (km: number) => (km >= 1 ? `${km.toLocaleString('de-DE')} km` : `${Math.round(km * 1000)} m`);
 const fmtPeople = (n: number) => n.toLocaleString('de-DE');
@@ -171,10 +228,7 @@ export function HazmatSheet(props: Props) {
     <Sheet
       title="Gefahrgut"
       meta={hit ? `UN ${hit.material.id}` : 'Tafel eintippen'}
-      onClose={() => {
-        props.onShowZone(null);
-        props.onClose();
-      }}
+      onClose={props.onClose}
     >
       <div className="hz-sheet">
         <label className="hz-input">
@@ -322,7 +376,7 @@ export function HazmatSheet(props: Props) {
             )}
 
             <div className="tr-actions">
-              <button type="button" className="btn-primary" onClick={() => props.onShowZone(zone)} disabled={!zone}>
+              <button type="button" className="btn-primary" onClick={() => zone && props.onSaveZone(zone)} disabled={!zone}>
                 Auf die Karte
               </button>
               <button
@@ -333,6 +387,11 @@ export function HazmatSheet(props: Props) {
                 Fluchtroute rechnen
               </button>
             </div>
+            <p className="muted hz-note">
+              „Auf die Karte" legt Absperrkreis und Fahne als **eigene Markierungen** ab. Dort lassen
+              sie sich benennen, mit einer Notiz versehen, ausblenden, wieder löschen und mit allem
+              anderen als GPX oder GeoJSON weitergeben.
+            </p>
 
             <p className="muted hz-note">
               Angaben aus dem Emergency Response Guidebook 2024 (US-Verkehrsministerium, gemeinfrei) für

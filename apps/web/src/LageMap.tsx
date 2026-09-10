@@ -77,7 +77,6 @@ export interface WatchedPoint {
 }
 import type { TrailFeature } from './offline/trails.js';
 import type { ReachResult } from './offline/router.js';
-import { PLUME_HALF_ANGLE, type HazmatZone } from './HazmatSheet.js';
 import type { ContourLine } from './offline/terrain.js';
 import type { SatPosition } from './satStore.js';
 import { formatArea, formatLength, lineLength, ringArea } from './geo.js';
@@ -1081,7 +1080,6 @@ interface Props {
   /** Regionen mit Einwohner-Paket am Standort (für die Betroffenenabschätzung). */
   popCodes: string[];
   /** Angenommener Gefahrenbereich eines Stoffaustritts. */
-  hazmatZone: HazmatZone | null;
   /** Erreichbares Straßennetz mit Fahrzeit je Abschnitt. */
   reach: ReachResult | null;
   /** Läuft die Erreichbarkeitsrechnung gerade? */
@@ -1304,46 +1302,6 @@ const REACH_PROFILES: { id: RouteProfile; label: string }[] = [
   { id: 'foot', label: 'zu Fuß' },
 ];
 
-/**
- * Kreis um einen Punkt als Polygon-Ring ([lon, lat]).
- *
- * Gerechnet wird über den Kurs, nicht über einen festen Umrechnungsfaktor —
- * bei zehn Kilometern wäre ein Kreis, der die Breitenabhängigkeit ignoriert,
- * sichtbar oval.
- */
-function circleRing(center: Coords, radiusM: number, steps = 96): [number, number][] {
-  const ring: [number, number][] = [];
-  const lat = (center.lat * Math.PI) / 180;
-  const dLat = (radiusM / 6371000) * (180 / Math.PI);
-  const dLon = dLat / Math.max(0.01, Math.cos(lat));
-  for (let i = 0; i <= steps; i++) {
-    const a = (i / steps) * 2 * Math.PI;
-    ring.push([center.lon + dLon * Math.sin(a), center.lat + dLat * Math.cos(a)]);
-  }
-  return ring;
-}
-
-/** Kreissektor um `towardDeg` (Grad ab Nord) mit halbem Öffnungswinkel. */
-function sectorRing(
-  center: Coords,
-  radiusM: number,
-  towardDeg: number,
-  halfAngleDeg: number,
-  steps = 48,
-): [number, number][] {
-  const lat = (center.lat * Math.PI) / 180;
-  const dLat = (radiusM / 6371000) * (180 / Math.PI);
-  const dLon = dLat / Math.max(0.01, Math.cos(lat));
-  const ring: [number, number][] = [[center.lon, center.lat]];
-  for (let i = 0; i <= steps; i++) {
-    const deg = towardDeg - halfAngleDeg + (2 * halfAngleDeg * i) / steps;
-    const a = (deg * Math.PI) / 180;
-    ring.push([center.lon + dLon * Math.sin(a), center.lat + dLat * Math.cos(a)]);
-  }
-  ring.push([center.lon, center.lat]);
-  return ring;
-}
-
 const ALL_LAYERS_OFF: Record<LayerId, boolean> = {
   warnings: false,
   radar: false,
@@ -1449,7 +1407,6 @@ export function LageMap({
   contours,
   trails,
   popCodes,
-  hazmatZone,
   reach,
   reachBusy,
   reachProfile,
@@ -3675,61 +3632,6 @@ export function LageMap({
   }, [rescue, ready, styleEpoch]);
 
   /* ---------- Gefahrenbereich (Gefahrgut) ---------- */
-
-  /**
-   * Zwei Flächen: der Absperrkreis rundum und die Fahne stromab. Beide werden
-   * hier als Geometrie gerechnet und nicht als Kreis-Symbol gezeichnet — ein
-   * Symbol behielte seine Pixelgröße beim Zoomen, und ein Absperrradius, der
-   * je nach Zoom etwas anderes bedeutet, wäre schlimmer als keiner.
-   */
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready || map.getSource('hazmat')) return;
-    map.addSource('hazmat', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({
-      id: 'hazmat-plume',
-      type: 'fill',
-      source: 'hazmat',
-      filter: ['==', ['get', 'kind'], 'plume'],
-      paint: { 'fill-color': '#c0392b', 'fill-opacity': 0.18 },
-    });
-    map.addLayer({
-      id: 'hazmat-zone',
-      type: 'fill',
-      source: 'hazmat',
-      filter: ['==', ['get', 'kind'], 'zone'],
-      paint: { 'fill-color': '#a92318', 'fill-opacity': 0.3 },
-    });
-    map.addLayer({
-      id: 'hazmat-line',
-      type: 'line',
-      source: 'hazmat',
-      paint: { 'line-color': '#a92318', 'line-width': 2, 'line-dasharray': [2, 1.5] },
-    });
-  }, [ready, styleEpoch]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    const src = map?.getSource('hazmat') as GeoJSONSource | undefined;
-    if (!src) return;
-    const features: GeoJSON.Feature[] = [];
-    if (hazmatZone) {
-      const { center, isolationM, downwindM, towardDeg } = hazmatZone;
-      features.push({
-        type: 'Feature',
-        properties: { kind: 'zone' },
-        geometry: { type: 'Polygon', coordinates: [circleRing(center, isolationM)] },
-      });
-      if (downwindM > 0 && towardDeg != null) {
-        features.push({
-          type: 'Feature',
-          properties: { kind: 'plume' },
-          geometry: { type: 'Polygon', coordinates: [sectorRing(center, downwindM, towardDeg, PLUME_HALF_ANGLE)] },
-        });
-      }
-    }
-    src.setData({ type: 'FeatureCollection', features });
-  }, [hazmatZone, ready, styleEpoch]);
 
   /* ---------- Erreichbarkeit ---------- */
 

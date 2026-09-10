@@ -7,6 +7,8 @@
  * einem Bundesland-großen Ring schon um Prozente daneben.
  */
 
+import type { Coords } from '@lagebild/shared';
+
 const R = 6371008.8;
 const RAD = Math.PI / 180;
 
@@ -68,4 +70,44 @@ export function formatArea(m2: number): string {
   if (m2 < 10000) return `${Math.round(m2)} m²`;
   if (m2 < 1_000_000) return `${(m2 / 10000).toFixed(2).replace('.', ',')} ha`;
   return `${(m2 / 1_000_000).toFixed(m2 < 10_000_000 ? 2 : 1).replace('.', ',')} km²`;
+}
+
+/**
+ * Kreis um einen Punkt als Polygon-Ring ([lon, lat]).
+ *
+ * Gerechnet wird über den Kurs, nicht über einen festen Umrechnungsfaktor —
+ * bei zehn Kilometern wäre ein Kreis, der die Breitenabhängigkeit ignoriert,
+ * sichtbar oval.
+ */
+export function circleRing(center: Coords, radiusM: number, steps = 96): [number, number][] {
+  const ring: [number, number][] = [];
+  const lat = (center.lat * Math.PI) / 180;
+  const dLat = (radiusM / 6371000) * (180 / Math.PI);
+  const dLon = dLat / Math.max(0.01, Math.cos(lat));
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * 2 * Math.PI;
+    ring.push([center.lon + dLon * Math.sin(a), center.lat + dLat * Math.cos(a)]);
+  }
+  return ring;
+}
+
+/** Kreissektor um `towardDeg` (Grad ab Nord) mit halbem Öffnungswinkel. */
+export function sectorRing(
+  center: Coords,
+  radiusM: number,
+  towardDeg: number,
+  halfAngleDeg: number,
+  steps = 48,
+): [number, number][] {
+  const lat = (center.lat * Math.PI) / 180;
+  const dLat = (radiusM / 6371000) * (180 / Math.PI);
+  const dLon = dLat / Math.max(0.01, Math.cos(lat));
+  const ring: [number, number][] = [[center.lon, center.lat]];
+  for (let i = 0; i <= steps; i++) {
+    const deg = towardDeg - halfAngleDeg + (2 * halfAngleDeg * i) / steps;
+    const a = (deg * Math.PI) / 180;
+    ring.push([center.lon + dLon * Math.sin(a), center.lat + dLat * Math.cos(a)]);
+  }
+  ring.push([center.lon, center.lat]);
+  return ring;
 }

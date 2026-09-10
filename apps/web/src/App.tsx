@@ -113,7 +113,7 @@ import { WeatherIcon } from './WeatherIcon.js';
 import { nowcastAt, nowcastText, type Nowcast } from './radarNowcast.js';
 import { sunAltitude, sunAzimuth } from './sun.js';
 import { MissionSheet } from './MissionSheet.js';
-import { HazmatSheet, type HazmatZone } from './HazmatSheet.js';
+import { HazmatSheet, zoneToDraw, zoneZoom } from './HazmatSheet.js';
 import { activeMission, logEvent, logOnce, subscribeMissions } from './missionLog.js';
 import { syncBackgroundTargets } from './backgroundWarnings.js';
 import { RouteSituationView, useRouteSituation } from './RouteSituation.js';
@@ -320,10 +320,8 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   /** Werkzeugblatt (am Rechner der Ersatz für den „Mehr"-Reiter). */
   const [toolsOpen, setToolsOpen] = useState(false);
   const [missionOpen, setMissionOpen] = useState(false);
-  /** Angenommene Austrittsstelle eines Gefahrstoffs (Blatt offen) … */
+  /** Angenommene Austrittsstelle eines Gefahrstoffs (Blatt offen). */
   const [hazmatAt, setHazmatAt] = useState<{ point: Coords; label: string } | null>(null);
-  /** … und der Bereich, den die Karte davon zeigt. */
-  const [hazmatZone, setHazmatZone] = useState<HazmatZone | null>(null);
   /**
    * Läuft gerade ein Einsatz? Nur dafür, den Knopf zu kennzeichnen — die
    * Aufzeichnung selbst entscheidet `missionLog` bei jedem Eintrag neu.
@@ -2108,7 +2106,6 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             rescue={rescue.data?.data ?? []}
             fireWater={fireWater.data?.data ?? []}
             popCodes={popCodes}
-            hazmatZone={hazmatZone}
             reach={reach}
             reachBusy={reachBusy}
             reachProfile={reachProfile}
@@ -2978,7 +2975,18 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           popCodes={popCodes}
           windFromDeg={w?.windDirDeg ?? null}
           windKmh={w?.windKmh ?? null}
-          onShowZone={setHazmatZone}
+          onSaveZone={(zone) => {
+            // Der Gefahrenbereich ist danach eine ganz gewöhnliche Markierung:
+            // Er lässt sich benennen, ausblenden, löschen und ausgeben. Vorher
+            // lag er als eigene, rote Ebene auf der Karte — und blieb dort, weil
+            // es keinen Weg gab, ihn wieder wegzunehmen.
+            setAddDraw({ features: zoneToDraw(zone), key: Date.now() });
+            setHazmatAt(null);
+            setTab('karte');
+            // Ein Absperrkreis von sechzig Metern ist auf der Übersicht ein
+            // Punkt — also so weit heran, dass der ganze Bereich im Bild steht.
+            setFlyTo({ ...zone.center, zoom: zoneZoom(zone), key: Date.now() });
+          }}
           onEscape={(radiusM) => {
             // Der Absperrradius aus dem Handbuch ist genau die Vorgabe, die das
             // Fluchtrouting als Kern der Gefahr braucht.
