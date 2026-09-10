@@ -7,6 +7,7 @@ import type {
   TransitItinerary,
   TransitLeg,
   TransitDeparture,
+  TransitJourney,
   TransitStopPoint,
   TransitTrip,
   TransitVehicle,
@@ -107,7 +108,7 @@ import {
   BosAirDetail,
   TransitDetail,
 } from './details.js';
-import { kindOfProduct, relativeTime, departureTime, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
+import { kindOfProduct, relativeTime, departureTime, delaySuffix, hourLabel, CONDITION_DE, SEVERITY_VAR, AIR_DE, AIR_COLOR } from './format.js';
 import { WeatherIcon } from './WeatherIcon.js';
 import { nowcastAt, nowcastText, type Nowcast } from './radarNowcast.js';
 import { sunAltitude, sunAzimuth } from './sun.js';
@@ -156,6 +157,31 @@ const TABS: { key: MobileTab | 'suche'; label: string; path: string }[] = [
  * Was im Notfall zählt, steht bewusst **nicht** hier, sondern hinter dem roten
  * Knopf: Wer das Notfallblatt sucht, soll keine Liste lesen müssen.
  */
+/**
+ * Was auf dem ÖPNV-Reiter oben steht. Bewusst dieselbe Gestalt wie „Mehr":
+ * Es ist dieselbe Art Liste, nur mit dem, was zu Bus und Bahn gehört. Die
+ * beiden Ebenen-Schalter stehen darunter als Chips — sie schalten etwas ein
+ * und aus, statt etwas zu öffnen, und das soll man ihnen ansehen.
+ */
+const TRANSIT_TOOLS: { key: string; label: string; hint: string; path: string }[] = [
+  { key: 'verfolgen', label: 'Fahrt verfolgen', hint: 'Bus, Tram oder Zug suchen und live mitfahren', path: 'M8 3h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2M6 9h12M9 21l-2-3M15 21l2-3M9.5 14.5h.2M14.3 14.5h.2' },
+  { key: 'verbindung', label: 'Verbindung suchen', hint: 'Ziel wählen — Umstiege, Gleise und Fußwege', path: 'M4 7h9a4 4 0 0 1 0 8H7a4 4 0 0 0 0 8h13M17 4l3 3-3 3' },
+  { key: 'halte', label: 'Halte auf der Karte', hint: 'Antippen: Abfahrten und Fahrtwege', path: 'M11 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 21l-4.5-4.5' },
+];
+
+/** Die beiden Ebenen, die zu Bus und Bahn gehören — als Schalter auf dem Reiter. */
+const TRANSIT_LAYERS: { id: LayerRowId; label: string }[] = [
+  { id: 'stops', label: 'Haltestellen' },
+  { id: 'vehicles', label: 'Busse & Bahnen' },
+];
+
+/** Wie eine verfolgte Fahrt gerade steht — im Klartext. */
+const JOURNEY_STATE_DE: Record<TransitJourney['state'], string> = {
+  planned: 'noch nicht abgefahren',
+  running: 'unterwegs',
+  done: 'angekommen',
+};
+
 const MORE_TOOLS: { key: string; label: string; hint: string; path: string }[] = [
   { key: 'kartenblatt', label: 'Kartenblatt drucken', hint: 'Ausschnitt mit UTM-Gitter, Maßstab und Nummern', path: 'M6 3h9l5 5v13H6zM15 3v5h5M9 13h8M9 17h5' },
   { key: 'satelliten', label: 'Satellitenüberflüge', hint: 'ISS, Wetter- und Funksatelliten — offline gerechnet', path: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M5 5l3 3M19 5l-3 3M5 19l3-3M19 19l-3-3' },
@@ -963,6 +989,13 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
   const [pickingVia, setPickingVia] = useState(false);
   const [pin, setPin] = useState<(Place & { category?: string }) | null>(null);
   const [profile, setProfile] = useState<PlanMode>('car');
+  /**
+   * Womit die **nächste** Zielwahl geplant werden soll. Der ÖPNV-Reiter merkt
+   * hier „transit" vor und schickt dann in die Suche; sobald ein Ziel steht,
+   * greift es einmalig. Ein `useRef`, weil es keine Anzeige beeinflusst und
+   * zwischen Vormerken und Zielwahl kein Bild dazwischenkommen soll.
+   */
+  const nextPlanMode = useRef<PlanMode | null>(null);
   /** ÖPNV-Verbindungen (nur online) samt Auswahl und Wunschzeit. */
   const [itineraries, setItineraries] = useState<TransitItinerary[]>([]);
   const [itineraryIndex, setItineraryIndex] = useState(0);
@@ -1598,6 +1631,15 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     setPin({ ...place, category });
     setSearchOpen(false);
     setNavigating(false);
+    // Die Routenplanung liegt **über der Karte**. Auf dem Handy verdeckt ein
+    // anderer Reiter sie vollständig — „Navigieren" sah dort aus, als täte es
+    // nichts. Ein Ziel zu setzen heißt deshalb: zurück auf die Karte.
+    setTab('karte');
+    // Der ÖPNV-Reiter fragt nach einer Verbindung, nicht nach einer Autofahrt.
+    if (nextPlanMode.current) {
+      setProfile(nextPlanMode.current);
+      nextPlanMode.current = null;
+    }
     // Ein neues Ziel beginnt eine neue Fahrt — die alten Zwischenziele lagen
     // auf einem anderen Weg, und eine eingelesene Tour führt woandershin.
     setVia([]);
@@ -1800,6 +1842,45 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
       }),
     [homeWeatherWarnings, homeCivilWarnings, w, nowcast, airNow, fire.data, coords, online, lastSync],
   );
+
+  /**
+   * Eine einzelne Ebene umlegen, ohne das Ebenenblatt zu öffnen.
+   *
+   * `applyLayers` setzt immer den **ganzen** Satz — das ist der Weg, den auch
+   * gespeicherte Karten nehmen. Der aktuelle Satz steht in `activeLayers`, die
+   * Karte meldet ihn; daraus lässt sich ein einzelner Schalter ohne neue
+   * Maschinerie bauen.
+   */
+  const toggleLayer = useCallback(
+    (id: LayerRowId) => {
+      const next = new Set(activeLayers);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      setApplyLayers({ layers: [...next], key: Date.now() });
+    },
+    [activeLayers],
+  );
+  const ensureLayer = useCallback(
+    (id: LayerRowId) => {
+      if (!activeLayers.includes(id)) toggleLayer(id);
+    },
+    [activeLayers, toggleLayer],
+  );
+
+  /** Was die Werkzeugliste auf dem ÖPNV-Reiter öffnet. */
+  const TRANSIT_ACTIONS: Record<string, () => void> = {
+    verfolgen: () => setJourneyOpen(true),
+    // Erst das Ziel, dann die Verbindung: Die Suche liefert den Ort, und das
+    // vorgemerkte Profil stellt die Planung auf Bus und Bahn um.
+    verbindung: () => {
+      nextPlanMode.current = 'transit';
+      setSearchOpen(true);
+    },
+    halte: () => {
+      ensureLayer('stops');
+      setTab('karte');
+    },
+  };
 
   /** Was die Werkzeugliste auf dem „Mehr"-Reiter öffnet. */
   const MORE_ACTIONS: Record<string, () => void> = {
@@ -2369,8 +2450,12 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           </div>
         </Tile>
 
+        {/* Am Rechner die ÖPNV-Kachel in der Spalte. Auf dem Handy steht
+            derselbe Halt eine Kachel weiter unten noch einmal, dort mit allen
+            Abfahrten — zweimal dasselbe war der halbe Reiter. */}
         <Tile
           tab="oepnv"
+          className={transitStops.length > 0 ? 'mobile-hidden' : undefined}
           title="Bahn / ÖPNV"
           source={transit.data?.source}
           cached={transit.fromCache}
@@ -2415,7 +2500,7 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
                     <span className={`meta${d.cancelled || (d.delayMin ?? 0) >= 1 ? ' late' : ''}`}>
                       {d.cancelled
                         ? 'fällt aus'
-                        : `${departureTime(d.when ?? d.plannedWhen)}${d.delayMin ? ` +${d.delayMin}` : ''}`}
+                        : `${departureTime(d.when ?? d.plannedWhen)}${delaySuffix(d.delayMin)}`}
                     </span>
                   </li>
                 ))}
@@ -2497,8 +2582,73 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
           </Loader>
         </Tile>
 
-        {/* Dasselbe für den ÖPNV-Reiter: Die Kachel oben nennt nur den nächsten
-            Halt. Auf einer eigenen Seite gehören alle Halte in der Nähe hin. */}
+        {/* Der ÖPNV-Reiter ist eine eigene Seite, keine gestauchte Kachel:
+            oben die verfolgte Fahrt (wenn eine läuft), dann die Werkzeuge, die
+            zu Bus und Bahn gehören, dann alle Halte in der Nähe. Am Rechner
+            gibt es das alles weiterhin über Kachel, Blatt und Karte. */}
+        {journey && (
+          <section className="mobile-only tile" data-tab="oepnv">
+            <div className="head">
+              <h3>Verfolgte Fahrt</h3>
+              <span className="badge ok">live</span>
+            </div>
+            <div className="oe-journey">
+              <span className={`line-pill ${kindOfProduct(journey.product)}`}>{journey.line}</span>
+              <span className="oe-towards">→ {journey.towards || journey.destination}</span>
+            </div>
+            <p className="oe-state">
+              {JOURNEY_STATE_DE[journey.state]}
+              {journey.realTime
+                ? journey.delayMin
+                  ? ` · ${journey.delayMin > 0 ? `${journey.delayMin} min später` : `${Math.abs(journey.delayMin)} min früher`}`
+                  : ' · pünktlich'
+                : ' · nur Sollfahrplan'}
+              {journey.nextStopIndex != null && journey.stops[journey.nextStopIndex]
+                ? ` · ${journey.atStop ? 'hält in' : 'nächster Halt'} ${journey.stops[journey.nextStopIndex]!.name}`
+                : ''}
+            </p>
+            <div className="oe-row">
+              <button type="button" className="rp-chip" onClick={() => setJourneyOpen(true)}>
+                Fahrtverlauf
+              </button>
+              <button
+                type="button"
+                className="rp-chip"
+                onClick={() => {
+                  setTripFit((n) => n + 1);
+                  setTab('karte');
+                }}
+              >
+                Auf der Karte
+              </button>
+              <button type="button" className="btn-quiet" onClick={stopTracking}>
+                Nicht mehr verfolgen
+              </button>
+            </div>
+          </section>
+        )}
+
+        <section className="mobile-only tile" data-tab="oepnv">
+          <div className="head">
+            <h3>Bus und Bahn</h3>
+          </div>
+          <ToolGrid items={TRANSIT_TOOLS} onPick={(key) => TRANSIT_ACTIONS[key]?.()} />
+          <div className="sect-label">Auf der Karte</div>
+          <div className="oe-row">
+            {TRANSIT_LAYERS.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                className={`rp-chip${activeLayers.includes(l.id) ? ' is-on' : ''}`}
+                aria-pressed={activeLayers.includes(l.id)}
+                onClick={() => toggleLayer(l.id)}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
         {transitStops.length > 0 && (
           <section className="mobile-only tile" data-tab="oepnv">
             <div className="head">
@@ -3098,13 +3248,14 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
 }
 
 /**
- * Die Werkzeugliste. Zweimal verwendet: als Handy-Reiter „Mehr" und im
- * Werkzeugblatt am Rechner — damit es die Liste nur einmal gibt.
+ * Die Werkzeugliste. Dreimal verwendet: als Handy-Reiter „Mehr", im
+ * Werkzeugblatt am Rechner und — mit einer anderen Liste — auf dem
+ * ÖPNV-Reiter. Damit es die Gestalt nur einmal gibt.
  */
-function ToolGrid({ onPick }: { onPick: (key: string) => void }) {
+function ToolGrid({ items = MORE_TOOLS, onPick }: { items?: typeof MORE_TOOLS; onPick: (key: string) => void }) {
   return (
     <div className="mt-grid">
-      {MORE_TOOLS.map((t) => (
+      {items.map((t) => (
         <button key={t.key} type="button" className="mt-item" onClick={() => onPick(t.key)}>
           <span className="mt-ico" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">

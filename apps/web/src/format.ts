@@ -45,6 +45,18 @@ export function departureTime(iso: string | null): string {
   return `${d.toLocaleDateString('de-DE', { weekday: 'short' })} ${time}`;
 }
 
+/**
+ * Der Verspätungsanhang hinter einer Uhrzeit: „ +3" oder „ −2".
+ *
+ * Eine Fahrt kann auch **zu früh** sein, und dann stand hier bisher „+-2":
+ * Das Pluszeichen war fest angeschrieben. Vorne steht deshalb das Zeichen, das
+ * zur Zahl passt, und ein echtes Minus statt eines Bindestrichs.
+ */
+export function delaySuffix(delayMin: number | null | undefined): string {
+  if (!delayMin) return '';
+  return delayMin > 0 ? ` +${delayMin}` : ` −${Math.abs(delayMin)}`;
+}
+
 export function formatDateTime(iso: string | null): string {
   if (!iso) return '–';
   return new Date(iso).toLocaleString('de-DE', {

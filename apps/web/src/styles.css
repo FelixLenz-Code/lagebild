@@ -765,7 +765,9 @@ svg { display: block; }
 .line-pill.ferry { background: color-mix(in srgb, var(--stop-ferry) 18%, transparent); color: var(--stop-ferry); }
 .line-pill.other { background: color-mix(in srgb, var(--stop-other) 18%, transparent); color: var(--stop-other); }
 .line-item .meta.late { color: var(--sev2); font-weight: 600; }
-.dep-list { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
+/* Ohne den Listen-Rückbau erbt die Tafel die 40 px Einzug des Browsers — auf
+   dem Handy sass sie damit sichtbar neben allem anderen. */
+.dep-list { display: flex; flex-direction: column; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }
 .dep { display: flex; align-items: center; gap: 9px; font-size: .84rem; }
 .dep-dir { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dep-time { color: var(--muted); white-space: nowrap; }
@@ -1689,6 +1691,26 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
 .news-filter .rp-chip.is-on { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
 .news-place { background: transparent; border: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .news-place:hover { color: var(--accent-ink); }
+/* Kopf einer Halte-Karte: Name und Entfernung nehmen die Breite, der
+   Navigieren-Knopf bleibt oben rechts. `flex-start` statt `center`, damit ein
+   langer Haltename umbrechen darf, ohne den Knopf mitzuziehen — vorher rutschte
+   er in die nächste Zeile, und zwei Karten untereinander sahen verschieden aus. */
+.sc-head { display: flex; align-items: flex-start; gap: 10px; }
+.sc-title { flex: 1; min-width: 0; font-size: .9rem; }
+.sc-title b { font-weight: 650; }
+.sc-dist { margin-left: 7px; font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.sc-head .rp-chip { flex: none; }
+
+/* ---------- ÖPNV-Reiter (Handy) ---------- */
+.oe-journey { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.oe-towards { font-size: .88rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oe-state { margin: 5px 0 10px; font-size: .78rem; color: var(--muted); }
+.oe-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* Die Werkzeugliste steht hier in einer Kachel und braucht keinen zweiten
+   Abstand nach oben; der Abschnittstitel darunter aber schon. */
+.tile .mt-grid { margin-top: 2px; }
+.tile .mt-grid + .sect-label { margin-top: 14px; }
+
 .stop-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
 .stop-head .stop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alert-top .rp-chip { margin-left: auto; }
@@ -1774,6 +1796,8 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
   .layout[data-tab='karte'] .tiles-col { display: none; }
   /* Sonst nur, was zu diesem Reiter gehört. */
   .tiles-col > [data-tab] { display: none; }
+  /* … und nie, was am Rechner gebraucht wird, hier aber doppelt stünde. */
+  .tiles-col > .mobile-hidden { display: none !important; }
   .layout[data-tab='lage'] .tiles-col > [data-tab='lage'],
   .layout[data-tab='oepnv'] .tiles-col > [data-tab='oepnv'],
   .layout[data-tab='mehr'] .tiles-col > [data-tab='mehr'] { display: flex; }

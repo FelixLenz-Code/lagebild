@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Coords, TransitFind, TransitJourney } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
 import { fetchFindVehicle, type Bbox } from './api.js';
-import { departureTime, kindOfProduct, timeHM, timeUntil, trackLabel } from './format.js';
+import { delaySuffix, departureTime, kindOfProduct, timeHM, timeUntil, trackLabel } from './format.js';
 
 interface Props {
   coords: Coords;
@@ -230,7 +230,7 @@ function FindRow(props: { hit: TransitFind; onPick: () => void }) {
       : [
           `ab ${departureTime(h.when)}`,
           h.track ? `${trackLabel(h.product)} ${h.track}` : null,
-          h.delayMin ? `+${h.delayMin}` : null,
+          h.delayMin ? delaySuffix(h.delayMin).trim() : null,
         ]
           .filter(Boolean)
           .join(' · ');
@@ -433,7 +433,7 @@ function JourneyView(props: Props & { onBack: () => void }) {
               <span className={`ts-time${s.cancelled ? ' cancelled' : s.delayMin ? ' late' : ''}`}>
                 {s.cancelled
                   ? 'entfällt'
-                  : `${departureTime(s.when ?? s.arrival ?? null)}${s.delayMin ? ` +${s.delayMin}` : ''}`}
+                  : `${departureTime(s.when ?? s.arrival ?? null)}${delaySuffix(s.delayMin)}`}
               </span>
             </li>
           );

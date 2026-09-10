@@ -1,6 +1,6 @@
 import type { TransitTrip, TransitVehicle } from '@lagebild/shared';
 import { Sheet } from './Sheet.js';
-import { departureTime, kindOfProduct } from './format.js';
+import { delaySuffix, departureTime, kindOfProduct } from './format.js';
 
 interface Props {
   vehicle: TransitVehicle;
@@ -94,7 +94,7 @@ export function VehicleSheet(props: Props) {
                   <span className={`ts-time${s.cancelled ? ' cancelled' : s.delayMin ? ' late' : ''}`}>
                     {s.cancelled
                       ? 'entfällt'
-                      : `${departureTime(s.when ?? s.plannedWhen)}${s.delayMin ? ` +${s.delayMin}` : ''}`}
+                      : `${departureTime(s.when ?? s.plannedWhen)}${delaySuffix(s.delayMin)}`}
                   </span>
                 </li>
               );

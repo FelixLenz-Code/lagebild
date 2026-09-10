@@ -701,9 +701,11 @@ export function TransitDetail({
     <div className="detail-list">
       {withData.map((s) => (
         <div className="alert-block" key={s.id}>
-          <div className="alert-top">
-            <b>{s.name}</b>
-            {s.distanceM != null && <span className="alert-meta mono">{Math.round(s.distanceM)} m</span>}
+          <div className="sc-head">
+            <div className="sc-title">
+              <b>{s.name}</b>
+              {s.distanceM != null && <span className="sc-dist mono">{Math.round(s.distanceM)} m</span>}
+            </div>
             {onRoute && s.coordinates && (
               <button
                 type="button"
