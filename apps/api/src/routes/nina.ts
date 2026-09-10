@@ -39,6 +39,19 @@ const CHANNELS: { key: string; label: string }[] = [
 /** Mehr als das ist auf einer Karte ohnehin nicht lesbar. */
 const MAX_WARNINGS = 80;
 
+/**
+ * Wie viele Meldungen überhaupt aufgeschlagen werden, bevor gefiltert wird.
+ *
+ * Die Übersicht nennt keine Fläche — ob eine Meldung den Ausschnitt berührt,
+ * steht erst in ihrer Einzeldatei. Die Obergrenze griff bisher **vor** dem
+ * Filter: Bei bundesweit mehr als achtzig aktiven Meldungen — also genau in
+ * der Lage, für die diese Ebene da ist — fielen die eigenen aus der Liste,
+ * wenn anderswo neuere standen. Jetzt wird erst gefiltert und dann gekappt;
+ * diese Grenze hält nur noch die Zahl der Abrufe im Zaum. Sie sind zu sechst
+ * gebündelt und je Meldung eine Viertelstunde gecacht.
+ */
+const MAX_LOOKUPS = 400;
+
 interface MapItem {
   id: string;
   version?: number;
@@ -98,8 +111,8 @@ function plain(html: string | undefined): string | undefined {
   return text.length ? text : undefined;
 }
 
-/** Umschließendes Rechteck einer Geometrie — für den Ausschnitts-Filter. */
-function geometryBbox(geometry: GeoJsonGeometry): Bbox | null {
+/** Umschließendes Rechteck eines Koordinatenbaums — für den Ausschnitts-Filter. */
+function bboxOf(coordinates: unknown): Bbox | null {
   let west = 180;
   let south = 90;
   let east = -180;
@@ -116,12 +129,35 @@ function geometryBbox(geometry: GeoJsonGeometry): Bbox | null {
     }
     for (const child of node) visit(child);
   };
-  visit((geometry as { coordinates?: unknown }).coordinates);
+  visit(coordinates);
   return west <= east && south <= north ? { west, south, east, north } : null;
 }
 
 const overlaps = (a: Bbox, b: Bbox): boolean =>
   a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
+
+/**
+ * Berührt die Warnfläche den Ausschnitt?
+ *
+ * Geprüft wird **je Teilfläche**, nicht über das umschließende Rechteck der
+ * ganzen Geometrie. Eine Meldung nennt oft mehrere Ortsteile, und deren
+ * gemeinsames Rechteck deckt alles dazwischen mit ab — eine Warnung für zwei
+ * Dörfer am Rand eines Landkreises galt damit auch für die Stadt in der Mitte,
+ * die gar nicht gemeint war.
+ *
+ * Ein Rechteck je Teilfläche bleibt eine Näherung; sie ist aber so genau wie
+ * die Fläche selbst kompakt ist, und Gemeindegebiete sind das.
+ */
+function touches(geometry: GeoJsonGeometry, box: Bbox): boolean {
+  const parts =
+    geometry.type === 'MultiPolygon'
+      ? (geometry.coordinates as unknown[])
+      : [geometry.coordinates as unknown];
+  return parts.some((part) => {
+    const own = bboxOf(part);
+    return own ? overlaps(own, box) : false;
+  });
+}
 
 /** Übersicht eines Kanals (kurz gecacht — Warnungen sollen schnell erscheinen). */
 async function channelItems(channel: string): Promise<MapItem[]> {
@@ -205,16 +241,13 @@ ninaRoute.get('/', async (c) => {
   // Neueste zuerst, damit die Obergrenze die aktuellen Meldungen behält.
   pending.sort((a, b) => (b.item.startDate ?? '').localeCompare(a.item.startDate ?? ''));
 
-  const details = await mapPool(pending.slice(0, MAX_WARNINGS), 6, (p) =>
+  const details = await mapPool(pending.slice(0, MAX_LOOKUPS), 6, (p) =>
     warningDetail(p.item, p.label),
   );
 
-  const data = details.filter((w): w is CivilWarning => {
-    if (!w) return false;
-    if (!bbox) return true;
-    const own = geometryBbox(w.geometry);
-    return own ? overlaps(own, bbox) : false;
-  });
+  const data = details
+    .filter((w): w is CivilWarning => !!w && (!bbox || touches(w.geometry, bbox)))
+    .slice(0, MAX_WARNINGS);
 
   return c.json(envelope(data, 'BBK (NINA / warnung.bund.de)'));
 });

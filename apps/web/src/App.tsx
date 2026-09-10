@@ -499,10 +499,19 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
     [viewKey, refreshTick],
     { enabled: layers.lightning, refreshMs: 20000, cache: false },
   );
-  // Behördenwarnungen folgen dem Ausschnitt; sie ändern sich selten, sollen im
-  // Ernstfall aber zügig erscheinen.
+  /**
+   * Behördenwarnungen folgen dem Ausschnitt; sie ändern sich selten, sollen im
+   * Ernstfall aber zügig erscheinen.
+   *
+   * Bewusst **ohne** Bindung an die Kartenebene — wie die Unwetterwarnungen
+   * daneben. Vorher hing der Abruf an `layers.nina`: Bei ausgeschalteter Ebene
+   * lud er gar nicht, und `useApi` behält seine Daten, wenn es abgeschaltet
+   * wird. Wer die Ebene einmal an- und wieder ausschaltete, bekam auf dem
+   * Lage-Reiter fortan die Warnungen des damaligen Ausschnitts zu sehen, egal
+   * wohin die Karte danach lief. Der Reiter ist der Ort, an dem die Lage **im
+   * Bild** steht; er darf nicht davon abhängen, ob eine Kartenebene an ist.
+   */
   const nina = useApi(`nina:${viewKey}`, () => fetchNina(viewport), [viewKey, refreshTick], {
-    enabled: layers.nina,
     refreshMs: 120000,
   });
   // Satelliten-Feuer und Strahlungsmessnetz folgen dem Ausschnitt; beide
@@ -2439,10 +2448,10 @@ export function App({ onLock }: { onLock: () => Promise<void> }) {
             />
             <CountCell
               label="Behörden"
-              value={layers.nina ? (nina.data?.data.length ?? null) : null}
-              loading={layers.nina && nina.loading}
+              value={nina.data?.data.length ?? null}
+              loading={nina.loading}
               color={nina.data?.data.length ? 'var(--sev4)' : undefined}
-              hint={layers.nina ? 'Warnungen von Behörden' : 'Ebene ausgeschaltet'}
+              hint="Warnungen von Behörden im Ausschnitt"
               onOpen={nina.data?.data.length ? () => setDetail('nina') : undefined}
             />
             <CountCell
