@@ -1757,7 +1757,12 @@ html[data-big-targets] .rs-ev-btn { padding-top: 12px; padding-bottom: 12px; }
   /* Marke und Untertitel kosten die halbe Zeile und sagen nichts, was der
      Startbildschirm nicht schon sagt. */
   .brand { display: none; }
-  .place-btn { flex: 1 1 auto; min-width: 0; }
+  /* Ohne Marke links soll der Standort die Zeile bis zu den Werkzeugen
+     ausfüllen. Die Deckelung auf 62vw — am Rechner nötig, weil dort rechts
+     daneben noch alle Knöpfe stehen — verhindert das: Der Knopf wuchs nur bis
+     62vw, und `margin-left: auto` schob die übrige Luft davor. Er stand damit
+     weder bündig noch mittig, sondern mit einer Lücke links. */
+  .place-btn { flex: 1 1 auto; min-width: 0; max-width: none; margin-left: 0; }
   .topbar-tools { display: flex; gap: 6px; }
   /* Suche liegt in der Leiste, der Rest auf „Mehr" — oben bleiben zwei Dinge:
      das Aktualisieren, weil es zum Stand der Daten gehört und nicht zu einer
