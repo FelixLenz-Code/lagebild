@@ -730,7 +730,11 @@ svg { display: block; }
 }
 .place-btn svg { width: 15px; height: 15px; color: var(--accent); flex: none; }
 .place-btn .pl-name { font-size: .85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.place-btn .pl-caret { width: 13px; height: 13px; color: var(--faint); }
+/* Der Pfeil gehört an den rechten Rand des Feldes, nicht an das Ende des
+   Ortsnamens: Ist der Knopf breiter als sein Inhalt (am Handy füllt er die
+   Kopfzeile), klebte er sonst mitten im Feld am Text. Der Auto-Rand schiebt
+   die freie Breite zwischen Name und Pfeil. */
+.place-btn .pl-caret { width: 13px; height: 13px; color: var(--faint); margin-left: auto; }
 .place-btn:hover { border-color: var(--accent); }
 
 .pp-search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); margin-bottom: 12px; }
