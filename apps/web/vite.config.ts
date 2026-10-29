@@ -24,7 +24,7 @@ export default defineConfig({
          * ohne einen einzigen Namen auf der Karte da. `.pbf` und `.json` sind
          * in der Voreinstellung nicht dabei, deshalb die eigene Liste.
          */
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,pbf,json}'],
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,webmanifest,pbf,json}'],
         /*
          * Eigener Anteil am Service Worker: der Wecker für Warnungen. Workbox
          * erzeugt den Worker selbst, deshalb wird der Zusatz hineingezogen

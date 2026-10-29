@@ -7,7 +7,7 @@ und alles, worauf es ankommt, auch ohne Netz.**
 
 [![CI](https://github.com/FelixLenz-Code/lagebild/actions/workflows/ci.yml/badge.svg)](https://github.com/FelixLenz-Code/lagebild/actions/workflows/ci.yml)
 [![Lizenz: PolyForm Noncommercial](https://img.shields.io/badge/Lizenz-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
-![Node 20+](https://img.shields.io/badge/Node-20%2B-5b9e4a)
+![Node 22.23.4+ / 24.22.1+](https://img.shields.io/badge/Node-22.23.4%2B%20%2F%2024.22.1%2B-5b9e4a)
 ![PWA](https://img.shields.io/badge/PWA-offline--first-1d4e73)
 ![ohne Konto, ohne Tracker](https://img.shields.io/badge/ohne%20Konto-ohne%20Tracker-5b5b60)
 
@@ -109,7 +109,7 @@ Quellcode und gebautem Bundle, einen Systemnutzer `lagebild` ohne Login, und den
 Dienst `lagebild.service` (Start beim Hochfahren, Neustart nach Absturz). Er
 fragt dabei die drei optionalen Schlüssel und das Passwort ab — vorhandene Werte
 zeigt er maskiert, Enter behält sie, ein `-` löscht sie. Fehlt eine
-Voraussetzung (`git`, `curl`, `tar`, Node.js 20+, pnpm), bietet er an, sie zu
+Voraussetzung (`git`, `curl`, `tar`, Node.js 22.23.4+ bzw. 24.22.1+, pnpm), bietet er an, sie zu
 installieren. Gebraucht werden Linux mit systemd und root oder `sudo`.
 
 Zum Schluss fragt er, **welche Offline-Pakete gebaut werden sollen** — Karte,

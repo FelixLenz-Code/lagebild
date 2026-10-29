@@ -238,4 +238,23 @@ startLightningCollector();
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
   console.log(`lagebild-api läuft auf http://${config.host}:${info.port}`);
+  warnUnpatchedNode();
 });
+
+/**
+ * Der Brotli-Decoder in Node (CVE-2026-111497, „HTTP2Shell") lässt sich über
+ * jede br-kodierte Antwort erreichen, die `fetch` von einer Quelle entpackt.
+ * Behoben ab 22.23.4, 24.22.1 und 26.12.1; ältere Linien bekommen keinen Fix.
+ * `install.sh` hebt Node an — hier fällt es nur auf, wenn jemand anders startet.
+ */
+function warnUnpatchedNode(): void {
+  const [major, minor, patch] = process.versions.node.split('.').map(Number);
+  const fixed: Record<number, [number, number]> = { 22: [23, 4], 24: [22, 1], 26: [12, 1] };
+  const min = fixed[major];
+  const safe = major > 26 || (min !== undefined && (minor > min[0] || (minor === min[0] && patch >= min[1])));
+  if (safe) return;
+  console.warn(
+    `WARNUNG: Node ${process.version} ist anfällig für CVE-2026-111497 („HTTP2Shell"). ` +
+      'Auf 22.23.4, 24.22.1, 26.12.1 oder neuer aktualisieren — etwa mit `bash install.sh`.',
+  );
+}

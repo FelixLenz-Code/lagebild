@@ -1,7 +1,13 @@
-import maplibregl, { type StyleSpecification } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import type { StyleSpecification } from 'maplibre-gl';
 import { Protocol, PMTiles, FileSource } from 'pmtiles';
 import { layers, GRAYSCALE, DARK, type Flavor } from '@protomaps/basemaps';
 import { MAPS_BASE } from './offlineMaps.js';
+// MapLibre sucht seinen Arbeiter seit Fassung 5 neben der eigenen Datei — die
+// heißt nach dem Bündeln aber anders. Deshalb die Adresse ausdrücklich setzen.
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 /**
  * Feste Vorgabe für die Basiskarte (VITE_MAP_PMTILES_URL) — etwa eine eigene,
@@ -56,8 +62,11 @@ export async function resolveMapAssets(): Promise<void> {
   }
 }
 
-const glyphs = () => `${ASSETS}/fonts/{fontstack}/{range}.pbf`;
-const sprite = (dark: boolean) => `${ASSETS}/sprites/v4/${dark ? 'dark' : 'grayscale'}`;
+// Seit MapLibre 6 müssen Sprite-Adressen absolut sein; die eigene Herkunft
+// davorsetzen, die entfernte ist es schon.
+const absolute = (url: string) => new URL(url, location.href).href;
+const glyphs = () => `${absolute(ASSETS)}/fonts/{fontstack}/{range}.pbf`;
+const sprite = (dark: boolean) => absolute(`${ASSETS}/sprites/v4/${dark ? 'dark' : 'grayscale'}`);
 
 let protocol: Protocol | null = null;
 /** Registriert das pmtiles://-Protokoll bei MapLibre (nur einmal nötig). */

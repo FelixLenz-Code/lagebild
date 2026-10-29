@@ -48,9 +48,14 @@ ZIEL="${LAGEBILD_DIR:-/opt/lagebild}"
 NUTZER="lagebild"
 DIENST="lagebild"
 ENV_DATEI="$ZIEL/apps/api/.env"
-MIN_NODE=20
-# Node, das der Installer selbst mitbringen darf, wenn keins da ist.
-NODE_HOLEN_FASSUNG=22
+MIN_NODE=22
+# Erste Fassung je Linie mit dem Brotli-Fix (CVE-2026-111497, „HTTP2Shell"),
+# Node-Sicherheitsausgabe vom 21.10.2026. Ältere Linien (20, 23, 25) bekommen
+# keinen Fix mehr und gelten deshalb als unsicher.
+NODE_SICHER="22.23.4 24.22.1 26.12.1"
+# Node, das der Installer selbst mitbringen darf, wenn keins da ist oder das
+# vorhandene ungepatcht ist.
+NODE_HOLEN_FASSUNG=24
 
 # Bundesländer: Code|Name|Karte MB|Routing+Suche MB|Höhen MB.
 # Die Größen sind gemessen (Routing) bzw. grob geschätzt (Karte, Höhen) und
@@ -276,21 +281,33 @@ pruefen() {
   info "Platz: $(mb_lesbar "${frei:-0}") frei, Speicher: $(mb_lesbar "$speicher")"
 }
 
+node_gepatcht() {
+  # Erfolg, wenn das Node im Pfad den HTTP2Shell-Fix trägt. Linien jenseits
+  # der jüngsten bekannten (27+) sind nach dem Fix erschienen.
+  node -e '
+    const [a, b, c] = process.versions.node.split(".").map(Number);
+    const sicher = process.argv[1].split(" ").map((v) => v.split(".").map(Number));
+    const neueste = Math.max(...sicher.map((v) => v[0]));
+    if (a > neueste) process.exit(0);
+    const m = sicher.find((v) => v[0] === a);
+    process.exit(m && (b > m[1] || (b === m[1] && c >= m[2])) ? 0 : 1);
+  ' "$NODE_SICHER" 2>/dev/null
+}
+
 node_pruefen() {
+  local noetig="Node.js ${NODE_SICHER// / bzw. } oder neuer"
   if ! command -v node >/dev/null 2>&1; then
-    warnung "Node.js fehlt. Nötig ist Fassung $MIN_NODE oder neuer."
-    node_nachlegen || fehler "Node.js $MIN_NODE oder neuer installieren — siehe https://nodejs.org/de/download/package-manager"
+    warnung "Node.js fehlt. Nötig ist $noetig."
+    node_nachlegen || fehler "$noetig installieren — siehe https://nodejs.org/de/download/package-manager"
   fi
 
   NODE_BIN="$(command -v node)"
-  local fassung
-  fassung="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-  if [ "$fassung" -lt "$MIN_NODE" ]; then
-    warnung "Node.js $fassung ist zu alt, nötig ist $MIN_NODE oder neuer."
-    node_nachlegen || fehler "Node.js $MIN_NODE oder neuer installieren — siehe https://nodejs.org/de/download/package-manager"
+  if ! node_gepatcht; then
+    warnung "Node.js $(node -v) ist unsicher (Brotli-Lücke CVE-2026-111497, „HTTP2Shell“) oder zu alt."
+    warnung "Nötig ist $noetig."
+    node_nachlegen || fehler "$noetig installieren — siehe https://nodejs.org/de/download/package-manager"
     NODE_BIN="$(command -v node)"
-    fassung="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-    [ "$fassung" -ge "$MIN_NODE" ] || fehler "Node.js ist noch immer zu alt ($fassung)."
+    node_gepatcht || fehler "Node.js ist noch immer ungepatcht ($(node -v))."
   fi
   info "Node.js $(node -v) unter $NODE_BIN"
 
@@ -311,7 +328,7 @@ node_nachlegen() {
   command -v apt-get >/dev/null 2>&1 || return 1
   info "Für Debian/Ubuntu gibt es Node $NODE_HOLEN_FASSUNG bei NodeSource:"
   leise "https://deb.nodesource.com/setup_${NODE_HOLEN_FASSUNG}.x  (Skript von NodeSource, wird als root ausgeführt)"
-  ja_nein "    Node $NODE_HOLEN_FASSUNG jetzt von dort installieren?" j || return 1
+  ja_nein "    Node $NODE_HOLEN_FASSUNG jetzt von dort installieren bzw. aktualisieren?" j || return 1
   curl -fsSL "https://deb.nodesource.com/setup_${NODE_HOLEN_FASSUNG}.x" -o "$ARBEIT/nodesource.sh" || return 1
   $SUDO bash "$ARBEIT/nodesource.sh" || return 1
   $SUDO apt-get install -y nodejs || return 1

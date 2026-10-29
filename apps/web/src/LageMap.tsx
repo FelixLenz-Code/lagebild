@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import maplibregl, {
+import * as maplibregl from 'maplibre-gl';
+import {
   type Map as MlMap,
   type StyleSpecification,
   type Marker,
@@ -1705,7 +1706,7 @@ export function LageMap({
       // Ohne das ist die Leinwand beim Auslesen leer — WebGL gibt den Puffer
       // sonst nach jedem Bild frei. Kostet etwas Speicher, ist aber die
       // einzige Möglichkeit, ein Bild der Karte zu bekommen.
-      preserveDrawingBuffer: true,
+      canvasContextAttributes: { preserveDrawingBuffer: true },
     });
     /*
      * Ebenen-Aufrufe, die während eines Stilwechsels still bleiben.
