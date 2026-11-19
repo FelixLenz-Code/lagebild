@@ -1,6 +1,6 @@
 {
   "name": "@lagebild/api",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,9 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.5",
+    "@hono/node-server": "^2.1.9",
     "@lagebild/shared": "workspace:*",
-    "hono": "^4.13.14",
+    "hono": "^4.13.19",
     "ws": "^8.22.0"
   },
   "devDependencies": {

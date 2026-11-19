@@ -1,12 +1,12 @@
 {
   "name": "lagebild",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Lagebild — Wetter, amtliche Warnungen, Verkehr und News für sicheres Bewegen. Offline-first PWA.",
   "packageManager": "pnpm@10.0.0",
   "engines": {
-    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
+    "node": "^22.23.5 || ^24.22.3 || >=26.13.1"
   },
   "scripts": {
     "dev": "pnpm --parallel -r --filter=@lagebild/api --filter=@lagebild/web dev",
@@ -31,7 +31,8 @@
       "esbuild"
     ],
     "overrides": {
-      "tsup>esbuild": "^0.28.1"
+      "tsup>esbuild": "^0.28.1",
+      "workbox-build>glob": "^14.0.6"
     }
   },
   "devDependencies": {

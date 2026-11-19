@@ -49,10 +49,11 @@ NUTZER="lagebild"
 DIENST="lagebild"
 ENV_DATEI="$ZIEL/apps/api/.env"
 MIN_NODE=22
-# Erste Fassung je Linie mit dem Brotli-Fix (CVE-2026-111497, „HTTP2Shell"),
-# Node-Sicherheitsausgabe vom 21.10.2026. Ältere Linien (20, 23, 25) bekommen
-# keinen Fix mehr und gelten deshalb als unsicher.
-NODE_SICHER="22.23.4 24.22.1 26.12.1"
+# Erste Fassung je Linie mit allen bekannten Sicherheitsfixes: Brotli-Lücke
+# (CVE-2026-111497, „HTTP2Shell“, Ausgabe vom 21.10.2026) und die 16 CVEs der
+# Ausgabe vom 11.11.2026 (u. a. HTTP/2-Abort, TLS-Renegotiation). Ältere Linien
+# (20, 23, 25) bekommen keinen Fix mehr und gelten deshalb als unsicher.
+NODE_SICHER="22.23.5 24.22.3 26.13.1"
 # Node, das der Installer selbst mitbringen darf, wenn keins da ist oder das
 # vorhandene ungepatcht ist.
 NODE_HOLEN_FASSUNG=24
@@ -282,7 +283,7 @@ pruefen() {
 }
 
 node_gepatcht() {
-  # Erfolg, wenn das Node im Pfad den HTTP2Shell-Fix trägt. Linien jenseits
+  # Erfolg, wenn das Node im Pfad alle bekannten Sicherheitsfixes trägt. Linien jenseits
   # der jüngsten bekannten (27+) sind nach dem Fix erschienen.
   node -e '
     const [a, b, c] = process.versions.node.split(".").map(Number);
@@ -303,7 +304,7 @@ node_pruefen() {
 
   NODE_BIN="$(command -v node)"
   if ! node_gepatcht; then
-    warnung "Node.js $(node -v) ist unsicher (Brotli-Lücke CVE-2026-111497, „HTTP2Shell“) oder zu alt."
+    warnung "Node.js $(node -v) ist unsicher (u. a. Brotli-Lücke CVE-2026-111497 „HTTP2Shell“ und Node-Sicherheitsausgabe vom 11.11.2026) oder zu alt."
     warnung "Nötig ist $noetig."
     node_nachlegen || fehler "$noetig installieren — siehe https://nodejs.org/de/download/package-manager"
     NODE_BIN="$(command -v node)"
